@@ -1,0 +1,11 @@
+node_modules/
+dist/
+
+# Design references used to measure the layout. Kept out of the repo so their
+# artwork is not redistributed; the measurements they produced live in
+# src/lib/canvas/spec.ts.
+reference/
+*.local
+.DS_Store
+.vite/
+*.tsbuildinfo
