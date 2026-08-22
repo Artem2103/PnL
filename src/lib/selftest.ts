@@ -1,6 +1,52 @@
 import type { CardState } from '../types';
 import { CARD, prepareAssets, renderToOffscreenCanvas } from './render';
 
+/**
+ * A frame, or 120 ms — whichever comes first, reporting which it was.
+ * `requestAnimationFrame` stops firing altogether when the window is hidden or
+ * covered, and a check that never returns is worse than one that waits a
+ * little longer than it needs to. Whether a real frame arrived matters: the
+ * preview canvas cannot have been repainted without one.
+ */
+function nextFrame(): Promise<boolean> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (painted: boolean) => {
+      if (done) return;
+      done = true;
+      resolve(painted);
+    };
+    requestAnimationFrame(() => finish(true));
+    setTimeout(() => finish(false), 120);
+  });
+}
+
+/**
+ * Holds a clip still so the two paints can be compared at all. A background
+ * that is moving would differ between them for the honest reason that time
+ * passed, which says nothing about the renderer.
+ *
+ * Waits out any pending seek too: mid-seek a `<video>` drops back to
+ * HAVE_METADATA and paints nothing, so one path would get a frame and the
+ * other the empty ground.
+ */
+async function freeze(video: HTMLVideoElement): Promise<string> {
+  video.pause();
+  const deadline = Date.now() + 3000;
+  while ((video.seeking || video.readyState < 2) && Date.now() < deadline) {
+    await nextFrame();
+  }
+  // Two frames: one for the preview loop to repaint the held frame, one for it
+  // to reach the canvas.
+  const first = await nextFrame();
+  const second = await nextFrame();
+  const held = `clip held at ${video.currentTime.toFixed(3)}s, readyState ${video.readyState}`;
+  if (!first || !second) {
+    return `${held} — but the page was not painting (tab hidden or covered), so the preview canvas is stale and this comparison means nothing. Re-run it with the window in front.`;
+  }
+  return held;
+}
+
 export interface ExportCheck {
   ok: boolean;
   /** Largest per-channel difference found between preview and export pixels. */
@@ -28,6 +74,13 @@ export async function checkExportMatchesPreview(
   }
 
   const assets = await prepareAssets(state);
+
+  const artwork = assets.artwork;
+  const held =
+    artwork && artwork.kind === 'video'
+      ? await freeze(artwork.element as HTMLVideoElement)
+      : undefined;
+
   // Same scale the preview used, so the comparison is pixel-for-pixel.
   const scale = width / CARD.width;
   const exportCanvas = renderToOffscreenCanvas(state, assets, scale);
@@ -63,5 +116,5 @@ export async function checkExportMatchesPreview(
 
   const totalPixels = a.data.length / 4 || 1;
   const mismatchRatio = mismatched / totalPixels;
-  return { ok: mismatchRatio === 0, maxDelta, mismatchRatio, width, height };
+  return { ok: mismatchRatio === 0, maxDelta, mismatchRatio, width, height, note: held };
 }

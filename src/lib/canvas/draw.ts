@@ -1,8 +1,9 @@
-import type { CardState, RenderAssets } from '../../types';
+import type { BackgroundMedia, CardState, RenderAssets } from '../../types';
 import type { CardContent } from '../content';
 import type { PnlResult } from '../pnl';
 import { getTheme, type Theme } from '../themes';
 import { CARD, PALETTE, SPEC } from './spec';
+import { placeCover } from './placement';
 import {
   FONT_DISPLAY,
   coverRect,
@@ -54,6 +55,14 @@ export function drawCard(ctx: Ctx2D, width: number, height: number, input: DrawI
 /* Background                                                          */
 /* ------------------------------------------------------------------ */
 
+/**
+ * A clip that has not buffered a frame yet would paint nothing and silently
+ * blank the card, so the themed ground is shown until it can.
+ */
+function isPaintable(media: BackgroundMedia): boolean {
+  return media.kind !== 'video' || (media.element as HTMLVideoElement).readyState >= 2;
+}
+
 function drawBackground(ctx: Ctx2D, input: DrawInput, theme: Theme): void {
   const { state, assets } = input;
   const { width, height } = CARD;
@@ -69,17 +78,22 @@ function drawBackground(ctx: Ctx2D, input: DrawInput, theme: Theme): void {
   ctx.fillRect(0, 0, width, height);
   ctx.restore();
 
-  const image = assets.artwork;
-  if (state.artwork.imageId && image && image.width > 0 && image.height > 0) {
-    const rect = coverRect(image.width, image.height, width, height, state.artwork.zoom);
-    // Pan is expressed as a share of the overflow, so it behaves the same for
-    // any source aspect ratio.
-    const overflowX = Math.max(0, rect.w - width) / 2;
+  const media = assets.artwork;
+  if (state.artwork.imageId && media && media.width > 0 && media.height > 0 && isPaintable(media)) {
+    const rect = placeCover(
+      media.width,
+      media.height,
+      width,
+      height,
+      state.artwork.zoom,
+      state.artwork.offsetX,
+      state.artwork.offsetY,
+    );
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, 0, width, height);
     ctx.clip();
-    ctx.drawImage(image, rect.x + overflowX * state.artwork.offsetX, rect.y, rect.w, rect.h);
+    ctx.drawImage(media.element as CanvasImageSource, rect.x, rect.y, rect.w, rect.h);
     ctx.restore();
 
     // The text column lives on the left, so the scrim is a horizontal ramp

@@ -57,14 +57,22 @@ export interface DisplayState {
 }
 
 export interface ArtworkState {
-  /** Image library id, or null for the plain themed background. */
+  /** Media library id (photo or clip), or null for the plain themed background. */
   imageId: string | null;
   /** Strength of the dark scrim over the text column, 0..1. */
   scrim: number;
-  /** 1..2 zoom on top of the cover fit. */
+  /** 1..3 zoom on top of the cover fit. */
   zoom: number;
   /** Horizontal pan, -1..1, so the subject can be pushed clear of the text. */
   offsetX: number;
+  /** Vertical pan, -1..1. Only bites when the fit leaves vertical overflow. */
+  offsetY: number;
+  /** Video only: seconds into the clip where the card starts. */
+  clipStart: number;
+  /** Video only: seconds of clip used, capped at MAX_CLIP_SECONDS. */
+  clipLength: number;
+  /** Video only: drop the clip's own audio from the exported file. */
+  muteAudio: boolean;
 }
 
 export interface CardState {
@@ -80,9 +88,23 @@ export interface CardState {
   logoId: string | null;
 }
 
+/**
+ * A decoded background, either a still or a clip. The renderer only ever asks
+ * it for pixels and its intrinsic size, so both kinds paint through the same
+ * code path.
+ */
+export interface BackgroundMedia {
+  kind: 'image' | 'video';
+  element: HTMLImageElement | HTMLVideoElement;
+  width: number;
+  height: number;
+  /** Seconds. Zero for stills. */
+  duration: number;
+}
+
 /** Everything the renderer needs that had to be resolved asynchronously. */
 export interface RenderAssets {
-  artwork: HTMLImageElement | null;
+  artwork: BackgroundMedia | null;
   avatar: HTMLImageElement | null;
   logo: HTMLImageElement | null;
 }

@@ -11,11 +11,20 @@ import { THEMES } from '../lib/themes';
 import { approximateLiquidationPrice, computeCard, signsDisagree } from '../lib/pnl';
 import { buildContent } from '../lib/content';
 import { formatPrice } from '../lib/format';
+import { MAX_CLIP_SECONDS, MAX_SOURCE_SECONDS } from '../lib/images';
+import { resolveClip } from '../lib/video';
 import { ImagePicker } from './ImagePicker';
 import { Field, NumberInput, Section, Segmented, Slider, TextInput, Toggle } from './ui';
 
+/** What the selected background turned out to be, once decoded. */
+export interface BackgroundInfo {
+  kind: 'image' | 'video';
+  duration: number;
+}
+
 export interface ControlPanelProps {
   state: CardState;
+  background: BackgroundInfo | null;
   setMode: (mode: CardMode) => void;
   patchTrade: (patch: Partial<TradeState>) => void;
   patchPeriod: (patch: Partial<PeriodState>) => void;
@@ -29,6 +38,7 @@ export interface ControlPanelProps {
 
 export function ControlPanel({
   state,
+  background,
   setMode,
   patchTrade,
   patchPeriod,
@@ -44,6 +54,10 @@ export function ControlPanel({
   const content = buildContent(state, result);
   const liquidation = state.mode === 'trade' ? approximateLiquidationPrice(trade) : null;
   const mismatch = state.mode === 'trade' && signsDisagree(trade);
+  const isVideo = background?.kind === 'video';
+  const clip = resolveClip(background?.duration ?? 0, artwork.clipStart, artwork.clipLength);
+  // Leave at least a second of clip after the start point, or the window is empty.
+  const maxStart = Math.max(0, (background?.duration ?? 0) - 1);
 
   return (
     <div className="controls">
@@ -217,45 +231,120 @@ export function ControlPanel({
         </div>
       </Section>
 
-      <Section title="Artwork" hint="Fills the right side. Stored in this browser only.">
+      <Section title="Background" hint="A photo or a clip. Stored in this browser only.">
         <ImagePicker
           role="artwork"
           selectedId={artwork.imageId}
           onSelect={(imageId) => patchArtwork({ imageId })}
           onError={onError}
           emptyLabel="None"
-          hint="Drop a file or click to browse. Images stay on this device — they are stored in your browser and never uploaded."
+          hint={`Drop a file or click to browse — photos, or a clip up to ${MAX_SOURCE_SECONDS} s (the card plays ${MAX_CLIP_SECONDS} s of it). Files stay on this device: they are stored in your browser and never uploaded.`}
         />
         {artwork.imageId ? (
-          <div className="sliders">
-            <Slider
-              label="Text scrim"
-              value={artwork.scrim}
-              min={0}
-              max={1}
-              step={0.01}
-              format={(v) => `${Math.round(v * 100)}%`}
-              onChange={(scrim) => patchArtwork({ scrim })}
-            />
-            <Slider
-              label="Zoom"
-              value={artwork.zoom}
-              min={1}
-              max={2}
-              step={0.01}
-              format={(v) => `${v.toFixed(2)}×`}
-              onChange={(zoom) => patchArtwork({ zoom })}
-            />
-            <Slider
-              label="Pan"
-              value={artwork.offsetX}
-              min={-1}
-              max={1}
-              step={0.01}
-              format={(v) => (v === 0 ? 'centre' : v > 0 ? `right ${Math.round(v * 100)}%` : `left ${Math.round(-v * 100)}%`)}
-              onChange={(offsetX) => patchArtwork({ offsetX })}
-            />
-          </div>
+          <>
+            <div className="sliders">
+              <Slider
+                label="Text scrim"
+                value={artwork.scrim}
+                min={0}
+                max={1}
+                step={0.01}
+                format={(v) => `${Math.round(v * 100)}%`}
+                onChange={(scrim) => patchArtwork({ scrim })}
+              />
+            </div>
+
+            <div className="subsection">
+              <div className="subsection__head">
+                <h3>Placement</h3>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--small"
+                  onClick={() => patchArtwork({ zoom: 1, offsetX: 0, offsetY: 0 })}
+                  disabled={artwork.zoom === 1 && artwork.offsetX === 0 && artwork.offsetY === 0}
+                >
+                  Recentre
+                </button>
+              </div>
+              <div className="sliders">
+                <Slider
+                  label="Zoom"
+                  value={artwork.zoom}
+                  min={1}
+                  max={3}
+                  step={0.01}
+                  format={(v) => `${v.toFixed(2)}×`}
+                  onChange={(zoom) => patchArtwork({ zoom })}
+                />
+                <Slider
+                  label="Horizontal"
+                  value={artwork.offsetX}
+                  min={-1}
+                  max={1}
+                  step={0.01}
+                  format={(v) =>
+                    v === 0 ? 'centre' : v > 0 ? `right ${Math.round(v * 100)}%` : `left ${Math.round(-v * 100)}%`
+                  }
+                  onChange={(offsetX) => patchArtwork({ offsetX })}
+                />
+                <Slider
+                  label="Vertical"
+                  value={artwork.offsetY}
+                  min={-1}
+                  max={1}
+                  step={0.01}
+                  format={(v) =>
+                    v === 0 ? 'centre' : v > 0 ? `down ${Math.round(v * 100)}%` : `up ${Math.round(-v * 100)}%`
+                  }
+                  onChange={(offsetY) => patchArtwork({ offsetY })}
+                />
+              </div>
+              <p className="muted-note">
+                Drag the preview to move the background. Vertical only bites once the zoom leaves
+                something to move into.
+              </p>
+            </div>
+
+            {isVideo ? (
+              <div className="subsection">
+                <div className="subsection__head">
+                  <h3>Clip</h3>
+                  <span className="muted-note">
+                    {clip.length.toFixed(1)} s of {(background?.duration ?? 0).toFixed(1)} s
+                  </span>
+                </div>
+                <div className="sliders">
+                  <Slider
+                    label="Start at"
+                    value={Math.min(artwork.clipStart, maxStart)}
+                    min={0}
+                    max={Math.max(maxStart, 0.1)}
+                    step={0.1}
+                    format={(v) => `${v.toFixed(1)} s`}
+                    onChange={(clipStart) => patchArtwork({ clipStart })}
+                  />
+                  <Slider
+                    label="Length"
+                    value={Math.min(artwork.clipLength, MAX_CLIP_SECONDS)}
+                    min={1}
+                    max={MAX_CLIP_SECONDS}
+                    step={0.5}
+                    format={(v) => `${Math.min(v, clip.length).toFixed(1)} s`}
+                    onChange={(clipLength) => patchArtwork({ clipLength })}
+                  />
+                </div>
+                <Toggle
+                  label="Keep the clip's audio in the exported video"
+                  checked={!artwork.muteAudio}
+                  onChange={(keep) => patchArtwork({ muteAudio: !keep })}
+                />
+                <p className="muted-note">
+                  The numbers, rows and colours are painted over every frame by the same renderer
+                  that makes the PNG — only the background moves.
+                </p>
+              </div>
+            ) : null}
+          </>
         ) : null}
       </Section>
 

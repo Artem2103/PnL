@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   ArtworkState,
   BrandState,
@@ -9,7 +9,7 @@ import type {
   TradeState,
 } from './types';
 import { CardPreview } from './components/CardPreview';
-import { ControlPanel } from './components/ControlPanel';
+import { ControlPanel, type BackgroundInfo } from './components/ControlPanel';
 import { createDefaultState, loadState, saveState } from './lib/defaults';
 import {
   canCopyImage,
@@ -19,6 +19,8 @@ import {
   shareCard,
 } from './lib/share';
 import { CARD } from './lib/render';
+import { loadMedia } from './lib/images';
+import { MAX_VIDEO_SCALE, downloadCardVideo, resolveClip, videoSupport } from './lib/video';
 import { checkExportMatchesPreview } from './lib/selftest';
 
 type ToastTone = 'info' | 'error';
@@ -38,9 +40,17 @@ const SCALES = [
 export default function App() {
   const [state, setState] = useState<CardState>(() => loadState());
   const [scale, setScale] = useState(2);
-  const [busy, setBusy] = useState<null | 'download' | 'copy' | 'share'>(null);
+  const [busy, setBusy] = useState<null | 'download' | 'copy' | 'share' | 'video'>(null);
   const [toast, setToast] = useState<Toast | null>(null);
+  const [background, setBackground] = useState<BackgroundInfo | null>(null);
+  const [playing, setPlaying] = useState(true);
+  const [progress, setProgress] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const video = useMemo(videoSupport, []);
+
+  const isVideoBackground = background?.kind === 'video';
+  const clip = resolveClip(background?.duration ?? 0, state.artwork.clipStart, state.artwork.clipLength);
+  const videoScale = Math.min(scale, MAX_VIDEO_SCALE);
 
   const notify = useCallback((message: string, tone: ToastTone = 'info') => {
     setToast({ id: Date.now(), message, tone });
@@ -57,6 +67,25 @@ export default function App() {
     const timer = setTimeout(() => saveState(state), 400);
     return () => clearTimeout(timer);
   }, [state]);
+
+  // What the chosen background actually is. The renderer shares this cache, so
+  // resolving it here costs no second decode.
+  useEffect(() => {
+    const id = state.artwork.imageId;
+    if (!id) {
+      setBackground(null);
+      return;
+    }
+    let cancelled = false;
+    void loadMedia(id).then((media) => {
+      if (cancelled) return;
+      setBackground(media ? { kind: media.kind, duration: media.duration } : null);
+      setPlaying(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [state.artwork.imageId]);
 
   const setMode = useCallback((mode: CardMode) => setState((prev) => ({ ...prev, mode })), []);
   const patchTrade = useCallback(
@@ -115,6 +144,23 @@ export default function App() {
     }
   }, [notify, scale, state]);
 
+  const handleDownloadVideo = useCallback(async () => {
+    setBusy('video');
+    setProgress(0);
+    try {
+      const result = await downloadCardVideo(state, {
+        scale,
+        onProgress: setProgress,
+      });
+      notify(`${result.extension.toUpperCase()} downloaded — ${result.duration.toFixed(1)} s.`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Video export failed.', 'error');
+    } finally {
+      setBusy(null);
+      setProgress(0);
+    }
+  }, [notify, scale, state]);
+
   const handleShare = useCallback(async () => {
     setBusy('share');
     try {
@@ -145,12 +191,21 @@ export default function App() {
     globalScope.__pnlCheckExport = async () => {
       const canvas = canvasRef.current;
       if (!canvas) return { ok: false, note: 'No preview canvas mounted.' };
-      return checkExportMatchesPreview(state, canvas);
+      // The check freezes the clip itself, but the preview loop would restart
+      // it on the next frame unless playback is stopped here first.
+      const wasPlaying = playing;
+      setPlaying(false);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      try {
+        return await checkExportMatchesPreview(state, canvas);
+      } finally {
+        if (wasPlaying) setPlaying(true);
+      }
     };
     return () => {
       delete globalScope.__pnlCheckExport;
     };
-  }, [state]);
+  }, [state, playing]);
 
   return (
     <div className="app">
@@ -178,6 +233,7 @@ export default function App() {
         <aside className="layout__controls" aria-label="Card settings">
           <ControlPanel
             state={state}
+            background={background}
             setMode={setMode}
             patchTrade={patchTrade}
             patchPeriod={patchPeriod}
@@ -192,7 +248,34 @@ export default function App() {
 
         <section className="layout__stage" aria-label="Preview and export">
           <div className="stage__inner">
-            <CardPreview state={state} canvasRef={canvasRef} />
+            <CardPreview
+              state={state}
+              canvasRef={canvasRef}
+              patchArtwork={patchArtwork}
+              playing={playing}
+            />
+
+            {isVideoBackground ? (
+              <div className="clipbar">
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--small"
+                  onClick={() => setPlaying((value) => !value)}
+                >
+                  {playing ? 'Pause' : 'Play'}
+                </button>
+                <span className="clipbar__meta">
+                  {clip.length.toFixed(1)} s clip · {videoScale}× ·{' '}
+                  {Math.round(CARD.width * videoScale)}×{Math.round(CARD.height * videoScale)}
+                  {video.extension ? ` · ${video.extension.toUpperCase()}` : ''}
+                </span>
+                {busy === 'video' ? (
+                  <span className="clipbar__progress" aria-live="polite">
+                    <span style={{ width: `${Math.round(progress * 100)}%` }} />
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="exportbar">
               <div className="exportbar__scale" role="group" aria-label="Export resolution">
@@ -213,6 +296,19 @@ export default function App() {
               </div>
 
               <div className="exportbar__actions">
+                {isVideoBackground && video.supported ? (
+                  <button
+                    type="button"
+                    className="btn btn--primary"
+                    onClick={() => void handleDownloadVideo()}
+                    disabled={busy !== null}
+                    title={`Records ${clip.length.toFixed(1)} s in real time`}
+                  >
+                    {busy === 'video'
+                      ? `Recording ${Math.round(progress * 100)}%`
+                      : `Download ${video.extension?.toUpperCase() ?? 'video'}`}
+                  </button>
+                ) : null}
                 {canCopyImage() ? (
                   <button
                     type="button"
@@ -235,7 +331,9 @@ export default function App() {
                 ) : null}
                 <button
                   type="button"
-                  className="btn btn--primary"
+                  className={
+                    isVideoBackground && video.supported ? 'btn btn--ghost' : 'btn btn--primary'
+                  }
                   onClick={() => void handleDownload()}
                   disabled={busy !== null}
                 >
@@ -245,8 +343,26 @@ export default function App() {
             </div>
 
             <p className="stage__note">
-              The download is painted by the same renderer as this preview — what you see is exactly
-              what lands in the PNG. <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>S</kbd> exports.
+              {isVideoBackground ? (
+                video.supported ? (
+                  <>
+                    One renderer paints the preview, the PNG and every video frame, so the card is
+                    identical in all three. Recording runs in real time — {clip.length.toFixed(1)} s
+                    of clip takes {clip.length.toFixed(1)} s, and the tab has to stay in front while
+                    it does. The PNG captures the frame on screen.
+                  </>
+                ) : (
+                  <>
+                    This browser cannot record video. The card still exports as a PNG of the frame
+                    on screen — try Chrome, Edge or Safari for the clip.
+                  </>
+                )
+              ) : (
+                <>
+                  The download is painted by the same renderer as this preview — what you see is
+                  exactly what lands in the PNG. <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>S</kbd> exports.
+                </>
+              )}
             </p>
           </div>
         </section>

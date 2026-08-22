@@ -1,9 +1,9 @@
-import type { CardState, RenderAssets } from '../types';
+import type { BackgroundMedia, CardState, RenderAssets } from '../types';
 import { buildContent } from './content';
 import { drawCard } from './canvas/draw';
 import { CARD } from './canvas/spec';
 import { ensureFonts } from './fonts';
-import { loadImageElement, peekImageElement } from './images';
+import { loadImageElement, loadMedia, peekImageElement, peekMedia } from './images';
 import { computeCard } from './pnl';
 
 /** Browsers cap canvas dimensions; 8192 is the safe floor across engines. */
@@ -22,15 +22,28 @@ async function resolve(id: string | null): Promise<HTMLImageElement | null> {
   return peekImageElement(id) ?? (await loadImageElement(id));
 }
 
+async function resolveBackground(id: string | null): Promise<BackgroundMedia | null> {
+  if (!id) return null;
+  const media = peekMedia(id) ?? (await loadMedia(id));
+  if (!media) return null;
+  return {
+    kind: media.kind,
+    element: media.element,
+    width: media.width,
+    height: media.height,
+    duration: media.duration,
+  };
+}
+
 /**
  * Resolves everything asynchronous the renderer needs. Callers await this once
  * and then paint synchronously, so every frame is complete — no half-drawn
- * card can reach the screen or a PNG.
+ * card can reach the screen, a PNG or a video frame.
  */
 export async function prepareAssets(state: CardState): Promise<RenderAssets> {
   await ensureFonts();
   const [artwork, avatar, logo] = await Promise.all([
-    resolve(state.artwork.imageId),
+    resolveBackground(state.artwork.imageId),
     resolve(state.avatarId),
     resolve(state.logoId),
   ]);

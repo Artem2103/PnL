@@ -1,15 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ACCEPT_ATTR,
   ImageError,
+  acceptAttrFor,
   addImage,
   deleteImage,
   listImages,
   maxImagesFor,
   releaseThumbnails,
   type ImageRole,
-  type ImageSummary,
+  type MediaSummary,
 } from '../lib/images';
+
+function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '';
+  return seconds >= 10 ? `${Math.round(seconds)}s` : `${seconds.toFixed(1)}s`;
+}
 
 export function ImagePicker({
   role,
@@ -26,11 +31,11 @@ export function ImagePicker({
   emptyLabel: string;
   hint?: string;
 }) {
-  const [items, setItems] = useState<ImageSummary[]>([]);
+  const [items, setItems] = useState<MediaSummary[]>([]);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const itemsRef = useRef<ImageSummary[]>([]);
+  const itemsRef = useRef<MediaSummary[]>([]);
 
   const refresh = useCallback(async () => {
     try {
@@ -103,7 +108,7 @@ export function ImagePicker({
         <input
           ref={inputRef}
           type="file"
-          accept={ACCEPT_ATTR}
+          accept={acceptAttrFor(role)}
           onChange={(event) => void upload(event.target.files)}
           hidden
         />
@@ -135,10 +140,19 @@ export function ImagePicker({
               className="bg-tile__select"
               onClick={() => onSelect(item.id)}
               aria-pressed={selectedId === item.id}
-              title={item.name}
+              title={item.kind === 'video' ? `${item.name} · clip` : item.name}
             >
-              <img src={item.url} alt="" loading="lazy" />
+              {item.kind === 'video' ? (
+                // `preload="metadata"` is enough for a poster frame and avoids
+                // pulling the whole clip into memory for a thumbnail.
+                <video src={item.url} muted playsInline preload="metadata" />
+              ) : (
+                <img src={item.url} alt="" loading="lazy" />
+              )}
             </button>
+            {item.kind === 'video' ? (
+              <span className="bg-tile__badge">{formatDuration(item.duration) || 'clip'}</span>
+            ) : null}
             <button
               type="button"
               className="bg-tile__delete"

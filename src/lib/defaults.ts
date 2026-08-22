@@ -1,4 +1,5 @@
 import type { CardState } from '../types';
+import { MAX_CLIP_SECONDS } from './images';
 import { DEFAULT_THEME_ID } from './themes';
 
 /** Bumped from v1: the card model changed shape entirely. */
@@ -47,6 +48,10 @@ export function createDefaultState(): CardState {
       scrim: 0.8,
       zoom: 1,
       offsetX: 0,
+      offsetY: 0,
+      clipStart: 0,
+      clipLength: MAX_CLIP_SECONDS,
+      muteAudio: false,
     },
     avatarId: null,
     logoId: null,
