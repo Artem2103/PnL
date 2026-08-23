@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { pickMimeType, resolveClip, videoFileName } from './video';
+import {
+  MAX_VIDEO_SCALE,
+  MIN_VIDEO_SCALE,
+  pickMimeType,
+  resolveClip,
+  videoFileName,
+  videoScaleFor,
+} from './video';
 import { MAX_CLIP_SECONDS } from './images';
 import { createDefaultState } from './defaults';
 
@@ -63,5 +70,37 @@ describe('videoFileName', () => {
   it('names the file after the symbol in trade mode', () => {
     const state = { ...createDefaultState(), mode: 'trade' as const };
     expect(videoFileName(state, 'webm')).toBe('btcusdt-pnl.webm');
+  });
+});
+
+describe('videoScaleFor', () => {
+  /**
+   * A PNG at 1x is a fine 840x570 image; a video at 1x is not, because every
+   * platform re-encodes it and a card that small arrives with its numbers
+   * smeared. The scale chips are shared with the PNG export, so the floor has
+   * to be applied here rather than by hiding the 1x chip.
+   */
+  it('never records below 2x, whatever the PNG scale is set to', () => {
+    expect(videoScaleFor(1)).toBe(2);
+    expect(videoScaleFor(0.5)).toBe(2);
+    expect(videoScaleFor(-3)).toBe(2);
+  });
+
+  it('never records above 2x, because encoding cost outruns the extra pixels', () => {
+    expect(videoScaleFor(3)).toBe(2);
+    expect(videoScaleFor(64)).toBe(2);
+  });
+
+  it('falls back to the floor for a nonsense scale', () => {
+    expect(videoScaleFor(Number.NaN)).toBe(MIN_VIDEO_SCALE);
+    expect(videoScaleFor(Number.POSITIVE_INFINITY)).toBe(MIN_VIDEO_SCALE);
+  });
+
+  it('always lands inside the supported range', () => {
+    for (const scale of [0, 0.25, 1, 1.5, 2, 2.5, 3, 10]) {
+      const resolved = videoScaleFor(scale);
+      expect(resolved).toBeGreaterThanOrEqual(MIN_VIDEO_SCALE);
+      expect(resolved).toBeLessThanOrEqual(MAX_VIDEO_SCALE);
+    }
   });
 });

@@ -110,11 +110,20 @@ export const SPEC = {
     maxWidth: 330,
   },
 
+  /**
+   * Dropped 35px from the reference's 507/519 so the footer sits the same
+   * distance below the avatar as the avatar sits below the last stat row.
+   * Measured off the painted ink rather than the baselines, since that is what
+   * the eye reads: the last row ends at y=403 and the avatar starts at 446, so
+   * 42 blank rows; the avatar ends at 497 and the footer now starts at 540,
+   * also 42. It used to be 8, which read as the footer being stuck to the
+   * handle with a dead band underneath it.
+   */
   footer: {
-    icon: { x: 36, y: 507, width: 23, height: 15 },
+    icon: { x: 36, y: 542, width: 23, height: 15 },
     /** Left edge of the ink. */
     x: 59,
-    baseline: 519,
+    baseline: 554,
     size: 18,
     weight: 400,
     tracking: -0.15,

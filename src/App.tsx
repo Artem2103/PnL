@@ -20,7 +20,7 @@ import {
 } from './lib/share';
 import { CARD } from './lib/render';
 import { loadMedia } from './lib/images';
-import { MAX_VIDEO_SCALE, downloadCardVideo, resolveClip, videoSupport } from './lib/video';
+import { downloadCardVideo, resolveClip, videoScaleFor, videoSupport } from './lib/video';
 import { checkExportMatchesPreview } from './lib/selftest';
 
 type ToastTone = 'info' | 'error';
@@ -50,7 +50,7 @@ export default function App() {
 
   const isVideoBackground = background?.kind === 'video';
   const clip = resolveClip(background?.duration ?? 0, state.artwork.clipStart, state.artwork.clipLength);
-  const videoScale = Math.min(scale, MAX_VIDEO_SCALE);
+  const videoScale = videoScaleFor(scale);
 
   const notify = useCallback((message: string, tone: ToastTone = 'info') => {
     setToast({ id: Date.now(), message, tone });
@@ -275,7 +275,7 @@ export default function App() {
                   {playing ? 'Pause' : 'Play'}
                 </button>
                 <span className="clipbar__meta">
-                  {clip.length.toFixed(1)} s clip · {videoScale}× ·{' '}
+                  {clip.length.toFixed(1)} s clip · video {videoScale}× ·{' '}
                   {Math.round(CARD.width * videoScale)}×{Math.round(CARD.height * videoScale)}
                   {video.extension ? ` · ${video.extension.toUpperCase()}` : ''}
                 </span>
@@ -359,7 +359,8 @@ export default function App() {
                     One renderer paints the preview, the PNG and every video frame, so the card is
                     identical in all three. Recording runs in real time — {clip.length.toFixed(1)} s
                     of clip takes {clip.length.toFixed(1)} s, and the tab has to stay in front while
-                    it does. The PNG captures the frame on screen.
+                    it does. The scale buttons set the PNG; video always records at {videoScale}×,
+                    because anything smaller is smeared by the time a platform has re-encoded it.
                   </>
                 ) : (
                   <>

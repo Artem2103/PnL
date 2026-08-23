@@ -19,14 +19,21 @@ import { slugify } from './format';
 /** Encoding above 2× costs far more time than the extra pixels are worth. */
 export const MAX_VIDEO_SCALE = 2;
 
+/**
+ * A PNG at 1× is a perfectly good 840×570 image. A *video* at 1× is not: it is
+ * re-encoded by every platform it is posted to, and a card that small arrives
+ * with its numbers smeared. Video ignores the 1× chip and records at 2×.
+ */
+export const MIN_VIDEO_SCALE = 2;
+
+/** The scale a clip actually records at, given the chosen export scale. */
+export function videoScaleFor(scale: number): number {
+  if (!Number.isFinite(scale)) return MIN_VIDEO_SCALE;
+  return Math.min(MAX_VIDEO_SCALE, Math.max(MIN_VIDEO_SCALE, scale));
+}
+
 /** Frame rate of the exported file. */
 export const VIDEO_FPS = 30;
-
-/** `requestVideoFrameCallback` — Chrome, Edge and Safari; absent on Firefox. */
-type FrameCallbackVideo = HTMLVideoElement & {
-  requestVideoFrameCallback?: (callback: () => void) => number;
-  cancelVideoFrameCallback?: (handle: number) => void;
-};
 
 export interface Candidate {
   mimeType: string;
@@ -205,10 +212,19 @@ async function attachAudio(
   }
 }
 
+/**
+ * Bits per pixel per frame. 0.09 was budgeted for flat card graphics, but the
+ * background is a photographic clip — grain, motion and film-like detail — and
+ * at that rate it came out mushy and blocked up around the moving parts.
+ */
+const BITS_PER_PIXEL = 0.14;
+/** A card is mostly type. Under this it stops surviving a platform re-encode. */
+const MIN_BITRATE = 6_000_000;
+const MAX_BITRATE = 24_000_000;
+
 function bitrateFor(width: number, height: number): number {
-  // ~0.09 bits per pixel per frame: clean on flat card graphics without
-  // producing a file too large to post.
-  return Math.min(24_000_000, Math.round(width * height * VIDEO_FPS * 0.09));
+  const budget = Math.round(width * height * VIDEO_FPS * BITS_PER_PIXEL);
+  return Math.min(MAX_BITRATE, Math.max(MIN_BITRATE, budget));
 }
 
 /**
@@ -238,7 +254,7 @@ export async function renderCardVideo(
     throw new VideoExportError('That clip window is empty. Move the start point back.');
   }
 
-  const scale = Math.min(Math.max(options.scale, 1), MAX_VIDEO_SCALE);
+  const scale = videoScaleFor(options.scale);
   const base = await prepareAssets(state);
   const assets: RenderAssets = {
     ...base,
@@ -303,20 +319,24 @@ export async function renderCardVideo(
     const deadline = performance.now() + clip.length * 1000 * 3 + 10_000;
 
     await new Promise<void>((resolve, reject) => {
-      /** The recorder samples the canvas at `VIDEO_FPS`; painting faster is waste. */
-      const frameGap = 1000 / VIDEO_FPS;
-      /** If no decoded frame has been announced for this long, paint anyway. */
-      const staleAfter = 100;
-      const withCallback = video as FrameCallbackVideo;
-      const hasFrameCallback = typeof withCallback.requestVideoFrameCallback === 'function';
+      /**
+       * `captureStream` samples the canvas when it changes, and enforces a
+       * minimum of 1/VIDEO_FPS between the frames it keeps. So the canvas must
+       * be repainted *faster* than the recorder samples: paint exactly at the
+       * sample rate and ordinary timer jitter lands half the paints just
+       * inside the previous interval, where they are discarded — the file then
+       * holds 15–20 irregularly spaced frames a second and plays back as
+       * judder. Painting at twice the rate guarantees fresh pixels are always
+       * waiting when the sampler comes round, and costs ~0.2 ms a paint now
+       * that the foreground is cached.
+       */
+      const paintGap = 1000 / (VIDEO_FPS * 2);
 
       let painted = 0;
       let frames = 0;
       let raf = 0;
       let timer = 0;
       let tail = 0;
-      let videoFrame = 0;
-      let fresh = true;
       let done = false;
 
       const finish = (error?: Error) => {
@@ -324,7 +344,6 @@ export async function renderCardVideo(
         cancelAnimationFrame(raf);
         clearInterval(timer);
         clearTimeout(tail);
-        if (videoFrame) withCallback.cancelVideoFrameCallback?.(videoFrame);
         if (error) reject(error);
         else resolve();
       };
@@ -338,18 +357,13 @@ export async function renderCardVideo(
           return;
         }
 
-        // Two gates. The clip only has a new picture to offer when the decoder
-        // says so, and the recorder can only take one every 1/30 s — so a
-        // 24 fps clip on a 144 Hz screen is drawn 24 times a second, not 144.
-        const due = now - painted >= frameGap - 1;
-        if (due && (fresh || now - painted > staleAfter)) {
-          fresh = false;
+        if (now - painted >= paintGap - 1) {
           painted = now;
           renderToCanvas(canvas, state, assets, scale);
           const elapsed = Math.max(0, video.currentTime - clip.start);
-          // Reporting every frame would re-render React 30 times a second for
-          // a progress bar that moves 3%.
-          if (frames % 6 === 0) options.onProgress?.(Math.min(1, elapsed / clip.length));
+          // Reporting every paint would re-render React 60 times a second for
+          // a progress bar that moves 2%.
+          if (frames % 12 === 0) options.onProgress?.(Math.min(1, elapsed / clip.length));
           frames += 1;
         }
 
@@ -366,30 +380,15 @@ export async function renderCardVideo(
         }
       };
 
-      // Announces each decoded frame, so the loop above paints on the clip's
-      // cadence rather than the display's. Firefox has no such callback and
-      // falls through to painting on every tick.
-      const onVideoFrame = () => {
-        videoFrame = 0;
-        fresh = true;
-        if (done) return;
-        videoFrame = withCallback.requestVideoFrameCallback!(onVideoFrame);
-      };
-      if (hasFrameCallback) videoFrame = withCallback.requestVideoFrameCallback!(onVideoFrame);
-
       // rAF alone stops firing when the window is hidden or fully covered,
       // which would freeze the picture while the clip kept playing. The timer
       // keeps painting — slowly — in that case.
       const loop = () => {
-        if (!hasFrameCallback) fresh = true;
         tick();
         if (!done) raf = requestAnimationFrame(loop);
       };
       raf = requestAnimationFrame(loop);
-      timer = setInterval(() => {
-        if (!hasFrameCallback) fresh = true;
-        tick();
-      }, Math.round(frameGap)) as unknown as number;
+      timer = setInterval(tick, Math.round(paintGap)) as unknown as number;
 
       // The loop notices the end of the window only when it paints, so a
       // throttled page would overrun by however long it slept. Wall clock
