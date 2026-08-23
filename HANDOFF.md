@@ -1,8 +1,13 @@
 # Handoff — PnL Card Studio
 
-Written 2026-08-23. Repo: <https://github.com/Artem2103/PnL> (private), initial commit `5216f81`.
-Working directory `D:\PnL`. Read `README.md` first for what the app *is*; this file covers what a
-newcomer would otherwise have to rediscover.
+Written 2026-08-23, revised 2026-08-24 through `e3c48ee`. Repo:
+<https://github.com/Artem2103/PnL> (private), initial commit `5216f81`. Working directory `D:\PnL`.
+Read `README.md` first for what the app *is*; this file covers what a newcomer would otherwise have
+to rediscover.
+
+The 2026-08-24 pass was a performance rebuild plus two layout fixes, on branch
+`perf/render-loop-and-square-avatar` (`a95983c`, `e3c48ee`) — **not yet merged to `main`**. Most of
+what follows about the render loop and the recorder is new in those two commits.
 
 ---
 
@@ -13,7 +18,7 @@ Working and verified end to end. `npm run dev` → <http://localhost:5173>.
 ```bash
 npm install
 npm run dev
-npm test          # 61 tests, all passing
+npm test          # 96 tests, all passing
 npm run typecheck
 npm run build     # clean
 ```
@@ -86,7 +91,8 @@ await window.__pnlCheckExport()
 ```
 
 It renders the export path at the preview's exact pixel size and diffs the bitmaps
-(`src/lib/selftest.ts`). `maxDelta: 0` means byte-identical. It has returned 0 with no background,
+(`src/lib/selftest.ts`). `maxDelta: 0` means byte-identical, and it still returns 0 after the
+foreground-layer cache landed. It has returned 0 with no background,
 with a photo, and with a photo recentred (zoom 1, offsets 0). At zoom 1.58 it returns
 `maxDelta: 1, mismatchRatio: 0, ok: true` — one 1/255 channel step from the GPU's resampling of the
 same image twice, under the check's 2/255 threshold. Run it after any change to the renderer.
@@ -97,6 +103,47 @@ restart the clip on the next frame. And it needs the window actually in front: t
 repainted from `requestAnimationFrame`, which does not fire in a hidden or fully covered tab, so the
 on-screen bitmap would be stale and the diff meaningless. The check detects that and says so in
 `note` instead of reporting a failure. If you get that note, bring the window forward and re-run.
+
+---
+
+## How the preview paints
+
+Rebuilt on 2026-08-24. The old loop resolved assets and repainted inside one effect keyed on the
+whole `state` object, so **every keystroke cancelled the animation loop and re-ran async
+`prepareAssets` before anything could repaint**. With a clip selected that restarted the loop on
+every slider tick. If you find yourself putting `state` in that effect's dependency array again,
+this is what you are re-introducing.
+
+The shape now, all in `src/components/CardPreview.tsx`:
+
+- `stateRef` / `playingRef` / `cssWidthRef` are assigned during render. The loop reads refs, never
+  closures, so React re-renders never tear it down.
+- `request()` sets a dirty flag and schedules **one** animation frame. `useEffect(request)` with no
+  dependency array runs after every commit, which is what connects "anything changed" to "repaint".
+- `pump()` paints only when dirty, then re-schedules itself **only if a clip is playing**. A still
+  card settles to nothing at all: no animation frame, no timer, no wake-ups on battery.
+- A clip re-arms the dirty flag from `requestVideoFrameCallback`, so it paints once per decoded
+  frame rather than once per display refresh. Firefox has no such callback and falls back to the
+  refresh rate.
+- Preview scale adapts *downward only* when frames stretch past 24 ms, recovering after 1.5 s of
+  headroom. Exports are unaffected — they always render at their full scale.
+
+Width is deliberately **not** React state; a `ResizeObserver` writing to state re-rendered the whole
+editor on every observer callback during a window drag.
+
+### Two caches you can invalidate by accident
+
+**Text metrics** (`primitives.ts`) are memoised process-wide by font + string: measured 23.5x
+faster, worth ~15.5 ms/s at 30 fps. This is only sound because the card is drawn in *design units*
+and the scale lives in the canvas transform, so a 1x PNG and a 3x PNG measure identically. **Push
+the scale downstream into the drawing code and this cache silently becomes a bug.** It is dropped
+whenever a webfont finishes loading, which is the only other thing that can change an answer.
+
+**The foreground layer** is described under the invariant above. Its key is the thing to keep
+honest; `src/lib/canvas/draw.test.ts` pins it from both sides.
+
+Rough per-frame cost at 2x, measured in Chrome: layered `renderToCanvas` 0.21 ms against 1.26 ms
+for an unlayered `drawCard`.
 
 ---
 
@@ -153,10 +200,46 @@ works where brightness thresholds fail, e.g. when artwork fills the card.
 | Card | 840 × 570 |
 | Accent block | x35 y177, 385 × 79, sharp corners, text ink inset 19 |
 | Rows | label x55, value x301, baselines 319 / 360 / 401 |
+| Avatar | x35 y446, 52 × 52, **square, no corner radius** |
+| Handle | ink x103, baseline 486 |
+| Footer | icon x36 y542 23 × 15, ink x59, baseline 554 |
 | Colours | accent `#2FE3AC`, text `#EAEDFF`, on-accent `#020307` |
 
-Two header values **deliberately differ** from the reference, on request: logo slot 66 × 54 (was
-47 × 38) and wordmark 34px (was 42px). Their tracking was scaled with the size.
+Four values **deliberately differ** from the reference, all on request:
+
+- logo slot 66 × 54 (was 47 × 38) and wordmark 34px (was 42px); tracking scaled with the size.
+- avatar x35 (was 32) with square corners (was radius 12), so its left edge shares the accent
+  block's and the title's. Handle moved 100 → 103 to hold its original 16px gap off the avatar.
+- footer dropped 35px (icon y507 → 542, baseline 519 → 554) so it sits the same distance below the
+  avatar as the avatar sits below the last stat row. Measured **off painted ink, not baselines**,
+  because that is what the eye reads: last row ends y403, avatar starts y446 (42 blank rows); avatar
+  ends y497, footer starts y540 (42). Side effect: the bottom margin is 12px against 35px on the
+  left. That is the arithmetic of the equal-gap rule on a 570px card, and it was flagged as such —
+  subtract 8 from both footer values for a 20px margin and a 34px gap if it ever reads too tight.
+
+To re-measure any of this, render with no background and scan for ink bands rather than trusting the
+spec numbers — antialiasing puts a row's visible bottom ~2px below its baseline, which is enough to
+make "equal" gaps look unequal:
+
+```js
+await document.fonts.ready;                      // see the warning below
+const render = await import('/src/lib/render.ts');
+const { createDefaultState } = await import('/src/lib/defaults.ts');
+const state = { ...createDefaultState(), avatarId: null, logoId: null };
+const bare = { ...state, artwork: { ...state.artwork, imageId: null } };
+const c = render.renderToOffscreenCanvas(bare, await render.prepareAssets(bare), 1); // 1x = design px
+// then threshold luminance per row over the text column and group consecutive inked rows
+```
+
+Two things will hand you wrong numbers here:
+
+- **Check `document.fonts.check('400 40px Inter')` before believing any width.** `ensureFonts()`
+  gives up after 2.5 s and paints in the fallback stack, which is wider than Inter. A measurement
+  taken in that window looks like a layout regression and is not one.
+- **The README's reference/render table was measured against the reference cards' own strings**,
+  not against the default sample state. `@yourhandle` is ~35px wider than the handle those numbers
+  describe, so measuring the default card and comparing to that table will look like a mismatch.
+  Set the same strings first, or compare only against a render you measured the same way.
 
 ---
 
@@ -187,10 +270,14 @@ slack, which the copy under the sliders says out loud so it does not read as a b
   `readyState < 2` — a clip that has not buffered a frame would paint nothing and blank the card.
 - The preview keeps its own cached `<video>`; the exporter opens a **separate** one
   (`openVideoForExport`), so recording never disturbs what is on screen.
-- The preview redraws every rAF tick while a clip is selected, even when paused. That is what lets
-  the export check compare a held frame.
+- The preview paints **on demand**, not on every tick — see *How the preview paints* below. A
+  paused clip therefore holds its last painted frame, which is still what lets the export check
+  compare against a held frame, but nothing repaints until something marks the card dirty.
+- Video always records at 2x (1680 x 1140) whatever the scale chips say, and at >= 6 Mbit/s. Both
+  floors exist because the file gets re-encoded by whatever platform it is posted to; see the
+  recorder trap below for why the frame *cadence* matters more than either.
 
-### Three traps that cost time here
+### Four traps that cost time here
 
 1. **Never route a playing element into a suspended `AudioContext`.** `createMediaElementSource`
    hands the element's output to the context permanently; if that context is not running, the sink
@@ -207,8 +294,38 @@ slack, which the copy under the sliders says out loud so it does not read as a b
    opened the file on a held frame, and letting the paint loop detect the end meant overrunning by
    however long it had slept: a 3.0 s window produced a 3.8 s file. With both fixed it produces
    2.98 s.
+4. **Paint the canvas *faster* than the recorder samples it — never at the same rate, and never
+   gated on the decoder.** `captureStream(fps)` samples the canvas when it changes and enforces a
+   minimum of `1/fps` between the frames it keeps. Paint at exactly `fps` and ordinary timer jitter
+   lands half the paints just inside the previous interval, where they are silently discarded; the
+   file then holds 15-20 *irregularly spaced* frames a second and plays back as judder. This was
+   introduced deliberately in `a95983c` as an "optimisation" — gating each paint on
+   `requestVideoFrameCallback` so a 24 fps clip was not drawn 144 times a second — and it made every
+   export stutter. Fixed in `e3c48ee`: the recorder loop paints at `VIDEO_FPS * 2`,
+   unconditionally. The saving was never worth having; a paint is ~0.2 ms now that the foreground is
+   cached. **The preview keeps the per-decoded-frame gating**, because no encoder is involved there
+   and the CPU saving is real. Do not unify the two loops.
 
-### What was verified in the browser
+### What was verified in the browser, 2026-08-24
+
+Chrome, dev server, with the *photo* background path (a clip could not be loaded — see the hidden-tab
+note in Environment):
+
+- `__pnlCheckExport()` → `maxDelta: 0` after the foreground-layer cache landed, i.e. the PNG is
+  still byte-identical to the preview.
+- Layered `renderToCanvas` vs an unlayered `drawCard`, diffed at 1×/2×/3× on both the image and the
+  video branch: `maxDelta: 1`, zero channels off by more than 2. The 1/255 is premultiplied alpha
+  rounded once more at glyph edges; every path takes the same blit, so they stay identical to each
+  other.
+- Typing in the title repaints the card on each keystroke (confirmed by driving React's `onChange`
+  and re-running the export diff, and visually).
+- Ink-band scan confirming the avatar and footer geometry: bands at 300–323, 338–362, 379–403,
+  446–497, 540–557; gaps of exactly 42 rows on either side of the avatar.
+- Text metrics benchmark: 0.5397 ms → 0.0230 ms per frame's worth of measurement.
+
+**Not verified: any clip playing, recording, or the exported file.** The tab was hidden throughout.
+
+### What was verified in the browser, 2026-08-23
 
 Chrome on this machine, with a synthetic 5 s MP4 (a canvas recording, so no personal media was
 used): clip preview plays under the card; drag pans horizontally and, once zoomed, vertically;
@@ -234,10 +351,12 @@ still produced a 1680 × 1140 PNG with a clip selected; console clean.
   generator for counterfeit cards attributed to them.
 - **One format only.** Portrait/square variants existed in an earlier version and were removed
   deliberately.
-- **A clip is capped at 15 s on the card, and video export at 2×.** The cap is the format's, not the
-  encoder's — these cards are posted. 3× would cost far more encoding time than the pixels are
-  worth, so `renderCardVideo` clamps it and the export bar shows the resolution it will use rather
-  than the one the chips say.
+- **A clip is capped at 15 s on the card, and video export is pinned at 2×** — a floor as well as a
+  ceiling, via `videoScaleFor()`. The 15 s cap is the format's, not the encoder's; these cards are
+  posted. 3× would cost far more encoding time than the pixels are worth. 1× is worse: an 840 × 570
+  video is re-encoded by every platform and arrives with its numbers smeared, which is exactly what
+  was reported. The chips are shared with the PNG export, so the floor lives in `videoScaleFor`
+  rather than in a hidden 1× chip, and the clip bar says "video 2×" so the difference is visible.
 - **The PNG of a video card is the frame on screen**, not a fixed frame. The exporter and the
   preview share the same element, so pausing the preview picks the frame.
 
@@ -245,11 +364,12 @@ still produced a 1680 × 1140 PNG with a clip selected; console clean.
 
 ## Open items
 
-1. **Symmetry.** The user flagged "some symmetry maybe" but has not said where. Two candidates:
-   the header — the logo now spans y37–91 while the wordmark baseline stayed at 70, so their
-   optical centres no longer align (the reference had both near y55); or the left edge — the accent
-   block starts at x35 while row labels indent to x55, which is the reference's own asymmetry.
-   **Ask before changing.**
+1. **Symmetry — answered, partly.** The 2026-08-24 pass resolved what was meant: the avatar block
+   was to line up with the accent block's left edge (done, x32 → x35, square corners), and the
+   footer was to sit the same distance below the avatar as the avatar sits below the last stat row
+   (done). **Still open from the original note:** the header. The logo spans y37–91 while the
+   wordmark baseline stayed at 70, so their optical centres no longer align — the reference had both
+   near y55. Not raised since. Ask before changing.
 2. **Loss state is unverified.** All five reference cards show a profit, so the red used for a
    negative result is an assumption, not a measurement. One value per theme in `themes.ts`.
 3. **Percentage semantics.** `PNL %` is return on *margin* for the position. If MT5 shows return
@@ -263,6 +383,14 @@ still produced a 1680 × 1140 PNG with a clip selected; console clean.
 6. **The exported file runs slightly long.** 2.98 s for a 3.0 s window is the recorder's start/stop
    latency, not drift. If it ever matters, trim on the encoder side rather than shortening the
    window — the clip would then end early on screen.
+7. **The video export fix in `e3c48ee` has not been watched back.** The judder diagnosis (paint
+   cadence vs `captureStream` sampling) is sound and the bitrate/scale floors are arithmetic, but
+   nobody has yet played an exported file after the fix — see the environment note about hidden
+   tabs for why it could not be done from the agent side. **This is the first thing to confirm.** If
+   it still judders, instrument the recorded frame timestamps directly (`ondataavailable` chunk
+   arrival times, or decode the file and read presentation timestamps) rather than guessing again.
+8. **Nothing on this branch is merged.** `perf/render-loop-and-square-avatar` sits ahead of `main`
+   by `a95983c` and `e3c48ee`.
 
 ---
 
@@ -279,6 +407,22 @@ still produced a 1680 × 1140 PNG with a clip selected; console clean.
   pass its path.
 - **Chrome CDP screenshots sometimes capture before the canvas composites**, showing a blank
   preview that is not a bug. Confirm by reading pixels back with `getImageData` before chasing it.
+- **A driven Chrome tab can sit at `document.visibilityState === "hidden"` indefinitely**, and that
+  is not cosmetic: `requestAnimationFrame` never fires, `setTimeout` clamps to ~1 s, and **media
+  will not decode at all** — a `<video>` stays at `readyState 0` / `networkState 2` forever. Every
+  attempt to synthesise a test clip with `MediaRecorder` in that state produced an undecodable file.
+  So the preview genuinely does not repaint while hidden (correct behaviour — it catches up on the
+  next frame once visible), and any timing or media result from such a tab is meaningless. Check
+  `document.visibilityState` **first**, before believing anything. Do not "fix" this by shimming
+  `requestAnimationFrame` to `setTimeout` mid-session either: a real animation-frame handle already
+  parked in the loop's `rafRef` never fires, so `request()` sees a pending frame and schedules
+  nothing, and the preview deadlocks in a way that looks exactly like a render bug.
+- **Do not let a literal NUL byte into a source file.** A cache-key separator written as the actual
+  U+0000 character, rather than as an escape sequence in the source, works perfectly at runtime —
+  it compiles to the same character — but git then classifies the whole file as binary (`-text`) and
+  it loses diffs, blame and merges. This happened twice here, in `primitives.ts` and `draw.ts`, and
+  once more in this very file while documenting it. Check with `git ls-files --eol` (want `lf`, not
+  `-text`) or scan the bytes; a `Bin 10269 -> 12973 bytes` line in `git show --stat` is the tell.
 
 ---
 
@@ -301,12 +445,18 @@ src/
     canvas/
       spec.ts            measured geometry — change layout here, not in draw.ts
       placement.ts       cover fit, zoom, pan — shared by draw and drag  (tested)
-      primitives.ts      ink-aligned text, tracking, rounded rects
-      draw.ts            the card itself
+      primitives.ts      ink-aligned text, tracking, cached metrics
+      draw.ts            the card itself + foregroundKey                 (tested)
   components/            preview, controls, media picker, inputs
 ```
 
 Tests sit next to their subjects as `*.test.ts`. There are no component tests — the renderer is
 where the risk is, and `__pnlCheckExport` covers the part that matters most. The video tests cover
-the parts that are pure (mime preference, the trim window, filenames); the recorder itself was
-verified in the browser, described above.
+the parts that are pure (mime preference, the trim window, filenames, the 2× scale floor); the
+recorder itself has to be verified in the browser.
+
+`canvas/draw.test.ts` is the odd one out: it tests no drawing. It pins `foregroundKey` from both
+sides — every input the foreground reads must move the key, every background-only input must leave
+it alone. That is the failure mode the layer cache introduces, and it is invisible without a clip
+playing, so it is worth the 31 cases. **Add a case there whenever you add a control that changes
+anything above the background.**

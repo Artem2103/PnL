@@ -49,10 +49,15 @@ reference images** rather than eyeballed — bounding boxes of the glyph ink, th
 the avatar and the icons, read pixel by pixel. Font sizes were then derived from the measured ink
 heights.
 
-One number is deliberately *not* the reference's. The avatar sat at x=32 while the accent block and
-the title sit at x=35, so the bottom-left of the card was three pixels out of column with the rest
-of it. The avatar is now a sharp-cornered square on x=35, sharing the block's left edge, with the
-handle following at the same 16px gap it always had.
+Two parts of the bottom-left corner are deliberately *not* the reference's:
+
+- The avatar sat at x=32 while the accent block and the title sit at x=35, so that corner was three
+  pixels out of column with the rest of the card. It is now a sharp-cornered square on x=35, sharing
+  the block's left edge, with the handle following at the same 16px gap it always had.
+- The footer sat 8px under the avatar with a 48px dead band beneath it. It now sits the same
+  distance below the avatar as the avatar sits below the last stat row — 42 blank rows either side,
+  measured off painted ink rather than baselines, since antialiasing puts a row's visible bottom
+  about 2px below its baseline. The trade-off is a 12px bottom margin against 35px on the left.
 
 Two techniques do most of the work:
 
@@ -78,6 +83,11 @@ Result, reference vs. render, as ink bounding boxes:
 
 Everything is within 1–2px; several are exact. The remaining difference is letterform shape — the
 reference face is not Inter and is not on Google Fonts.
+
+That table is the record of the original calibration, measured against the reference's own strings.
+Two of those elements have since been **moved** on purpose, as described above: the handle 3px right
+(x100 → x103), and the footer 35px down (baseline y519 → y554, ink now y540–557). The widths and
+letterforms are unchanged — only the positions.
 
 Two header values deviate from the reference on purpose: the logo slot is 66×54 rather than 47×38,
 and the wordmark is 34px rather than 42px. Both are single values in `spec.ts` if you want the
