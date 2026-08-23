@@ -1,16 +1,89 @@
 # PnL Card Studio
 
 A web app for traders to turn a closed trade — or a whole month — into a shareable card, and
-download it as a high-resolution PNG or, over a background clip, an MP4. Everything runs
-client-side: no backend, no account, no upload.
+download it as a high-resolution PNG or, over a background clip, an MP4. Every pixel is still drawn
+in the browser — there is no server-side rendering — but the card and the images behind it now live
+in a Supabase account, so they are there when you open the app somewhere else.
 
 ```bash
 npm install
+cp .env.example .env.local   # then fill in the two Supabase values, see below
 npm run dev        # http://localhost:5173
 npm run build      # typecheck + production bundle into dist/
-npm test           # unit tests for the PnL math, formatting and card content
+npm test           # unit tests for the PnL math, formatting, card content and sync
 npm run typecheck
 ```
+
+Setting up a fresh Supabase project takes two one-off steps: paste `supabase/schema.sql` into the
+SQL editor, and put the project's URL and anon key in `.env.local`. Details below.
+
+## Accounts
+
+The app is one page — the studio — behind one gate. `AuthGate` renders the sign-in screen when
+there is no session and the studio when there is; there is no router, because there is nowhere else
+to go.
+
+Set up a project at [supabase.com](https://supabase.com), then copy **Project Settings → API** into
+`.env.local`:
+
+```
+VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-public-key
+```
+
+Vite inlines `VITE_`-prefixed variables at build time, so restart the dev server after editing this
+file. Both values are meant to reach the browser: the anon key is the public half of the pair, and
+what it can read is decided by row-level security rather than by keeping the key secret. The
+`service_role` key must never be put in a `VITE_` variable. With either value missing the sign-in
+screen renders a setup notice instead of a form that could only fail.
+
+Two dashboard settings decide how registration feels:
+
+- **Authentication → Providers → Email** — with *Confirm email* on, `signUp` returns a user but no
+  session, and the form says to check the inbox before signing in. With it off, the new account is
+  signed in immediately and lands straight on the studio.
+- **Authentication → URL Configuration** — the confirmation link returns to the site URL, so every
+  origin the app is served from (including `http://localhost:5173`) has to be listed there, or the
+  link bounces.
+
+Sessions persist in `localStorage` and refresh themselves, so a reload does not ask again. While
+that stored session is being restored the gate shows a spinner rather than the form — flashing a
+sign-in screen at someone who is already signed in is worse than a short wait.
+
+### The schema
+
+Run `supabase/schema.sql` once, whole, in the dashboard's SQL editor. It is written to be
+re-runnable, so applying it again after a change is harmless. It creates:
+
+| | what it holds |
+|---|---|
+| `profiles` | one row per account, created by a trigger on sign-up |
+| `cards` | the card state as JSON, one row per card |
+| `media` | one row per uploaded file — the manifest a second device syncs from |
+| `media` bucket | the bytes, private, partitioned as `<user id>/<file id>` |
+
+Every table has row-level security keyed to `auth.uid()`, and the storage policies match on the
+first path segment. That is the entire security model: the anon key in the browser is not a secret,
+so those policies are the only thing standing between one account and another's. If you change how
+objects are named, change the policies in the same commit.
+
+### What syncs, and when
+
+Both the card and the media library are **local-first**: this browser keeps a copy and the account
+is reconciled behind it, so the editor paints on the first frame instead of after a round trip.
+
+- **The card.** Every edit is written to `localStorage` immediately and pushed to `cards` after a
+  900 ms pause in typing. The topbar shows *Saved* / *Saving...* / *Not saved*. On load the two
+  copies are merged by `chooseCardVersion`: unsaved local edits always win, otherwise the account
+  does. Concurrent edits on two devices are last-write-wins, and nothing here pretends to merge them.
+- **Media.** An upload is written to IndexedDB and appears in the picker at once, then goes up to
+  Storage in the background (the tile shows *Saving...* while it does). Signing in pulls the
+  account's manifest, so files added elsewhere appear as tiles immediately — but their **bytes are
+  only downloaded when something actually draws them**, which is what keeps signing in on a phone
+  from pulling every clip in the library over cellular.
+
+Signing out clears this browser's cached card and media. They are safe in the account, and leaving
+one person's uploads in a shared browser's IndexedDB is not worth the download it saves.
 
 ## The card
 
@@ -158,19 +231,32 @@ a 15 s clip takes 15 s. Points worth knowing:
 
 ## Media and privacy
 
-Uploads never leave the device. A selected photo is decoded, re-encoded through a canvas (capping
-the long edge and **stripping EXIF, including GPS**) and stored as a blob in this browser's
-IndexedDB. There is no server and no network request involved, so media saved in one person's
-browser is not reachable from anyone else's — the browser's origin/profile boundary is what enforces
-it, rather than an access-control check that could be got wrong.
+**This changed when accounts landed, and the previous version of this section said the opposite.**
+Uploads now leave the device — that is the point of them being in your account. What follows is what
+actually happens to them.
+
+A selected photo is decoded and re-encoded through a canvas, capping the long edge and **stripping
+EXIF, including GPS**, *before* anything is sent. The file that reaches Storage is not the file off
+your camera, and it does not carry where the picture was taken.
 
 Video is stored **as uploaded**. Re-encoding a clip in the browser would cost minutes and quality,
-and there is no EXIF block in a video file; its container metadata is left as the camera wrote it,
-which is worth knowing if you share the exported file. The export itself is re-encoded, so only the
-frames and the audio survive into it.
+and there is no EXIF block in a video file; its container metadata is left as the camera wrote it
+and goes up with it. Worth knowing before uploading a clip straight off a phone. The exported card
+is re-encoded, so only frames and audio survive into that.
 
-The trade-off worth stating plainly: storage is per-browser, so media does not follow you to another
-device, and clearing site data removes it.
+The bucket is **private**. Nothing in it is reachable by URL alone: thumbnails are shown through
+signed URLs that expire after an hour, and the storage policies only match objects whose path begins
+with the requesting account's own id. Two accounts cannot see each other's files, and that is
+enforced by row-level security in Postgres rather than by the client asking nicely — which matters,
+because the client is a bundle anyone can read.
+
+What the account holds: your email address, your card's contents, and the images and clips you
+upload. What it does not: anything rendered on a server. Every card is still drawn by the canvas
+renderer in your own browser, and the PNG or MP4 you download never touches the network.
+
+The trade-off worth stating plainly, in the other direction now: your media is on someone else's
+computer. It follows you to a new device, and it is also there to be breached, subpoenaed, or lost
+if the project is deleted. If that is the wrong trade for a particular file, do not upload it.
 
 ## Layout
 
@@ -178,12 +264,20 @@ device, and clearing site data removes it.
 src/
   types.ts               card state
   lib/
+    supabase.ts          the Supabase client, or null when unconfigured
+    auth.tsx             session context: sign up / in / out, library sync
+    library.ts           the media library the app talks to: cache + account
+    useCloudCard.ts      card state, merged against the account          (tested)
+    remote/
+      cards.ts           the cards table
+      media.ts           the media table and the storage bucket
     pnl.ts               trade and period math                      (tested)
     content.ts           state -> the exact strings on the card     (tested)
     format.ts            price, money, compact money, percentages   (tested)
     themes.ts            accents
     fonts.ts             webfont readiness gate
-    images.ts            IndexedDB media library: photos, clips, avatar, logo
+    images.ts            IndexedDB cache for the media library
+    defaults.ts          card defaults, hydration, per-account cache     (tested)
     render.ts            the single paint entry point, preview + export
     share.ts             PNG download / clipboard / Web Share
     video.ts             clip trim window + MediaRecorder export        (tested)
@@ -193,7 +287,10 @@ src/
       placement.ts       cover fit, zoom and pan for the background     (tested)
       primitives.ts      ink-aligned text, tracking, rounded rects
       draw.ts            the card itself
-  components/            preview, controls, inputs
+  components/
+    AuthGate.tsx         session? studio : sign-in screen
+    AuthScreen.tsx       the registration and login form
+    ...                  preview, controls, inputs
 ```
 
 ## Notes and limits

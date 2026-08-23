@@ -2,7 +2,13 @@ import type { CardState } from '../types';
 import { MAX_CLIP_SECONDS } from './images';
 import { DEFAULT_THEME_ID } from './themes';
 
-/** Bumped from v1: the card model changed shape entirely. */
+/**
+ * Bumped from v1: the card model changed shape entirely.
+ *
+ * Since accounts landed this is a *prefix*: the real keys are
+ * `pnl-card-studio:v2:<user id>`. The bare key is only read once more, by
+ * `takeOrphanCard`, to rescue the card someone made before signing up.
+ */
 export const STORAGE_KEY = 'pnl-card-studio:v2';
 
 /**
@@ -91,20 +97,87 @@ export function hydrateState(raw: unknown): CardState {
   };
 }
 
-export function loadState(): CardState {
+/**
+ * What one account's card looks like in this browser's cache.
+ *
+ * `cardId` is the row in `public.cards` this state belongs to, and `updatedAt`
+ * is the server's timestamp for the last version that was successfully saved —
+ * *not* the time of the last keystroke. That distinction is what lets a reload
+ * tell "my edits are ahead of the server" from "the server is ahead of me".
+ */
+export interface CardSnapshot {
+  cardId: string | null;
+  state: CardState;
+  updatedAt: number;
+  /**
+   * There are edits here that the account has not accepted yet — a save still
+   * in flight, a closed tab, an aeroplane.
+   *
+   * Without this the merge on next load is wrong in the one case that matters:
+   * `updatedAt` only moves when a save *succeeds*, so unsaved edits leave it
+   * behind the server's and the reload would helpfully throw them away.
+   */
+  dirty: boolean;
+}
+
+/** Per-account, so two people sharing a browser never see each other's card. */
+function keyFor(userId: string): string {
+  return `${STORAGE_KEY}:${userId}`;
+}
+
+export function loadLocalCard(userId: string): CardSnapshot {
+  const empty: CardSnapshot = {
+    cardId: null,
+    state: createDefaultState(),
+    updatedAt: 0,
+    dirty: false,
+  };
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return createDefaultState();
-    return hydrateState(JSON.parse(raw));
+    const raw = localStorage.getItem(keyFor(userId));
+    if (!raw) return empty;
+    const parsed = JSON.parse(raw) as Partial<CardSnapshot>;
+    return {
+      cardId: typeof parsed.cardId === 'string' ? parsed.cardId : null,
+      state: hydrateState(parsed.state),
+      updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : 0,
+      dirty: parsed.dirty === true,
+    };
   } catch {
-    return createDefaultState();
+    return empty;
   }
 }
 
-export function saveState(state: CardState): void {
+export function saveLocalCard(userId: string, snapshot: CardSnapshot): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(keyFor(userId), JSON.stringify(snapshot));
   } catch {
-    /* Private mode or a full quota — the card still works, it just won't persist. */
+    /* Private mode or a full quota — the card still works and still syncs to
+       the account; this browser just won't have it ready on the next paint. */
+  }
+}
+
+export function clearLocalCard(userId: string): void {
+  try {
+    localStorage.removeItem(keyFor(userId));
+  } catch {
+    /* Nothing to do — a cache that will not clear is not worth an error. */
+  }
+}
+
+/**
+ * The card left behind by the version of this app that had no accounts, if it
+ * is still there. Returned once and then removed, so the first account to sign
+ * in adopts it and later ones start clean — the same rule `claimOrphans` uses
+ * for media, for the same reason.
+ */
+export function takeOrphanCard(): CardState | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const state = hydrateState(JSON.parse(raw));
+    localStorage.removeItem(STORAGE_KEY);
+    return state;
+  } catch {
+    return null;
   }
 }

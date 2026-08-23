@@ -1,15 +1,34 @@
 /**
- * Media library for artwork (photo or clip), avatars and logo marks.
+ * Local half of the media library: artwork (photo or clip), avatars and logos.
  *
- * Uploads never leave the device: files are stored in this browser's
- * IndexedDB. There is no server and no network call, so one person's media is
- * unreachable from anyone else's browser — the origin boundary is what
- * enforces it.
+ * This file is a **cache**, not the source of truth. Since media became
+ * account-backed, the durable copy lives in the account's Supabase Storage
+ * bucket and `lib/library.ts` is what the app talks to. IndexedDB stays in
+ * front of it because the renderer needs blob URLs — decoding a background
+ * over the network on every frame is not a thing that can work — and because
+ * re-downloading an 80 MB clip on every reload would be absurd.
  *
- * Photos are re-encoded through a canvas, which caps the long edge and drops
- * EXIF (including GPS). Video is stored byte-for-byte: re-encoding it in the
+ * Two consequences shape everything below:
+ *
+ * 1. A record may exist **without its bytes**. That is what a file uploaded on
+ *    another device looks like here until something asks to draw it. Such a
+ *    record has metadata and a `storagePath` but no `blob`; `loadMedia` fills
+ *    it in through the resolver `library.ts` installs.
+ * 2. Records are scoped by `userId`. Nothing here is ever listed for an
+ *    account that does not own it, and `purgeUser` empties the cache on sign
+ *    out so a shared browser does not keep the last person's uploads.
+ *
+ * Deliberately no Supabase import: keeping the network on the other side of
+ * `setBlobResolver` is what lets this file be reasoned about (and opened in a
+ * test) without a client, and stops the cache and the transport from growing
+ * into each other.
+ *
+ * Photos are still re-encoded through a canvas on the way in, which caps the
+ * long edge and drops EXIF (including GPS) — so that happens before anything
+ * is uploaded, not after. Video is stored byte-for-byte: re-encoding it in the
  * browser would cost minutes and quality, and a video file carries no EXIF
- * block. Its container metadata is left as the camera wrote it.
+ * block. Its container metadata is left as the camera wrote it, and now it
+ * leaves the device, which is worth knowing.
  */
 
 const DB_NAME = 'pnl-card-studio';
@@ -53,10 +72,24 @@ export function isVideoFile(file: File): boolean {
 
 export interface MediaRecord {
   id: string;
+  /**
+   * The account this belongs to. Empty on records written before accounts
+   * existed — `claimOrphans` hands those to the first account that signs in,
+   * so a returning user keeps the library they built anonymously.
+   */
+  userId: string;
   role: ImageRole;
   kind: MediaKind;
   name: string;
-  blob: Blob;
+  /**
+   * Absent when the account's manifest knows about this file but this browser
+   * has not downloaded it — the normal state for anything uploaded on another
+   * device. `ensureBlob` is what turns that into bytes.
+   */
+  blob?: Blob;
+  /** Kept so the blob can be re-created with the right type after a download. */
+  mimeType: string;
+  byteSize: number;
   width: number;
   height: number;
   /** Seconds; zero for stills. */
@@ -68,6 +101,9 @@ export interface MediaRecord {
    * a dozen postage stamps. Absent on records written before this existed.
    */
   poster?: Blob;
+  /** Object path in the account's bucket; unset until the upload lands. */
+  storagePath?: string;
+  posterPath?: string;
 }
 
 export interface MediaSummary {
@@ -79,10 +115,19 @@ export interface MediaSummary {
   height: number;
   duration: number;
   createdAt: number;
-  /** Object URL for the picker thumbnail. Revoked by `releaseThumbnails`. */
+  /**
+   * Thumbnail source. An object URL when the bytes are cached here, a signed
+   * Storage URL when they are not. `releaseThumbnails` revokes either — calling
+   * `revokeObjectURL` on an https URL is a no-op, so the caller need not care
+   * which it got.
+   */
   url: string;
-  /** Video only: object URL of the poster still, when the record has one. */
+  /** Video only: URL of the poster still, when the record has one. */
   posterUrl?: string;
+  /** True while the upload to the account is still in flight. */
+  pending?: boolean;
+  /** True when the bytes are not in this browser yet. */
+  remoteOnly?: boolean;
 }
 
 export class ImageError extends Error {}
@@ -125,9 +170,26 @@ function tx<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequ
   );
 }
 
+/**
+ * Must be a real UUID, not just something unique: this id is the primary key of
+ * the `media` row too, and Postgres will reject anything else. `randomUUID` is
+ * missing outside secure contexts, so the fallback builds a v4 by hand rather
+ * than falling back to a readable-but-invalid id.
+ */
 function makeId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
-  return `img_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  const bytes = new Uint8Array(16);
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40; // version 4
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80; // variant 1
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 /** Records written before roles existed are artwork. */
@@ -138,6 +200,11 @@ function roleOf(record: MediaRecord): ImageRole {
 /** Records written before video existed are stills. */
 function kindOf(record: MediaRecord): MediaKind {
   return record.kind === 'video' ? 'video' : 'image';
+}
+
+/** Records written before accounts existed belong to nobody until claimed. */
+function ownerOf(record: MediaRecord): string {
+  return record.userId ?? '';
 }
 
 async function decode(file: Blob): Promise<{ source: CanvasImageSource; width: number; height: number }> {
@@ -346,7 +413,16 @@ async function probeVideo(
 /* Store                                                               */
 /* ------------------------------------------------------------------ */
 
-export async function addImage(file: File, role: ImageRole): Promise<MediaRecord> {
+/**
+ * Normalises an upload and writes it to the local cache. It does **not** touch
+ * the account — `library.addMedia` calls this first and uploads second, so the
+ * picker can show the new tile immediately instead of after a 40 MB round trip.
+ */
+export async function addLocalMedia(
+  file: File,
+  role: ImageRole,
+  userId: string,
+): Promise<MediaRecord> {
   const video = isVideoFile(file);
 
   if (video && role !== 'artwork') {
@@ -366,8 +442,7 @@ export async function addImage(file: File, role: ImageRole): Promise<MediaRecord
   }
 
   const limits = ROLE_LIMITS[role];
-  const existing = await listImages(role);
-  releaseThumbnails(existing);
+  const existing = await listRecords(role, userId);
   if (existing.length >= limits.max) {
     throw new ImageError(`You can keep ${limits.max} ${role} files — delete one first.`);
   }
@@ -378,63 +453,146 @@ export async function addImage(file: File, role: ImageRole): Promise<MediaRecord
 
   const record: MediaRecord = {
     id: makeId(),
+    userId,
     role,
     kind: video ? 'video' : 'image',
     name: file.name.replace(/\.[^.]+$/, '').slice(0, 48) || role,
     blob: media.blob,
+    mimeType: media.blob.type || (video ? 'video/mp4' : 'image/webp'),
+    byteSize: media.blob.size,
     width: media.width,
     height: media.height,
     duration: media.duration,
     createdAt: Date.now(),
     poster: media.poster,
   };
-  await tx('readwrite', (store) => store.put(record));
+  await putRecord(record);
   return record;
 }
 
-export async function getImage(id: string): Promise<MediaRecord | null> {
+export async function getRecord(id: string): Promise<MediaRecord | null> {
   const record = await tx<MediaRecord | undefined>('readonly', (store) => store.get(id));
   return record ?? null;
 }
 
-export async function listImages(role: ImageRole): Promise<MediaSummary[]> {
-  const records = await tx<MediaRecord[]>('readonly', (store) => store.getAll());
-  return records
-    .filter((record) => roleOf(record) === role)
-    .sort((a, b) => b.createdAt - a.createdAt)
-    .map((record) => ({
-      id: record.id,
-      role: roleOf(record),
-      kind: kindOf(record),
-      name: record.name,
-      width: record.width,
-      height: record.height,
-      duration: record.duration ?? 0,
-      createdAt: record.createdAt,
-      url: URL.createObjectURL(record.blob),
-      posterUrl: record.poster ? URL.createObjectURL(record.poster) : undefined,
-    }));
+export async function putRecord(record: MediaRecord): Promise<void> {
+  await tx('readwrite', (store) => store.put(record));
 }
 
-export async function deleteImage(id: string): Promise<void> {
-  await tx('readwrite', (store) => store.delete(id));
-  const cached = mediaCache.get(id);
-  if (cached) {
-    if (cached.media.element instanceof HTMLVideoElement) {
-      cached.media.element.pause();
-      cached.media.element.removeAttribute('src');
-      cached.media.element.load();
-    }
-    URL.revokeObjectURL(cached.url);
-    mediaCache.delete(id);
+/** Newest first, and only ever this account's. */
+export async function listRecords(role: ImageRole, userId: string): Promise<MediaRecord[]> {
+  const records = await tx<MediaRecord[]>('readonly', (store) => store.getAll());
+  return records
+    .filter((record) => roleOf(record) === role && ownerOf(record) === userId)
+    .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export async function allRecordsFor(userId: string): Promise<MediaRecord[]> {
+  const records = await tx<MediaRecord[]>('readonly', (store) => store.getAll());
+  return records.filter((record) => ownerOf(record) === userId);
+}
+
+/**
+ * Adopts anything left in this browser from before there were accounts, plus
+ * anything a *previous* build wrote without an owner. Runs once per sign-in and
+ * is a no-op afterwards, because the records it moves stop matching `''`.
+ *
+ * Whichever account signs in first gets them. That is the only answer available
+ * — the records carry no hint of who made them — and it matches what the person
+ * who uploaded them expects to see.
+ */
+export async function claimOrphans(userId: string): Promise<number> {
+  const records = await tx<MediaRecord[]>('readonly', (store) => store.getAll());
+  const orphans = records.filter((record) => !ownerOf(record));
+  for (const orphan of orphans) {
+    await putRecord({ ...orphan, userId });
   }
+  return orphans.length;
+}
+
+/** Local delete only. `library.deleteMedia` removes the account copy too. */
+export async function deleteRecord(id: string): Promise<void> {
+  await tx('readwrite', (store) => store.delete(id));
+  evictFromCache(id);
+}
+
+/**
+ * Empties this browser's cache of one account's media. Called on sign-out: the
+ * bytes are safe in the bucket, and leaving a stranger's uploads in IndexedDB
+ * on a shared machine is not worth the download they save.
+ */
+export async function purgeUser(userId: string): Promise<void> {
+  const records = await allRecordsFor(userId);
+  for (const record of records) {
+    await tx('readwrite', (store) => store.delete(record.id));
+    evictFromCache(record.id);
+  }
+}
+
+function evictFromCache(id: string): void {
+  const cached = mediaCache.get(id);
+  if (!cached) return;
+  if (cached.media.element instanceof HTMLVideoElement) {
+    cached.media.element.pause();
+    cached.media.element.removeAttribute('src');
+    cached.media.element.load();
+  }
+  URL.revokeObjectURL(cached.url);
+  mediaCache.delete(id);
 }
 
 export function releaseThumbnails(items: MediaSummary[]): void {
   for (const item of items) {
+    // Harmless on the signed https URLs a not-yet-downloaded record gets.
     URL.revokeObjectURL(item.url);
     if (item.posterUrl) URL.revokeObjectURL(item.posterUrl);
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Fetching bytes this browser does not have                           */
+/* ------------------------------------------------------------------ */
+
+export type BlobResolver = (record: MediaRecord) => Promise<Blob | null>;
+
+let resolveRemoteBlob: BlobResolver | null = null;
+
+/**
+ * Installed once by `library.ts`. This indirection is the seam that keeps the
+ * cache free of any Supabase import — and it means a record with no bytes and
+ * no resolver degrades to "missing", not to a crash.
+ */
+export function setBlobResolver(resolver: BlobResolver | null): void {
+  resolveRemoteBlob = resolver;
+}
+
+const blobFetches = new Map<string, Promise<MediaRecord | null>>();
+
+/**
+ * The record with its bytes present, downloading them if this is the first time
+ * this browser has needed them. Concurrent callers share one download — the
+ * preview, the picker and an export can all ask for the same clip at once.
+ */
+export async function ensureBlob(record: MediaRecord): Promise<MediaRecord | null> {
+  if (record.blob) return record;
+  if (!record.storagePath || !resolveRemoteBlob) return null;
+
+  const inFlightFetch = blobFetches.get(record.id);
+  if (inFlightFetch) return inFlightFetch;
+
+  const promise = (async () => {
+    const blob = await resolveRemoteBlob!(record);
+    if (!blob) return null;
+    // Re-read before writing: the picker may have renamed or the sync may have
+    // refreshed this row while the download was running.
+    const current = (await getRecord(record.id)) ?? record;
+    const filled: MediaRecord = { ...current, blob, byteSize: blob.size };
+    await putRecord(filled);
+    return filled;
+  })().finally(() => blobFetches.delete(record.id));
+
+  blobFetches.set(record.id, promise);
+  return promise;
 }
 
 /* ------------------------------------------------------------------ */
@@ -503,8 +661,11 @@ export function loadMedia(id: string): Promise<Media | null> {
   if (pending) return pending;
 
   const promise = (async () => {
-    const record = await getImage(id);
-    if (!record) return null;
+    const stored = await getRecord(id);
+    if (!stored) return null;
+    // Uploaded on another device? The bytes arrive here, once, on first use.
+    const record = await ensureBlob(stored);
+    if (!record?.blob) return null;
     const url = URL.createObjectURL(record.blob);
     const media = await decodeRecord(record, url);
     if (!media) {
@@ -541,8 +702,10 @@ export function peekImageElement(id: string): HTMLImageElement | null {
 export async function openVideoForExport(
   id: string,
 ): Promise<{ element: HTMLVideoElement; duration: number; release: () => void } | null> {
-  const record = await getImage(id);
-  if (!record || kindOf(record) !== 'video') return null;
+  const stored = await getRecord(id);
+  if (!stored || kindOf(stored) !== 'video') return null;
+  const record = await ensureBlob(stored);
+  if (!record?.blob) return null;
   const url = URL.createObjectURL(record.blob);
   const element = makeVideoElement(url);
   try {

@@ -2,14 +2,15 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ImageError,
   acceptAttrFor,
-  addImage,
-  deleteImage,
-  listImages,
+  addMedia,
+  deleteMedia,
+  listMedia,
   maxImagesFor,
   releaseThumbnails,
   type ImageRole,
   type MediaSummary,
-} from '../lib/images';
+} from '../lib/library';
+import { useAuth } from '../lib/auth';
 
 function formatDuration(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return '';
@@ -31,6 +32,8 @@ function ImagePickerView({
   emptyLabel: string;
   hint?: string;
 }) {
+  const { user, librarySyncedAt } = useAuth();
+  const userId = user?.id ?? '';
   const [items, setItems] = useState<MediaSummary[]>([]);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -38,31 +41,40 @@ function ImagePickerView({
   const itemsRef = useRef<MediaSummary[]>([]);
 
   const refresh = useCallback(async () => {
+    if (!userId) return;
     try {
-      const next = await listImages(role);
+      const next = await listMedia(role, userId);
       releaseThumbnails(itemsRef.current);
       itemsRef.current = next;
       setItems(next);
     } catch (error) {
       onError(error instanceof Error ? error.message : 'Could not read your images.');
     }
-  }, [onError, role]);
+  }, [onError, role, userId]);
 
+  // `librarySyncedAt` moves when the account's manifest has been pulled, which
+  // is what turns files uploaded on another device into tiles here.
   useEffect(() => {
     void refresh();
     return () => {
       releaseThumbnails(itemsRef.current);
       itemsRef.current = [];
     };
-  }, [refresh]);
+  }, [librarySyncedAt, refresh]);
 
   const upload = useCallback(
     async (files: FileList | null) => {
       const file = files?.[0];
       if (!file) return;
+      if (!userId) return;
       setBusy(true);
       try {
-        const record = await addImage(file, role);
+        // Resolves once the file is in this browser; the upload to the account
+        // finishes after, and `refresh` clears the tile's "saving" badge.
+        const record = await addMedia(file, role, userId, (uploadError) => {
+          if (uploadError) onError(uploadError.message);
+          void refresh();
+        });
         await refresh();
         onSelect(record.id);
       } catch (error) {
@@ -74,20 +86,20 @@ function ImagePickerView({
         if (inputRef.current) inputRef.current.value = '';
       }
     },
-    [onError, onSelect, refresh, role],
+    [onError, onSelect, refresh, role, userId],
   );
 
   const remove = useCallback(
     async (id: string) => {
       try {
-        await deleteImage(id);
+        await deleteMedia(id, userId);
         if (selectedId === id) onSelect(null);
         await refresh();
-      } catch {
-        onError('Could not delete that image.');
+      } catch (error) {
+        onError(error instanceof Error ? error.message : 'Could not delete that image.');
       }
     },
-    [onError, onSelect, refresh, selectedId],
+    [onError, onSelect, refresh, selectedId, userId],
   );
 
   return (
@@ -154,6 +166,11 @@ function ImagePickerView({
             {item.kind === 'video' ? (
               <span className="bg-tile__badge">{formatDuration(item.duration) || 'clip'}</span>
             ) : null}
+            {item.pending ? (
+              <span className="bg-tile__badge bg-tile__badge--sync" title="Saving to your account">
+                Saving…
+              </span>
+            ) : null}
             <button
               type="button"
               className="bg-tile__delete"
@@ -167,7 +184,7 @@ function ImagePickerView({
       </div>
 
       <p className="muted-note">
-        {items.length}/{maxImagesFor(role)} saved in this browser
+        {items.length}/{maxImagesFor(role)} saved to your account
       </p>
     </div>
   );

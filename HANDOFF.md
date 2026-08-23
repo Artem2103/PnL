@@ -12,6 +12,52 @@ the recorder is new in those commits.
 
 ---
 
+## Start here (2026-08-25)
+
+Accounts landed on branch `feat/supabase-accounts`. Sign-up, sign-in, and per-account storage of the
+card and its images are **written, typechecked, built and unit-tested**. They have **not** been run
+against a real Supabase project, because there were no credentials yet. That is the only thing
+outstanding. Nothing below is a known bug.
+
+**Three steps to see it work:**
+
+1. Create a project at [supabase.com](https://supabase.com). In **SQL Editor → New query**, paste
+   the whole of `supabase/schema.sql` and run it once.
+2. Copy **Project Settings → API** into `.env.local`:
+   ```
+   VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+   VITE_SUPABASE_ANON_KEY=your-anon-public-key
+   ```
+3. `npm run dev`, then create an account. If **Authentication → Providers → Email → Confirm email**
+   is on, you get a "check your inbox" message; turn it off to skip straight in while testing.
+   Either way, add `http://localhost:5173` under **Authentication → URL Configuration**.
+
+**Then check these six things, in this order.** They are the walkthrough, not a list of suspicions:
+
+| | expected |
+|---|---|
+| sign up, then sign in | the studio opens |
+| edit any field | topbar goes *Saving...* then *Saved* |
+| upload a background | tile appears at once, *Saving...* badge clears |
+| reload the page | card and images are still there |
+| sign in from a second browser | same card, same tiles |
+| delete an image | gone from the picker and from Storage |
+
+If all six pass, it works. Merge `feat/supabase-accounts` into `main` — **but before you do**, add
+the same two variables to the Vercel project and redeploy, or <https://nexocards.vercel.app> will
+show the setup notice to everyone. Vite bakes those values into the bundle at build time, so
+setting them without a rebuild does nothing. Add the Vercel URL to Supabase's URL Configuration too.
+
+**If something fails**, the useful places to look: the browser console (upload and sync failures are
+logged there rather than shown), the Supabase dashboard's **Table Editor** (is there a row in
+`cards`? in `media`?) and **Storage → media** (are the bytes there?). A row with no object, or a
+tile that never loads, means the upload half failed and the manifest half did not.
+
+The rest of this file is background — how the pieces fit and why they are shaped that way. Read
+**Authentication** and **Persistence** when you need to change them, not before.
+
+---
+
 ## State
 
 Working and verified end to end. `npm run dev` → <http://localhost:5173>.
@@ -25,8 +71,128 @@ npm run build     # clean
 ```
 
 The app renders one card format (840 × 570) matching the Axiom reference cards, exports PNG at
-1×/2×/3×, exports MP4/WebM when the background is a clip, and stores everything client-side. No
-backend exists or is planned.
+1×/2×/3×, exports MP4/WebM when the background is a clip, and stores everything client-side.
+
+Since 2026-08-24 the studio sits behind a Supabase email/password gate, and the card and its media
+are stored **in the account**, not just in the browser. Setting the project up now takes two steps
+that are not `npm install`: run `supabase/schema.sql` in the SQL editor, and fill in `.env.local`.
+Without the second, the app renders a setup notice instead of a sign-in form. See
+**Authentication** and **Persistence** below.
+
+---
+
+## Authentication
+
+```
+main.tsx
+  └ AuthProvider          lib/auth.tsx     — one session, held in React context
+      └ AuthGate          components/AuthGate.tsx
+          ├ loading       spinner while the stored session is restored
+          ├ no session    components/AuthScreen.tsx  — sign in / create account
+          └ session       App.tsx — the studio, unchanged
+```
+
+There is **no router**, and adding one would be the wrong instinct: the app has exactly one page and
+one gate in front of it. `AuthGate` is the whole routing story.
+
+Three things worth knowing about the gate:
+
+1. **The loading state is not decoration.** `getSession()` is async, so on first paint there is no
+   session even for someone who is signed in. Rendering `AuthScreen` during that window flashes a
+   login form at a signed-in user on every reload. The gate holds a spinner instead, and
+   `loading` starts `false` when Supabase is unconfigured so the setup notice is immediate.
+
+2. **`onAuthStateChange` is what actually swaps the screen.** `signIn` and `signUp` do not set
+   state themselves; they let the listener do it, which means a sign-out in another tab lands here
+   too. Do not add a `setSession` next to the calls — it is the path to two sources of truth.
+
+3. **Sign-up may or may not return a session.** With *Confirm email* on in the Supabase dashboard it
+   returns a user and no session, and nothing visible happens unless the form says why —
+   `signUp` returns a boolean for exactly this, and `AuthScreen` turns `false` into the
+   check-your-inbox notice. Turning that setting off in the dashboard silently changes the flow, so
+   both paths have to keep working.
+
+`lib/supabase.ts` builds the client lazily and exports `null` when either variable is missing,
+because `createClient` throws on an empty URL and a blank screen is a worse answer than a page
+naming the two variables to set. `friendlyMessage` in `lib/auth.tsx` rewrites the three Supabase
+errors a person actually hits; everything else passes through verbatim rather than being flattened
+into "something went wrong".
+
+**Not implemented, and deliberately:** password reset and OAuth providers. Per-account storage *is*
+implemented — that is what the next section is about.
+
+---
+
+## Persistence
+
+Two things sync, by the same shape: **local-first with a reconciliation behind it.** The browser
+keeps a full copy, paints from it on the first frame, and settles up with the account afterwards.
+Nothing in the editor ever waits on the network. That is not an optimisation bolted on — it is why
+the app still feels like the version that had no backend.
+
+```
+                 card                              media
+  edit  -> localStorage now                  IndexedDB now, tile appears
+        -> cards row after 900 ms idle       Storage upload in the background
+  load  -> chooseCardVersion(local, remote)  manifest pull; bytes on first draw
+  out   -> clearLocalCard(user)              purgeUser(user)
+```
+
+### The four files
+
+| | |
+|---|---|
+| `lib/images.ts` | the IndexedDB **cache**. Was the whole library; is now one half. |
+| `lib/remote/*.ts` | the raw Supabase calls, one file per table. |
+| `lib/library.ts` | media as the app sees it. The only file that knows both halves exist. |
+| `lib/useCloudCard.ts` | the card, merged against the account. |
+
+### Five things to know before changing this
+
+1. **A `MediaRecord` may have no `blob`.** That is what a file uploaded on another device looks like
+   in this browser: metadata and a `storagePath`, no bytes. `ensureBlob` downloads it on first use
+   and caches it. Any new code that reaches into a record's `blob` must handle its absence —
+   `loadMedia` and `openVideoForExport` are the two that already do.
+
+2. **`storagePath` is the upload flag, and the only one.** A local record that has one has been
+   uploaded; one that has not, has not. Every reconciliation branch in `syncLibrary` reads that and
+   nothing else. In particular it is what tells "deleted on another device" (has a path, absent from
+   the manifest → delete locally) from "upload never landed" (no path → retry it). Getting those two
+   the wrong way round deletes people's files, so leave that flag alone.
+
+3. **`dirty` on the card snapshot is not redundant with `updatedAt`.** `updatedAt` only moves when a
+   save *succeeds*, so a browser holding unsaved edits has a timestamp *behind* the server's.
+   Comparing timestamps alone would read that as stale and discard the edits. `chooseCardVersion`
+   checks `dirty` first for exactly this, and `useCloudCard.test.ts` sweeps every timestamp
+   combination to pin it.
+
+4. **Bytes are never pulled during sync.** `syncLibrary` writes metadata-only records and stops.
+   Downloading eagerly would have someone signing in on a phone pull the whole library over cellular
+   before a single tile appeared. The cost is that a background chosen elsewhere takes a moment to
+   paint the first time — the right trade, but do not "fix" it by prefetching.
+
+5. **Uploads do not block the picker.** `addMedia` resolves on the local write and pushes in the
+   background, so a 40 MB clip can be positioned while it uploads. The window where a file exists
+   here and not in the account is closed by `syncLibrary` on the next sign-in, which retries
+   anything without a `storagePath`.
+
+### Deletion order, both ways
+
+Bytes before rows on the way in; rows after bytes on the way out. A `media` row is a promise that
+the object exists, so it is written last and deleted last. The failure that leaves is an orphaned
+object with no row — invisible, costs a little storage. The other order leaves a row pointing at
+nothing, which the picker renders as a permanently broken tile. Postgres cannot reach into the
+storage API, so no trigger can clean up after a half-failed delete; the client ordering is the whole
+guarantee.
+
+### What is deliberately not built
+
+- **Merging.** Two devices editing at once is last-write-wins. Real merging needs per-field history
+  and is a great deal of machinery for a single-user card editor.
+- **Multiple cards.** The `cards` table is keyed per card and indexed `(user_id, updated_at desc)`,
+  so a card list is a UI change and not a migration. Today's app resolves exactly one row.
+- **Offline queueing beyond one card.** A failed save retries on the next edit and on the next
+  sign-in. There is no durable outbox.
 
 ---
 
@@ -443,6 +609,30 @@ still produced a 1680 × 1140 PNG with a clip selected; console clean.
    (`assets/index-Mnp3TRib.js`) is byte-identical to a local `npm run build` of that commit, SHA-256
    `18f85be6…e200c9`. Production therefore carries the render-loop rebuild, the square avatar and
    moved footer, and the judder fix.
+9. **None of the Supabase work has been run against a live project.** Both auth screens render, the
+   merge policy is unit-tested, the build is clean and the unconfigured path is verified — but no
+   account has been created, no row written and no file uploaded, because there were no credentials
+   to do it with. The checks that matter, in order: sign up and confirm; edit the card and watch the
+   topbar reach *Saved*; upload a background and watch the tile's *Saving...* badge clear; reload
+   and confirm both came back; sign in from a second browser and confirm the card and the tiles are
+   there; delete a file and confirm it is gone from Storage as well as the picker.
+10. **Deploying this needs two settings changed outside the repo, or production breaks.**
+    `.env.local` is gitignored and Vercel does not read it, so <https://nexocards.vercel.app> will
+    render the setup notice until `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are added to
+    the project's environment variables **and it is redeployed** — Vite inlines them at build time,
+    so an env change alone does nothing. Separately, that origin has to be listed under
+    Supabase's **Authentication → URL Configuration**, or confirmation emails link somewhere else.
+11. **~~Accounts do not carry anything yet.~~ Done.** Cards and media are account-backed; see
+    **Persistence**. It did end the "nothing is ever uploaded" property, and the README's privacy
+    section was rewritten to say so rather than left quietly wrong.
+12. **Nothing enforces the per-role file limits server-side.** `ROLE_LIMITS` is checked in the
+    browser, and the browser is a bundle anyone can edit. A determined user could push past twelve
+    backgrounds, or past the 80 MB clip cap up to the bucket's 100 MB. For a private tool that is
+    fine; before this is public it wants a row-count policy or a trigger on `public.media`.
+13. **Orphaned storage objects have no sweeper.** If a delete removes the object and then fails to
+    remove the row, the next sync deletes the local copy and the row stays — pointing at nothing.
+    The reverse (row gone, object left) just wastes space. Neither is currently detectable without
+    querying both sides; a periodic reconciliation job is the fix if it ever matters.
 
 ---
 
@@ -524,6 +714,8 @@ src/
     themes.ts            accents
     fonts.ts             webfont readiness gate
     images.ts            IndexedDB media library (photos / clips / avatar / logo)
+    supabase.ts          client, or null when the env vars are missing
+    auth.tsx             session context + friendlier error strings
     render.ts            THE paint entry point, preview + export
     share.ts             PNG download / clipboard / Web Share
     video.ts             trim window + MediaRecorder export             (tested)
@@ -533,7 +725,10 @@ src/
       placement.ts       cover fit, zoom, pan — shared by draw and drag  (tested)
       primitives.ts      ink-aligned text, tracking, cached metrics
       draw.ts            the card itself + foregroundKey                 (tested)
-  components/            preview, controls, media picker, inputs
+  components/
+    AuthGate.tsx         session? studio : sign-in screen
+    AuthScreen.tsx       registration + login form
+    ...                  preview, controls, media picker, inputs
 dev/
   cadence-check.html     browser harness: does the exported file judder?  (dev only)
   layout-shot.html       renders the card and scans ink bands to measure gaps (dev only)

@@ -247,7 +247,7 @@ export function ControlPanel({
         </div>
       </Section>
 
-      <Section title="Background" hint="A photo or a clip. Stored in this browser only.">
+      <Section title="Background" hint="A photo or a clip. Saved to your account.">
         <ImagePicker
           role="artwork"
           selectedId={artwork.imageId}

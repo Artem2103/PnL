@@ -3,14 +3,14 @@ import type {
   ArtworkState,
   BrandState,
   CardMode,
-  CardState,
   DisplayState,
   PeriodState,
   TradeState,
 } from './types';
 import { CardPreview } from './components/CardPreview';
 import { ControlPanel, type BackgroundInfo } from './components/ControlPanel';
-import { createDefaultState, loadState, saveState } from './lib/defaults';
+import { createDefaultState } from './lib/defaults';
+import { useCloudCard, type CardSyncStatus } from './lib/useCloudCard';
 import {
   canCopyImage,
   canShareFiles,
@@ -22,6 +22,7 @@ import { CARD } from './lib/render';
 import { loadMedia } from './lib/images';
 import { downloadCardVideo, resolveClip, videoScaleFor, videoSupport } from './lib/video';
 import { checkExportMatchesPreview } from './lib/selftest';
+import { useAuth } from './lib/auth';
 
 type ToastTone = 'info' | 'error';
 
@@ -37,8 +38,24 @@ const SCALES = [
   { value: 3, label: '3×' },
 ];
 
+/**
+ * Now that the card is stored remotely, whether it *got* there is information
+ * the person editing it needs. Silence would be indistinguishable from a broken
+ * save until the next time they opened the app on another device.
+ */
+const SYNC_LABEL: Record<CardSyncStatus, string> = {
+  loading: 'Opening…',
+  saving: 'Saving…',
+  saved: 'Saved',
+  error: 'Not saved',
+  local: 'This browser only',
+};
+
 export default function App() {
-  const [state, setState] = useState<CardState>(() => loadState());
+  const { user, signOut } = useAuth();
+  // The card lives in the account now. This still paints from the local cache
+  // on the first frame; the reconciliation lands behind it.
+  const { state, setState, status: cardStatus, error: cardError } = useCloudCard(user?.id ?? '');
   const [scale, setScale] = useState(2);
   const [busy, setBusy] = useState<null | 'download' | 'copy' | 'share' | 'video'>(null);
   const [toast, setToast] = useState<Toast | null>(null);
@@ -62,11 +79,11 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  // Persist, debounced — typing in a text field shouldn't hammer localStorage.
+  // A failed save is worth saying out loud once: the edits are safe in this
+  // browser, but "saved" is exactly the thing the person is assuming.
   useEffect(() => {
-    const timer = setTimeout(() => saveState(state), 400);
-    return () => clearTimeout(timer);
-  }, [state]);
+    if (cardStatus === 'error' && cardError) notify(cardError, 'error');
+  }, [cardError, cardStatus, notify]);
 
   // What the chosen background actually is. The renderer shares this cache, so
   // resolving it here costs no second decode.
@@ -87,37 +104,37 @@ export default function App() {
     };
   }, [state.artwork.imageId]);
 
-  const setMode = useCallback((mode: CardMode) => setState((prev) => ({ ...prev, mode })), []);
+  const setMode = useCallback((mode: CardMode) => setState((prev) => ({ ...prev, mode })), [setState]);
   const patchTrade = useCallback(
     (patch: Partial<TradeState>) => setState((prev) => ({ ...prev, trade: { ...prev.trade, ...patch } })),
-    [],
+    [setState],
   );
   const patchPeriod = useCallback(
     (patch: Partial<PeriodState>) =>
       setState((prev) => ({ ...prev, period: { ...prev.period, ...patch } })),
-    [],
+    [setState],
   );
   const patchBrand = useCallback(
     (patch: Partial<BrandState>) => setState((prev) => ({ ...prev, brand: { ...prev.brand, ...patch } })),
-    [],
+    [setState],
   );
   const patchDisplay = useCallback(
     (patch: Partial<DisplayState>) =>
       setState((prev) => ({ ...prev, display: { ...prev.display, ...patch } })),
-    [],
+    [setState],
   );
   const patchArtwork = useCallback(
     (patch: Partial<ArtworkState>) =>
       setState((prev) => ({ ...prev, artwork: { ...prev.artwork, ...patch } })),
-    [],
+    [setState],
   );
   const setAvatarId = useCallback(
     (avatarId: string | null) => setState((prev) => ({ ...prev, avatarId })),
-    [],
+    [setState],
   );
   const setLogoId = useCallback(
     (logoId: string | null) => setState((prev) => ({ ...prev, logoId })),
-    [],
+    [setState],
   );
 
   const handleDownload = useCallback(async () => {
@@ -227,16 +244,38 @@ export default function App() {
             <p>Share cards, rendered in your browser.</p>
           </div>
         </div>
-        <button
-          type="button"
-          className="btn btn--ghost btn--small"
-          onClick={() => {
-            setState(createDefaultState());
-            notify('Reset to the sample card.');
-          }}
-        >
-          Reset
-        </button>
+        <div className="topbar__actions">
+          <span className={`syncdot syncdot--${cardStatus}`} aria-live="polite">
+            <span className="syncdot__mark" aria-hidden="true" />
+            {SYNC_LABEL[cardStatus]}
+          </span>
+          <button
+            type="button"
+            className="btn btn--ghost btn--small"
+            onClick={() => {
+              setState(createDefaultState());
+              notify('Reset to the sample card.');
+            }}
+          >
+            Reset
+          </button>
+          {user?.email ? (
+            <span className="topbar__email" title={user.email}>
+              {user.email}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            className="btn btn--ghost btn--small"
+            onClick={() => {
+              void signOut().catch((error: unknown) =>
+                notify(error instanceof Error ? error.message : 'Sign out failed.', 'error'),
+              );
+            }}
+          >
+            Sign out
+          </button>
+        </div>
       </header>
 
       <main className="layout">
