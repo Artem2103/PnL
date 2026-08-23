@@ -1,3 +1,4 @@
+import { useCallback, useMemo } from 'react';
 import type {
   ArtworkState,
   BrandState,
@@ -15,6 +16,15 @@ import { MAX_CLIP_SECONDS, MAX_SOURCE_SECONDS } from '../lib/images';
 import { resolveClip } from '../lib/video';
 import { ImagePicker } from './ImagePicker';
 import { Field, NumberInput, Section, Segmented, Slider, TextInput, Toggle } from './ui';
+
+/**
+ * Hoisted out of the render: it never changes, and a fresh string every
+ * keystroke would defeat the memo on the picker below.
+ */
+const ARTWORK_HINT =
+  `Drop a file or click to browse — photos, or a clip up to ${MAX_SOURCE_SECONDS} s ` +
+  `(the card plays ${MAX_CLIP_SECONDS} s of it). Files stay on this device: they are ` +
+  `stored in your browser and never uploaded.`;
 
 /** What the selected background turned out to be, once decoded. */
 export interface BackgroundInfo {
@@ -50,14 +60,20 @@ export function ControlPanel({
   onError,
 }: ControlPanelProps) {
   const { trade, period, brand, display, artwork } = state;
-  const result = computeCard(state);
-  const content = buildContent(state, result);
+  const result = useMemo(() => computeCard(state), [state]);
+  const content = useMemo(() => buildContent(state, result), [state, result]);
   const liquidation = state.mode === 'trade' ? approximateLiquidationPrice(trade) : null;
   const mismatch = state.mode === 'trade' && signsDisagree(trade);
   const isVideo = background?.kind === 'video';
   const clip = resolveClip(background?.duration ?? 0, artwork.clipStart, artwork.clipLength);
   // Leave at least a second of clip after the start point, or the window is empty.
   const maxStart = Math.max(0, (background?.duration ?? 0) - 1);
+
+  // Stable identity, so the memoised pickers sit out every unrelated re-render.
+  const selectArtwork = useCallback(
+    (imageId: string | null) => patchArtwork({ imageId }),
+    [patchArtwork],
+  );
 
   return (
     <div className="controls">
@@ -235,10 +251,10 @@ export function ControlPanel({
         <ImagePicker
           role="artwork"
           selectedId={artwork.imageId}
-          onSelect={(imageId) => patchArtwork({ imageId })}
+          onSelect={selectArtwork}
           onError={onError}
           emptyLabel="None"
-          hint={`Drop a file or click to browse — photos, or a clip up to ${MAX_SOURCE_SECONDS} s (the card plays ${MAX_CLIP_SECONDS} s of it). Files stay on this device: they are stored in your browser and never uploaded.`}
+          hint={ARTWORK_HINT}
         />
         {artwork.imageId ? (
           <>

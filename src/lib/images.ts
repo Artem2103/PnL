@@ -62,6 +62,12 @@ export interface MediaRecord {
   /** Seconds; zero for stills. */
   duration: number;
   createdAt: number;
+  /**
+   * Video only: a still lifted from the clip when it was added. Without it the
+   * picker has to mount a `<video>` per tile — a dozen decoders running to show
+   * a dozen postage stamps. Absent on records written before this existed.
+   */
+  poster?: Blob;
 }
 
 export interface MediaSummary {
@@ -75,6 +81,8 @@ export interface MediaSummary {
   createdAt: number;
   /** Object URL for the picker thumbnail. Revoked by `releaseThumbnails`. */
   url: string;
+  /** Video only: object URL of the poster still, when the record has one. */
+  posterUrl?: string;
 }
 
 export class ImageError extends Error {}
@@ -258,7 +266,9 @@ export async function readVideoMetadata(
   let duration = video.duration;
   if (!Number.isFinite(duration) || duration <= 0) {
     video.currentTime = 1e9;
-    await Promise.race([onceEvent(video, 'timeupdate'), onceEvent(video, 'seeked')]);
+    // A file the decoder cannot seek fires neither event, and the picker would
+    // sit on "Processing…" for the rest of the session waiting for one.
+    await Promise.race([onceEvent(video, 'timeupdate'), onceEvent(video, 'seeked'), sleep(8000)]);
     duration = video.duration;
     video.currentTime = 0;
   }
@@ -269,7 +279,47 @@ export async function readVideoMetadata(
   return { width: video.videoWidth, height: video.videoHeight, duration };
 }
 
-async function probeVideo(file: File): Promise<{ width: number; height: number; duration: number }> {
+/** Longest edge of the poster still kept for the picker. */
+const POSTER_MAX_EDGE = 320;
+
+/**
+ * A frame from just inside the clip, scaled down for the picker. Best effort:
+ * a clip that will not seek or paint still uploads fine, the tile just falls
+ * back to a `<video>` for that one record.
+ */
+async function capturePoster(
+  video: HTMLVideoElement,
+  width: number,
+  height: number,
+  duration: number,
+): Promise<Blob | undefined> {
+  try {
+    const at = Math.min(Math.max(0.1, duration * 0.05), Math.max(0, duration - 0.05));
+    if (Math.abs(video.currentTime - at) > 0.01) {
+      const seeked = Promise.race([onceEvent(video, 'seeked'), sleep(4000)]);
+      video.currentTime = at;
+      await seeked;
+    }
+    if (video.readyState < 2) await Promise.race([onceEvent(video, 'loadeddata'), sleep(4000)]);
+    if (video.readyState < 2) return undefined;
+
+    const scale = Math.min(1, POSTER_MAX_EDGE / Math.max(width, height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return undefined;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return await canvasToBlob(canvas);
+  } catch {
+    return undefined;
+  }
+}
+
+async function probeVideo(
+  file: File,
+): Promise<{ width: number; height: number; duration: number; poster?: Blob }> {
   const url = URL.createObjectURL(file);
   const video = makeVideoElement(url);
   try {
@@ -283,7 +333,8 @@ async function probeVideo(file: File): Promise<{ width: number; height: number; 
           `the card plays at most ${MAX_CLIP_SECONDS} s of it.`,
       );
     }
-    return meta;
+    const poster = await capturePoster(video, meta.width, meta.height, meta.duration);
+    return { ...meta, poster };
   } finally {
     video.removeAttribute('src');
     video.load();
@@ -323,7 +374,7 @@ export async function addImage(file: File, role: ImageRole): Promise<MediaRecord
 
   const media = video
     ? { ...(await probeVideo(file)), blob: file as Blob }
-    : { ...(await normalize(file, limits.maxEdge)), duration: 0 };
+    : { ...(await normalize(file, limits.maxEdge)), duration: 0, poster: undefined };
 
   const record: MediaRecord = {
     id: makeId(),
@@ -335,6 +386,7 @@ export async function addImage(file: File, role: ImageRole): Promise<MediaRecord
     height: media.height,
     duration: media.duration,
     createdAt: Date.now(),
+    poster: media.poster,
   };
   await tx('readwrite', (store) => store.put(record));
   return record;
@@ -360,6 +412,7 @@ export async function listImages(role: ImageRole): Promise<MediaSummary[]> {
       duration: record.duration ?? 0,
       createdAt: record.createdAt,
       url: URL.createObjectURL(record.blob),
+      posterUrl: record.poster ? URL.createObjectURL(record.poster) : undefined,
     }));
 }
 
@@ -378,7 +431,10 @@ export async function deleteImage(id: string): Promise<void> {
 }
 
 export function releaseThumbnails(items: MediaSummary[]): void {
-  for (const item of items) URL.revokeObjectURL(item.url);
+  for (const item of items) {
+    URL.revokeObjectURL(item.url);
+    if (item.posterUrl) URL.revokeObjectURL(item.posterUrl);
+  }
 }
 
 /* ------------------------------------------------------------------ */

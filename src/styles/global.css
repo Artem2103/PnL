@@ -85,6 +85,12 @@ kbd {
   position: sticky;
   top: 0;
   z-index: 20;
+  /* The blur is re-evaluated whenever anything behind it moves. Giving it its
+     own composited layer keeps that on the GPU instead of repainting the bar
+     on every scroll frame. */
+  will-change: backdrop-filter;
+  transform: translateZ(0);
+  contain: layout paint;
 }
 
 .brand {
@@ -126,8 +132,12 @@ kbd {
   padding: 22px 22px 60px;
   max-height: calc(100vh - 67px);
   overflow-y: auto;
+  overscroll-behavior: contain;
   position: sticky;
   top: 67px;
+  /* Scrolling this column cannot affect anything outside it, so the browser is
+     told not to look. */
+  contain: layout paint;
 }
 
 .layout__stage {
@@ -177,6 +187,11 @@ kbd {
   overflow: hidden;
   box-shadow: var(--shadow);
   background: #05060a;
+  /* A repainting canvas is contained here: thirty frames a second must not put
+     the surrounding editor back through layout. Deliberately not `strict` —
+     the frame's height comes from its aspect ratio, which size containment
+     would throw away. */
+  contain: layout paint;
 }
 
 .preview__canvas {
@@ -286,6 +301,9 @@ kbd {
   border-radius: var(--radius);
   background: var(--bg-elev);
   overflow: hidden;
+  /* Each panel lays out and paints on its own; a keystroke in one cannot cost
+     a relayout of the others. */
+  contain: layout paint style;
 }
 
 .section__head {
@@ -725,6 +743,10 @@ kbd {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.bg-tile {
+  contain: layout paint style;
 }
 
 .bg-tile__badge {

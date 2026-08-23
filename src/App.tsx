@@ -173,18 +173,28 @@ export default function App() {
     }
   }, [notify, scale, state]);
 
+  // Bound once. `handleDownload` is rebuilt on every keystroke, and rebinding a
+  // window listener each time is work no keystroke should be paying for.
+  const downloadRef = useRef(handleDownload);
+  downloadRef.current = handleDownload;
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
         event.preventDefault();
-        void handleDownload();
+        void downloadRef.current();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleDownload]);
+  }, []);
 
   // Dev-only hook used to verify the export matches the preview pixel-for-pixel.
+  // It reads the live state through a ref so it is installed once, rather than
+  // being torn down and rebuilt on every keystroke.
+  const liveRef = useRef({ state, playing });
+  liveRef.current = { state, playing };
+
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const globalScope = window as unknown as Record<string, unknown>;
@@ -193,11 +203,11 @@ export default function App() {
       if (!canvas) return { ok: false, note: 'No preview canvas mounted.' };
       // The check freezes the clip itself, but the preview loop would restart
       // it on the next frame unless playback is stopped here first.
-      const wasPlaying = playing;
+      const wasPlaying = liveRef.current.playing;
       setPlaying(false);
       await new Promise((resolve) => setTimeout(resolve, 250));
       try {
-        return await checkExportMatchesPreview(state, canvas);
+        return await checkExportMatchesPreview(liveRef.current.state, canvas);
       } finally {
         if (wasPlaying) setPlaying(true);
       }
@@ -205,7 +215,7 @@ export default function App() {
     return () => {
       delete globalScope.__pnlCheckExport;
     };
-  }, [state, playing]);
+  }, []);
 
   return (
     <div className="app">

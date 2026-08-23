@@ -6,13 +6,11 @@ import { CARD, PALETTE, SPEC } from './spec';
 import { placeCover } from './placement';
 import {
   FONT_DISPLAY,
+  cachedGradient,
   coverRect,
   drawText,
-  fillRoundRect,
-  linearGradient,
   measureText,
   radialBloom,
-  roundRectPath,
   type Ctx2D,
 } from './primitives';
 
@@ -30,16 +28,34 @@ export interface DrawInput {
  * Pure with respect to the DOM: it reads nothing but its arguments and writes
  * nothing but pixels. Preview and export both call it, which is what
  * guarantees the download matches what is on screen.
+ *
+ * The two halves below are also exported separately. That is not a second
+ * drawing path — it is this same code, split at the one seam that matters for
+ * speed: everything above the background is identical from frame to frame
+ * while a clip plays, so `renderToCanvas` can cache it. Both halves are always
+ * called, in this order, by every caller.
  */
 export function drawCard(ctx: Ctx2D, width: number, height: number, input: DrawInput): void {
+  ctx.save();
+  ctx.clearRect(0, 0, width, height);
+  drawCardBackground(ctx, input);
+  drawCardForeground(ctx, input);
+  ctx.restore();
+}
+
+/** Ground, artwork and scrim — the only part of the card a moving clip changes. */
+export function drawCardBackground(ctx: Ctx2D, input: DrawInput): void {
+  const theme = getTheme(input.state.display.themeId);
+  drawBackground(ctx, input, theme);
+}
+
+/** Everything painted over the background. Fixed for a given card state. */
+export function drawCardForeground(ctx: Ctx2D, input: DrawInput): void {
   const { state } = input;
   const theme = getTheme(state.display.themeId);
   const accent = input.result.isProfit ? theme.accent : theme.loss;
 
   ctx.save();
-  ctx.clearRect(0, 0, width, height);
-
-  drawBackground(ctx, input, theme);
   if (state.display.showLogo) drawLogo(ctx, input);
   if (state.display.showWordmark) drawWordmark(ctx, input);
   drawTitle(ctx, input);
@@ -47,8 +63,36 @@ export function drawCard(ctx: Ctx2D, width: number, height: number, input: DrawI
   if (state.display.showRows) drawRows(ctx, input, accent);
   if (state.display.showHandle) drawHandle(ctx, input);
   if (state.display.showFooter) drawFooter(ctx, input);
-
   ctx.restore();
+}
+
+/**
+ * Identity of everything `drawCardForeground` reads. Two inputs with the same
+ * key paint the same pixels, so a cached layer can be reused across frames.
+ */
+export function foregroundKey(input: DrawInput): string {
+  const { state, content, result, assets } = input;
+  const d = state.display;
+  // Joined on NUL, which cannot appear in a card string — so no two different
+  // cards can collide on a key by running adjacent fields together.
+  return [
+    content.title,
+    content.hero,
+    ...content.rows.flatMap((row) => [row.label, row.value, row.accent ? 1 : 0]),
+    state.brand.wordmark,
+    state.brand.handle,
+    state.brand.footerPrimary,
+    state.brand.footerSecondary,
+    d.themeId,
+    result.isProfit ? 1 : 0,
+    d.showLogo ? 1 : 0,
+    d.showWordmark ? 1 : 0,
+    d.showRows ? 1 : 0,
+    d.showHandle ? 1 : 0,
+    d.showFooter ? 1 : 0,
+    assets.avatar?.src ?? '',
+    assets.logo?.src ?? '',
+  ].join('\u0000');
 }
 
 /* ------------------------------------------------------------------ */
@@ -67,48 +111,71 @@ function drawBackground(ctx: Ctx2D, input: DrawInput, theme: Theme): void {
   const { state, assets } = input;
   const { width, height } = CARD;
 
-  // Near-black ground with the faint lift toward the bottom seen on the
-  // reference cards.
+  const media = assets.artwork;
+  const showArtwork = Boolean(
+    state.artwork.imageId && media && media.width > 0 && media.height > 0 && isPaintable(media),
+  );
+
   ctx.save();
-  ctx.fillStyle = linearGradient(ctx, 0, 0, width * 0.35, height, [
-    { offset: 0, color: '#010103' },
-    { offset: 0.6, color: '#05080F' },
-    { offset: 1, color: '#0C0E1B' },
-  ]);
+  if (showArtwork) {
+    // The artwork covers the card edge to edge, so the themed ramp underneath
+    // it would never be seen. A flat fill still backs any clip that carries an
+    // alpha channel, at a fraction of the cost of building and rasterising a
+    // gradient thirty times a second.
+    ctx.fillStyle = '#010103';
+  } else {
+    // Near-black ground with the faint lift toward the bottom seen on the
+    // reference cards.
+    ctx.fillStyle = cachedGradient(ctx, 'ground', (target) => {
+      const gradient = target.createLinearGradient(0, 0, width * 0.35, height);
+      gradient.addColorStop(0, '#010103');
+      gradient.addColorStop(0.6, '#05080F');
+      gradient.addColorStop(1, '#0C0E1B');
+      return gradient;
+    });
+  }
   ctx.fillRect(0, 0, width, height);
   ctx.restore();
 
-  const media = assets.artwork;
-  if (state.artwork.imageId && media && media.width > 0 && media.height > 0 && isPaintable(media)) {
-    const rect = placeCover(
-      media.width,
-      media.height,
-      width,
-      height,
-      state.artwork.zoom,
-      state.artwork.offsetX,
-      state.artwork.offsetY,
-    );
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, 0, width, height);
-    ctx.clip();
-    ctx.drawImage(media.element as CanvasImageSource, rect.x, rect.y, rect.w, rect.h);
-    ctx.restore();
-
-    // The text column lives on the left, so the scrim is a horizontal ramp
-    // that leaves the artwork on the right untouched.
-    ctx.save();
-    ctx.fillStyle = linearGradient(ctx, 0, 0, width, 0, [
-      { offset: 0, color: `rgba(1, 1, 3, ${state.artwork.scrim})` },
-      { offset: 0.45, color: `rgba(1, 1, 3, ${state.artwork.scrim * 0.72})` },
-      { offset: 0.78, color: 'rgba(1, 1, 3, 0)' },
-    ]);
-    ctx.fillRect(0, 0, width, height);
-    ctx.restore();
-  } else {
+  if (!showArtwork || !media) {
     radialBloom(ctx, width * 0.78, height * 0.32, Math.max(width, height) * 0.72, theme.glow);
+    return;
   }
+
+  const rect = placeCover(
+    media.width,
+    media.height,
+    width,
+    height,
+    state.artwork.zoom,
+    state.artwork.offsetX,
+    state.artwork.offsetY,
+  );
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, width, height);
+  ctx.clip();
+  // A clip is resampled every frame, and `high` picks a filter that costs
+  // several milliseconds on a 4K source. A still is resampled once, so it can
+  // afford the better one. Preview, PNG and video all take the same branch for
+  // the same media, so the three stay identical to each other.
+  ctx.imageSmoothingQuality = media.kind === 'video' ? 'medium' : 'high';
+  ctx.drawImage(media.element as CanvasImageSource, rect.x, rect.y, rect.w, rect.h);
+  ctx.restore();
+
+  // The text column lives on the left, so the scrim is a horizontal ramp
+  // that leaves the artwork on the right untouched.
+  const scrim = state.artwork.scrim;
+  ctx.save();
+  ctx.fillStyle = cachedGradient(ctx, `scrim:${scrim}`, (target) => {
+    const gradient = target.createLinearGradient(0, 0, width, 0);
+    gradient.addColorStop(0, `rgba(1, 1, 3, ${scrim})`);
+    gradient.addColorStop(0.45, `rgba(1, 1, 3, ${scrim * 0.72})`);
+    gradient.addColorStop(0.78, 'rgba(1, 1, 3, 0)');
+    return gradient;
+  });
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
 }
 
 /* ------------------------------------------------------------------ */
@@ -232,19 +299,23 @@ function drawRows(ctx: Ctx2D, input: DrawInput, accent: string): void {
 function drawHandle(ctx: Ctx2D, input: DrawInput): void {
   const { state, assets } = input;
   const avatar = assets.avatar;
-  const { x, y, size, radius } = SPEC.avatar;
+  const { x, y, size } = SPEC.avatar;
 
+  // Square frame, sharp corners — the same corners the accent block has, off
+  // the same left edge. A rect clip also beats a rounded path outright.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, size, size);
+  ctx.clip();
   if (avatar && avatar.width > 0 && avatar.height > 0) {
-    ctx.save();
-    roundRectPath(ctx, x, y, size, size, radius);
-    ctx.clip();
     const rect = coverRect(avatar.width, avatar.height, size, size);
     ctx.drawImage(avatar, x + rect.x, y + rect.y, rect.w, rect.h);
-    ctx.restore();
   } else {
     // Placeholder keeps the layout honest when no avatar is set.
-    fillRoundRect(ctx, x, y, size, size, radius, 'rgba(234, 237, 255, 0.10)');
+    ctx.fillStyle = 'rgba(234, 237, 255, 0.10)';
+    ctx.fillRect(x, y, size, size);
   }
+  ctx.restore();
 
   const handle = state.brand.handle.trim();
   if (!handle) return;

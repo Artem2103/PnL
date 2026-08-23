@@ -40,12 +40,39 @@ amount of testing will restore it.
 The video export was built to keep this intact: `renderCardVideo` is a loop around `renderToCanvas`
 and a `MediaRecorder`, not a renderer. It does not know what a card looks like.
 
+### The one seam inside it: the foreground layer cache
+
+`drawCard` is split into `drawCardBackground` (ground, artwork, scrim) and `drawCardForeground`
+(everything painted over it). This is **not** a second drawing path — it is the same code, cut at
+the one place that matters for speed. While a clip plays, the foreground is identical frame after
+frame, and it is the expensive half: a dozen shaped, ink-aligned strings. So `renderToCanvas` paints
+it once into a transparent layer the size of the target canvas and blits it 1:1 on every later
+frame. Both halves are always called, in that order, by every caller.
+
+The cache is keyed by `foregroundKey(input)`, which must read **everything** the foreground draws.
+If you add an element to the foreground and forget to add its input to the key, the card will stop
+responding to that control — silently, and only once a layer is warm. `src/lib/canvas/draw.test.ts`
+pins this from both sides: every foreground input must move the key, every background-only input
+must leave it alone. Add a case there when you add a control.
+
+Blitting rounds premultiplied alpha once more than painting in place does, which costs at most
+1/255 on a glyph's antialiased edge. Every path — preview, PNG, video frame — goes through the same
+blit, so they stay byte-identical to *each other*, which is what the guarantee is about. Measured
+against an unlayered `drawCard` at 1×, 2× and 3×, on both a photo and a clip: `maxDelta: 1`, zero
+channels off by more than 2.
+
 Corollaries that are easy to violate by accident:
 
 - `drawCard` must stay pure with respect to the DOM. It reads its arguments and writes pixels.
   Anything asynchronous (fonts, images) is resolved *first* by `prepareAssets()`.
 - Fonts must be awaited before any paint (`src/lib/fonts.ts`). Skip it and the preview renders in
-  Inter while a later export falls back to a system font.
+  Inter while a later export falls back to a system font. `ensureFonts` gives up after 2.5 s so a
+  dead font server cannot hold the card hostage; if the face lands later, `onFontsChanged` drops the
+  text-metrics cache and the preview repaints itself. Preview and export always agree at any given
+  instant, which is the property that matters.
+- Text metrics are cached process-wide in `primitives.ts`, keyed by font and string. They are valid
+  only because the card is drawn in design units — the scale lives in the transform, so a 1× PNG and
+  a 3× PNG measure the same. Move the scale downstream and this cache turns into a bug.
 - Nothing random per-render. Anything stochastic must be seeded and cached, or preview and export
   will differ.
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ImageError,
   acceptAttrFor,
@@ -16,7 +16,7 @@ function formatDuration(seconds: number): string {
   return seconds >= 10 ? `${Math.round(seconds)}s` : `${seconds.toFixed(1)}s`;
 }
 
-export function ImagePicker({
+function ImagePickerView({
   role,
   selectedId,
   onSelect,
@@ -142,12 +142,13 @@ export function ImagePicker({
               aria-pressed={selectedId === item.id}
               title={item.kind === 'video' ? `${item.name} · clip` : item.name}
             >
-              {item.kind === 'video' ? (
-                // `preload="metadata"` is enough for a poster frame and avoids
-                // pulling the whole clip into memory for a thumbnail.
+              {item.kind === 'video' && !item.posterUrl ? (
+                // Only clips saved before poster stills existed land here.
+                // `preload="metadata"` is enough for a first frame and avoids
+                // pulling the whole file into memory for a thumbnail.
                 <video src={item.url} muted playsInline preload="metadata" />
               ) : (
-                <img src={item.url} alt="" loading="lazy" />
+                <img src={item.posterUrl ?? item.url} alt="" loading="lazy" decoding="async" />
               )}
             </button>
             {item.kind === 'video' ? (
@@ -171,3 +172,10 @@ export function ImagePicker({
     </div>
   );
 }
+
+/**
+ * Memoised: the editor re-renders on every keystroke and every slider tick,
+ * and this subtree carries the media thumbnails. Its props are stable, so a
+ * change to the numbers on the card never touches it.
+ */
+export const ImagePicker = memo(ImagePickerView);

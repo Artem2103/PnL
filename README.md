@@ -49,6 +49,11 @@ reference images** rather than eyeballed — bounding boxes of the glyph ink, th
 the avatar and the icons, read pixel by pixel. Font sizes were then derived from the measured ink
 heights.
 
+One number is deliberately *not* the reference's. The avatar sat at x=32 while the accent block and
+the title sit at x=35, so the bottom-left of the card was three pixels out of column with the rest
+of it. The avatar is now a sharp-cornered square on x=35, sharing the block's left edge, with the
+handle following at the same 16px gap it always had.
+
 Two techniques do most of the work:
 
 - **Ink alignment.** The reference measurements are ink positions, not advance widths, so

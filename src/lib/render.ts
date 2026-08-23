@@ -1,6 +1,6 @@
 import type { BackgroundMedia, CardState, RenderAssets } from '../types';
 import { buildContent } from './content';
-import { drawCard } from './canvas/draw';
+import { drawCardBackground, drawCardForeground, foregroundKey, type DrawInput } from './canvas/draw';
 import { CARD } from './canvas/spec';
 import { ensureFonts } from './fonts';
 import { loadImageElement, loadMedia, peekImageElement, peekMedia } from './images';
@@ -50,6 +50,60 @@ export async function prepareAssets(state: CardState): Promise<RenderAssets> {
   return { artwork, avatar, logo };
 }
 
+/* ------------------------------------------------------------------ */
+/* Foreground layer cache                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Everything above the background — title, block, rows, handle, footer — is
+ * identical from frame to frame while a clip plays, yet it is by far the most
+ * expensive half to paint: a dozen shaped, ink-aligned strings. So it is
+ * painted once into a transparent layer the size of the target canvas and
+ * blitted 1:1 on every subsequent frame.
+ *
+ * This is a cache, not a second renderer. `drawCardForeground` is still the
+ * only code that paints those pixels, and the PNG, the preview and every video
+ * frame all go through this same function — so the three cannot drift apart.
+ * The layer is keyed by the target size and by everything the foreground
+ * reads, and is repainted the moment any of it changes.
+ */
+interface ForegroundLayer {
+  canvas: HTMLCanvasElement;
+  key: string;
+  width: number;
+  height: number;
+}
+
+const layers = new WeakMap<HTMLCanvasElement, ForegroundLayer>();
+
+function foregroundLayerFor(
+  target: HTMLCanvasElement,
+  input: DrawInput,
+  pixelWidth: number,
+  pixelHeight: number,
+): HTMLCanvasElement | null {
+  const key = foregroundKey(input);
+  const cached = layers.get(target);
+  if (cached && cached.key === key && cached.width === pixelWidth && cached.height === pixelHeight) {
+    return cached.canvas;
+  }
+
+  const canvas = cached?.canvas ?? document.createElement('canvas');
+  if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+  if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, pixelWidth, pixelHeight);
+  ctx.setTransform(pixelWidth / CARD.width, 0, 0, pixelHeight / CARD.height, 0, 0);
+  ctx.imageSmoothingQuality = 'high';
+  drawCardForeground(ctx, input);
+
+  layers.set(target, { canvas, key, width: pixelWidth, height: pixelHeight });
+  return canvas;
+}
+
 /**
  * Paints `state` into `canvas` at `scale`× the design size.
  *
@@ -73,19 +127,30 @@ export function renderToCanvas(
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
+  const result = computeCard(state);
+  const input: DrawInput = { state, content: buildContent(state, result), result, assets };
+
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, pixelWidth, pixelHeight);
   // Everything downstream draws in design units; the scale lives here alone.
   ctx.setTransform(pixelWidth / CARD.width, 0, 0, pixelHeight / CARD.height, 0, 0);
   ctx.imageSmoothingQuality = 'high';
 
-  const result = computeCard(state);
-  drawCard(ctx, CARD.width, CARD.height, {
-    state,
-    content: buildContent(state, result),
-    result,
-    assets,
-  });
+  drawCardBackground(ctx, input);
+
+  const layer = foregroundLayerFor(canvas, input, pixelWidth, pixelHeight);
+  if (layer) {
+    // 1:1, untransformed — a straight copy, no resampling, so the layer's
+    // pixels land exactly where drawing them in place would have put them.
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(layer, 0, 0);
+    ctx.restore();
+  } else {
+    // No second context available (an exotic browser, or memory pressure):
+    // paint straight onto the card instead of showing nothing.
+    drawCardForeground(ctx, input);
+  }
 }
 
 export function renderToOffscreenCanvas(

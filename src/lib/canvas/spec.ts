@@ -89,16 +89,20 @@ export const SPEC = {
     valueMaxWidth: 240,
   },
 
+  /**
+   * Square, sharp-cornered, and sharing the accent block's left edge — the
+   * avatar/handle row and the block read as one column rather than two that
+   * nearly line up. The reference's 32 was three pixels shy of it.
+   */
   avatar: {
-    x: 32,
+    x: 35,
     y: 446,
     size: 52,
-    radius: 12,
   },
 
   handle: {
-    /** Left edge of the ink. */
-    x: 100,
+    /** Left edge of the ink. Holds the reference's 16px gap off the avatar. */
+    x: 103,
     baseline: 486,
     size: 40,
     weight: 400,
