@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Export cadence check</title>
+    <style>
+      body { background: #0b0d12; color: #eaedff; font: 13px/1.6 ui-monospace, monospace; padding: 24px; }
+      h1 { font-size: 16px; margin: 0 0 4px; }
+      p.sub { color: #8b93ad; margin: 0 0 16px; }
+      .ok { color: #2fe3ac; } .bad { color: #ff6b6b; } .dim { color: #8b93ad; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Dev-only. Answers one question the unit tests cannot: does the exported
+      file play smoothly, or does it judder?
+
+      It builds a synthetic 30 fps clip, exports a card over it through the real
+      renderCardVideo, and reads the frame durations straight out of the MP4
+      container. It then repeats the export with the paint loop gated on
+      requestVideoFrameCallback — the way it was written in a95983c — as a
+      control, so a clean result is known to be a clean result rather than a
+      blind measurement.
+
+      Run it in an isolated Chrome, not your everyday one. A backgrounded or
+      occluded tab does not fire requestAnimationFrame and does not decode
+      media, so every number here would be measuring Chrome's power saving
+      instead of the exporter:
+
+        chrome --user-data-dir=<a scratch dir> --no-first-run \
+               --disable-features=CalculateNativeWinOcclusion \
+               --disable-backgrounding-occluded-windows \
+               --disable-renderer-backgrounding \
+               --disable-background-timer-throttling \
+               --autoplay-policy=no-user-gesture-required \
+               http://localhost:5173/dev/cadence-check.html
+
+      Results are printed below and also POSTed to http://127.0.0.1:5199
+      (/progress and /result) if anything is listening there; if nothing is,
+      the posts fail silently and the on-page log is the whole story.
+    -->
+    <h1>Export cadence check</h1>
+    <p class="sub">Leave this window alone until it says FINISHED (about 40 seconds).</p>
+    <div id="log"></div>
+
+    <script type="module">
+      const logEl = document.getElementById('log');
+      const post = (p, o) =>
+        fetch('http://127.0.0.1:5199' + p, { method: 'POST', body: JSON.stringify(o) }).catch(() => {});
+      const line = (m, cls) => {
+        const d = document.createElement('div');
+        if (cls) d.className = cls;
+        d.textContent = m;
+        logEl.appendChild(d);
+      };
+      const log = (m, extra) => {
+        line(m + (extra ? '  ' + JSON.stringify(extra) : ''));
+        post('/progress', { m, extra });
+      };
+
+      let hiddenEpisodes = 0;
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState !== 'visible') hiddenEpisodes += 1;
+      });
+
+      const pickMime = () =>
+        ['video/mp4;codecs=avc1.42E01E', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'].find((m) =>
+          MediaRecorder.isTypeSupported(m),
+        ) || null;
+
+      /* ---------------------------------------------------------------
+       * MP4 container reader.
+       *
+       * The point of the whole exercise is the *cadence of the frames in
+       * the file*. requestVideoFrameCallback cannot answer that: it reports
+       * frames the player chose to present, so a hiccup during playback
+       * invents a gap that is not in the file. Sample durations read out of
+       * the container are the encoded truth, and need no playback at all.
+       * ------------------------------------------------------------- */
+      function boxes(view, start, end) {
+        const out = [];
+        let p = start;
+        while (p + 8 <= end) {
+          let size = view.getUint32(p);
+          const type = String.fromCharCode(view.getUint8(p + 4), view.getUint8(p + 5), view.getUint8(p + 6), view.getUint8(p + 7));
+          let head = 8;
+          if (size === 1) { size = Number(view.getBigUint64(p + 8)); head = 16; }
+          else if (size === 0) { size = end - p; }
+          if (size < head || p + size > end) break;
+          out.push({ type, start: p, body: p + head, end: p + size });
+          p += size;
+        }
+        return out;
+      }
+      const find = (list, type) => list.find((b) => b.type === type);
+
+      function mp4Cadence(buf) {
+        const v = new DataView(buf);
+        const top = boxes(v, 0, buf.byteLength);
+        const moov = find(top, 'moov');
+        if (!moov) return { error: 'no moov box (not an MP4?)' };
+
+        // Video track: the trak whose hdlr handler_type is 'vide'.
+        let timescale = null, trackId = null, sttsDurations = [];
+        for (const trak of boxes(v, moov.body, moov.end).filter((b) => b.type === 'trak')) {
+          const tk = boxes(v, trak.body, trak.end);
+          const mdia = find(tk, 'mdia');
+          if (!mdia) continue;
+          const md = boxes(v, mdia.body, mdia.end);
+          const hdlr = find(md, 'hdlr');
+          if (!hdlr) continue;
+          const handler = String.fromCharCode(
+            v.getUint8(hdlr.body + 8), v.getUint8(hdlr.body + 9), v.getUint8(hdlr.body + 10), v.getUint8(hdlr.body + 11),
+          );
+          if (handler !== 'vide') continue;
+          const mdhd = find(md, 'mdhd');
+          if (mdhd) {
+            const version = v.getUint8(mdhd.body);
+            timescale = version === 1 ? v.getUint32(mdhd.body + 4 + 8 + 8) : v.getUint32(mdhd.body + 4 + 4 + 4);
+          }
+          const tkhd = find(tk, 'tkhd');
+          if (tkhd) {
+            const version = v.getUint8(tkhd.body);
+            trackId = version === 1 ? v.getUint32(tkhd.body + 4 + 8 + 8) : v.getUint32(tkhd.body + 4 + 4 + 4);
+          }
+          // Non-fragmented MP4 keeps per-sample deltas in stts.
+          const minf = find(md, 'minf');
+          const stbl = minf && find(boxes(v, minf.body, minf.end), 'stbl');
+          const stts = stbl && find(boxes(v, stbl.body, stbl.end), 'stts');
+          if (stts) {
+            const n = v.getUint32(stts.body + 4);
+            let q = stts.body + 8;
+            for (let i = 0; i < n; i++) {
+              const count = v.getUint32(q), delta = v.getUint32(q + 4);
+              for (let k = 0; k < count; k++) sttsDurations.push(delta);
+              q += 8;
+            }
+          }
+          break;
+        }
+        if (!timescale) return { error: 'no video track timescale' };
+
+        // Fragmented MP4 (what MediaRecorder writes) keeps them in moof/traf.
+        let defaultDuration = 0;
+        const mvex = find(boxes(v, moov.body, moov.end), 'mvex');
+        if (mvex) {
+          const trex = find(boxes(v, mvex.body, mvex.end), 'trex');
+          if (trex && v.getUint32(trex.body + 4) === trackId) defaultDuration = v.getUint32(trex.body + 12);
+        }
+
+        const durations = [...sttsDurations];
+        for (const moof of top.filter((b) => b.type === 'moof')) {
+          for (const traf of boxes(v, moof.body, moof.end).filter((b) => b.type === 'traf')) {
+            const tf = boxes(v, traf.body, traf.end);
+            const tfhd = find(tf, 'tfhd');
+            let trafDefault = defaultDuration;
+            if (tfhd) {
+              const flags = v.getUint32(tfhd.body) & 0xffffff;
+              if (v.getUint32(tfhd.body + 4) !== trackId && trackId !== null) continue;
+              let q = tfhd.body + 8;
+              if (flags & 0x01) q += 8;
+              if (flags & 0x02) q += 4;
+              if (flags & 0x08) { trafDefault = v.getUint32(q); q += 4; }
+            }
+            for (const trun of tf.filter((b) => b.type === 'trun')) {
+              const flags = v.getUint32(trun.body) & 0xffffff;
+              const count = v.getUint32(trun.body + 4);
+              let q = trun.body + 8;
+              if (flags & 0x000001) q += 4;
+              if (flags & 0x000004) q += 4;
+              for (let i = 0; i < count; i++) {
+                let d = trafDefault;
+                if (flags & 0x000100) { d = v.getUint32(q); q += 4; }
+                if (flags & 0x000200) q += 4;
+                if (flags & 0x000400) q += 4;
+                if (flags & 0x000800) q += 4;
+                durations.push(d);
+              }
+            }
+          }
+        }
+        if (!durations.length) return { error: 'no sample durations found' };
+
+        const ms = durations.map((d) => (d / timescale) * 1000);
+        const sorted = [...ms].sort((a, b) => a - b);
+        const mean = ms.reduce((a, b) => a + b, 0) / ms.length;
+        const sd = Math.sqrt(ms.reduce((a, b) => a + (b - mean) ** 2, 0) / ms.length);
+        const total = ms.reduce((a, b) => a + b, 0);
+        const onCadence = ms.filter((d) => Math.abs(d - 1000 / 30) <= 8).length;
+        const histogram = {};
+        for (const d of ms) {
+          const k = String(Math.round(d));
+          histogram[k] = (histogram[k] || 0) + 1;
+        }
+        return {
+          ms,
+          timescale,
+          frames: ms.length,
+          totalSeconds: +(total / 1000).toFixed(3),
+          fps: +((ms.length / (total / 1000)) || 0).toFixed(2),
+          meanMs: +mean.toFixed(2),
+          sdMs: +sd.toFixed(2),
+          minMs: +sorted[0].toFixed(2),
+          medianMs: +sorted[Math.floor(sorted.length / 2)].toFixed(2),
+          maxMs: +sorted[sorted.length - 1].toFixed(2),
+          onCadencePct: +((onCadence / ms.length) * 100).toFixed(1),
+          histogramMs: histogram,
+          firstMs: ms.slice(0, 32).map((d) => +d.toFixed(1)),
+        };
+      }
+
+      const cadenceOf = async (blob) => mp4Cadence(await blob.arrayBuffer());
+
+      /** Stats over just the slice of a file between two timestamps. */
+      function windowStats(ms, fromSec, toSec) {
+        const slice = [];
+        let t = 0;
+        for (const d of ms) {
+          if (t >= fromSec * 1000 && t < toSec * 1000) slice.push(d);
+          t += d;
+        }
+        if (!slice.length) return { frames: 0 };
+        const sorted = [...slice].sort((a, b) => a - b);
+        const mean = slice.reduce((a, b) => a + b, 0) / slice.length;
+        const sd = Math.sqrt(slice.reduce((a, b) => a + (b - mean) ** 2, 0) / slice.length);
+        const onCadence = slice.filter((d) => Math.abs(d - 1000 / 30) <= 8).length;
+        return {
+          frames: slice.length,
+          fps: +(1000 / mean).toFixed(2),
+          meanMs: +mean.toFixed(2),
+          sdMs: +sd.toFixed(2),
+          minMs: +sorted[0].toFixed(2),
+          maxMs: +sorted[sorted.length - 1].toFixed(2),
+          onCadencePct: +((onCadence / slice.length) * 100).toFixed(1),
+        };
+      }
+
+      // Secondary, and clearly labelled as such: does the picture actually
+      // advance? Playback can drop frames, so this can only ever undercount
+      // frames — a duplicate it *does* see is real.
+      async function frozenCheck(blob) {
+        const url = URL.createObjectURL(blob);
+        const v = document.createElement('video');
+        v.src = url; v.muted = true; v.playsInline = true; v.playbackRate = 0.5;
+        try {
+          await new Promise((res, rej) => {
+            v.onloadedmetadata = () => res();
+            v.onerror = () => rej(new Error('file failed to decode'));
+            setTimeout(() => rej(new Error('timed out loading file')), 15000);
+          });
+          const vw = v.videoWidth, vh = v.videoHeight;
+          const probe = document.createElement('canvas');
+          probe.width = 64; probe.height = 1;
+          const pctx = probe.getContext('2d', { willReadFrequently: true });
+          const sigs = [];
+          await new Promise((res) => {
+            let settled = false;
+            const finish = () => { if (!settled) { settled = true; res(); } };
+            v.onended = finish;
+            setTimeout(finish, 40000);
+            const onFrame = () => {
+              // x >= 0.80w is past the scrim's last colour stop: the clip
+              // itself, untouched by the card's overlay.
+              pctx.drawImage(v, Math.round(vw * 0.8), Math.round(vh * 0.2), Math.round(vw * 0.2), 1, 0, 0, 64, 1);
+              const d = pctx.getImageData(0, 0, 64, 1).data;
+              let sig = 0;
+              for (let i = 0; i < d.length; i += 4) sig = (sig * 31 + d[i]) >>> 0;
+              sigs.push(sig);
+              if (!v.ended) v.requestVideoFrameCallback(onFrame); else finish();
+            };
+            v.requestVideoFrameCallback(onFrame);
+            v.play();
+          });
+          let dup = 0;
+          for (let i = 1; i < sigs.length; i++) if (sigs[i] === sigs[i - 1]) dup += 1;
+          return { presentedFrames: sigs.length, duplicatePairs: dup, durationSeconds: +Number(v.duration).toFixed(3) };
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      }
+
+      async function makeSourceClip(seconds) {
+        const c = document.createElement('canvas');
+        c.width = 960; c.height = 540;
+        const ctx = c.getContext('2d');
+        const mime = pickMime();
+        if (!mime) throw new Error('no MediaRecorder mime available');
+        const stream = c.captureStream(30);
+        const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 10000000 });
+        const chunks = [];
+        rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+        const stopped = new Promise((r) => { rec.onstop = r; });
+        const t0 = performance.now();
+        let raf = 0;
+        const paint = () => {
+          const el = (performance.now() - t0) / 1000;
+          // Whole-frame luma stepping every 1/30 s, so any sampled pixel
+          // changes on every source frame.
+          const lum = 24 + (Math.floor(el * 30) % 10) * 20;
+          ctx.fillStyle = 'rgb(' + lum + ',' + lum + ',' + lum + ')';
+          ctx.fillRect(0, 0, c.width, c.height);
+          const x = ((el * 520) % (c.width + 160)) - 160;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(x, 0, 150, c.height);
+          ctx.fillStyle = '#ff5a3c';
+          ctx.fillRect(0, (el * 300) % c.height, c.width, 26);
+          raf = requestAnimationFrame(paint);
+        };
+        paint();
+        // A cold profile spends its first second compiling shaders and warming
+        // the encoder; that jank must not land inside the source clip.
+        await new Promise((r) => setTimeout(r, 2500));
+        rec.start();
+        await new Promise((r) => setTimeout(r, seconds * 1000));
+        cancelAnimationFrame(raf);
+        rec.stop();
+        await stopped;
+        return new Blob(chunks, { type: mime.split(';')[0] });
+      }
+
+      // Reproduces the loop as it stood in a95983c: one paint per decoded
+      // frame. Present only as a control, to show the measurement can see
+      // judder when judder is there.
+      async function recordControl(images, render, videoMod, state, scale) {
+        const opened = await images.openVideoForExport(state.artwork.imageId);
+        const { element: video, duration, release } = opened;
+        try {
+          const clip = videoMod.resolveClip(duration, state.artwork.clipStart, state.artwork.clipLength);
+          const base = await render.prepareAssets(state);
+          const assets = {
+            ...base,
+            artwork: { kind: 'video', element: video, width: video.videoWidth, height: video.videoHeight, duration },
+          };
+          const canvas = document.createElement('canvas');
+          if (Math.abs(video.currentTime - clip.start) >= 0.001) {
+            const seeked = new Promise((r) => { video.onseeked = r; });
+            video.currentTime = clip.start;
+            await seeked;
+          }
+          render.renderToCanvas(canvas, state, assets, scale);
+          const mime = pickMime();
+          const stream = canvas.captureStream(30);
+          const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8000000 });
+          const chunks = [];
+          rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+          const stopped = new Promise((r) => { rec.onstop = r; });
+          video.muted = true;
+          await video.play();
+          rec.start(250);
+          const end = clip.start + clip.length;
+          await new Promise((res) => {
+            let settled = false;
+            const finish = () => { if (!settled) { settled = true; res(); } };
+            const onFrame = () => {
+              render.renderToCanvas(canvas, state, assets, scale);
+              if (video.ended || video.currentTime >= end) { finish(); return; }
+              video.requestVideoFrameCallback(onFrame);
+            };
+            video.requestVideoFrameCallback(onFrame);
+            setTimeout(finish, clip.length * 1000 + 800);
+          });
+          video.pause();
+          rec.stop();
+          await stopped;
+          return new Blob(chunks, { type: mime.split(';')[0] });
+        } finally {
+          release();
+        }
+      }
+
+      (async () => {
+        const out = { visibilityAtStart: document.visibilityState };
+        try {
+          log('visibility', { state: document.visibilityState, focus: document.hasFocus() });
+          await document.fonts.ready;
+
+          const [images, defaults, videoMod, render] = await Promise.all([
+            import('/src/lib/images.ts'),
+            import('/src/lib/defaults.ts'),
+            import('/src/lib/video.ts'),
+            import('/src/lib/render.ts'),
+          ]);
+          out.support = videoMod.videoSupport();
+          log('modules loaded', out.support);
+
+          // 9 s recorded, but the card only uses 2 s..5 s. MediaRecorder
+          // reliably stalls for about a second shortly after it starts, and
+          // that is the recorder warming up, not anything the card does — so
+          // the window the card reads is placed past it, and the gate below
+          // judges only that window.
+          const CLIP_START = 2, CLIP_LENGTH = 3;
+          const srcBlob = await makeSourceClip(9);
+          out.source = await cadenceOf(srcBlob);
+          out.source.bytes = srcBlob.size;
+          if (out.source.error) throw new Error('source clip unreadable: ' + out.source.error);
+          out.sourceWindow = windowStats(out.source.ms, CLIP_START, CLIP_START + CLIP_LENGTH);
+          log('source clip (window the card uses)', {
+            bytes: srcBlob.size, fps: out.sourceWindow.fps, sd: out.sourceWindow.sdMs, max: out.sourceWindow.maxMs,
+          });
+          if (out.sourceWindow.sdMs > 12 || out.sourceWindow.fps < 27) {
+            throw new Error(
+              'source window is not clean (fps ' + out.sourceWindow.fps + ', sd ' + out.sourceWindow.sdMs + ')',
+            );
+          }
+
+          const ext = srcBlob.type.includes('webm') ? 'webm' : 'mp4';
+          const file = new File([srcBlob], 'cadence-test.' + ext, { type: srcBlob.type });
+          const rec = await images.addImage(file, 'artwork');
+          log('stored in library', { id: rec.id, duration: +Number(rec.duration).toFixed(3) });
+
+          const base = defaults.createDefaultState();
+          const state = {
+            ...base,
+            artwork: { ...base.artwork, imageId: rec.id, clipStart: CLIP_START, clipLength: CLIP_LENGTH, muteAudio: true },
+          };
+
+          const t0 = performance.now();
+          const res = await videoMod.renderCardVideo(state, { scale: 2 });
+          out.exportWallSeconds = +((performance.now() - t0) / 1000).toFixed(2);
+          out.current = await cadenceOf(res.blob);
+          out.current.bytes = res.blob.size;
+          out.current.reportedSize = res.width + 'x' + res.height;
+          out.current.mime = res.mimeType;
+          log('CURRENT (shipping code)', {
+            fps: out.current.fps, sd: out.current.sdMs, onCadencePct: out.current.onCadencePct,
+            frames: out.current.frames, seconds: out.current.totalSeconds,
+          });
+          out.currentFrozen = await frozenCheck(res.blob);
+          log('CURRENT frozen check', out.currentFrozen);
+
+          const ctrlBlob = await recordControl(images, render, videoMod, state, 2);
+          out.control = await cadenceOf(ctrlBlob);
+          out.control.bytes = ctrlBlob.size;
+          log('CONTROL (old rVFC-gated loop)', {
+            fps: out.control.fps, sd: out.control.sdMs, onCadencePct: out.control.onCadencePct,
+            frames: out.control.frames, seconds: out.control.totalSeconds,
+          });
+
+          await images.deleteImage(rec.id);
+          out.ok = true;
+        } catch (e) {
+          out.ok = false;
+          out.error = String((e && e.stack) || e);
+          line('ERROR ' + out.error, 'bad');
+        }
+        out.hiddenEpisodes = hiddenEpisodes;
+        out.visibilityAtEnd = document.visibilityState;
+        await post('/result', out);
+        line(out.ok ? 'FINISHED — results posted.' : 'FINISHED WITH ERROR — results posted.', out.ok ? 'ok' : 'bad');
+        line('hidden episodes during run: ' + hiddenEpisodes, hiddenEpisodes ? 'bad' : 'ok');
+      })();
+    </script>
+  </body>
+</html>

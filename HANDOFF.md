@@ -323,7 +323,30 @@ note in Environment):
   446–497, 540–557; gaps of exactly 42 rows on either side of the avatar.
 - Text metrics benchmark: 0.5397 ms → 0.0230 ms per frame's worth of measurement.
 
-**Not verified: any clip playing, recording, or the exported file.** The tab was hidden throughout.
+**Not verified in that pass: any clip playing, recording, or the exported file.** The tab was hidden
+throughout. Covered later the same day — see below.
+
+### What was verified in the browser, 2026-08-24 (second pass, isolated Chrome)
+
+The clip and recorder gap above, closed. Run in a separate Chrome instance with occlusion detection
+and renderer backgrounding disabled, so `hiddenEpisodes: 0` for the whole run and the numbers mean
+something (the flags are in the environment notes):
+
+- **The export does not judder.** Frame durations read out of the MP4 container: 89 frames, 29.95
+  fps, 5.50 ms jitter, worst gap 44.1 ms, against a source clip measured at 30.06 fps / 4.41 ms over
+  the same window. The full table and its caveats are under open item 7.
+- **The control proves the measurement works.** The same export with the paint loop gated on
+  `requestVideoFrameCallback`, as `a95983c` had it: 12.44 ms jitter and a 140 ms gap.
+- File length: 2.971 s of frame durations, 2.992 s track, for a 3.0 s window. 2 131 196 bytes,
+  1680 × 1140, `video/mp4;codecs=avc1.42E01E,mp4a.40.2`.
+- `videoSupport()` picks the MP4/AVC branch on Chrome 151.
+- The whole path exercised end to end: `addImage` of a clip, `openVideoForExport`, `resolveClip`
+  with a non-zero `clipStart`, `renderCardVideo` at 2×, `deleteImage`.
+
+**Still not verified: the audio branch.** The harness runs with `muteAudio: true`, so
+`attachAudio()` and the suspended-`AudioContext` trap it guards against were not exercised. The
+2026-08-23 manual run did produce a file with an audio track, so the path works; it has just not
+been re-checked since the render loop was rebuilt.
 
 ### What was verified in the browser, 2026-08-23
 
@@ -380,17 +403,37 @@ still produced a 1680 × 1140 PNG with a clip selected; console clean.
 5. **Video export is untested on Safari and Firefox.** Firefox has no MP4 recording, so it will take
    the WebM branch; Safari's MP4 branch is plausible but unverified. `videoSupport()` degrades to
    "PNG only" if neither works, which is the failure mode to confirm first.
-6. **The exported file runs slightly long.** 2.98 s for a 3.0 s window is the recorder's start/stop
-   latency, not drift. If it ever matters, trim on the encoder side rather than shortening the
-   window — the clip would then end early on screen.
-7. **The video export fix in `e3c48ee` has not been watched back.** The judder diagnosis (paint
-   cadence vs `captureStream` sampling) is sound and the bitrate/scale floors are arithmetic, but
-   nobody has yet played an exported file after the fix — see the environment note about hidden
-   tabs for why it could not be done from the agent side. **This is the first thing to confirm.** If
-   it still judders, instrument the recorded frame timestamps directly (`ondataavailable` chunk
-   arrival times, or decode the file and read presentation timestamps) rather than guessing again.
+6. **The exported file's length is right.** Measured from the container, a 3.0 s window produces
+   2.971 s of frame durations and a 2.992 s track. The earlier "runs slightly long" note had the
+   sign wrong — it runs a hair *short*, by the recorder's start/stop latency. Nothing to fix; if it
+   ever matters, trim on the encoder side rather than shortening the window, or the clip ends early
+   on screen.
+7. **~~The video export fix in `e3c48ee` has not been watched back.~~ Confirmed 2026-08-24 — it does
+   not judder.** Measured with `dev/cadence-check.html` (see below), reading frame durations out of
+   the MP4 container rather than trusting playback:
+
+   | | frames | fps | jitter (sd) | worst gap |
+   |---|---|---|---|---|
+   | source clip, the 3 s window the card used | 90 | 30.06 | 4.41 ms | 42.1 ms |
+   | **shipping loop (`e3c48ee`)** | **89** | **29.95** | **5.50 ms** | **44.1 ms** |
+   | control: the old rVFC-gated loop (`a95983c`) | 86 | 28.86 | 12.44 ms | 140.1 ms |
+
+   The shipping loop reproduces the source's own cadence almost exactly — its jitter (5.50 ms) is
+   barely above the input's (4.41 ms), and no frame interval exceeds 44 ms. The control, painting
+   once per decoded frame the way `a95983c` did, more than doubles the jitter and drops a 140 ms
+   hole — four frame times with nothing in them. So the diagnosis in `e3c48ee` was right and the
+   measurement is sensitive enough to have caught it had it been wrong.
+
+   Two honest caveats. The control degrades clearly but *not* to the "15–20 frames a second" the
+   original report described; a synthetic clip decodes far more regularly than a real
+   variable-frame-rate one, so this understates the old bug rather than reproducing it at full
+   strength. And ~19% of exported frames repeat a source frame (`duplicatePairs: 17` of 89) — that
+   is phase drift between a 30 fps source and a 30 fps sampler, inherent to canvas capture, not the
+   judder that was fixed. It is the residual to look at if anyone ever calls the motion less than
+   perfectly smooth.
 8. **Nothing on this branch is merged.** `perf/render-loop-and-square-avatar` sits ahead of `main`
-   by `a95983c` and `e3c48ee`.
+   by `a95983c`, `e3c48ee` and the verification commit. Now that item 7 is confirmed, the branch
+   has no known blocker.
 
 ---
 
@@ -417,6 +460,40 @@ still produced a 1680 × 1140 PNG with a clip selected; console clean.
   `requestAnimationFrame` to `setTimeout` mid-session either: a real animation-frame handle already
   parked in the loop's `rafRef` never fires, so `request()` sees a pending frame and schedules
   nothing, and the preview deadlocks in a way that looks exactly like a render bug.
+- **The hidden-tab problem is solvable: launch your own Chrome.** This is what unblocked the video
+  verification on 2026-08-24, and it is worth knowing before losing another session to it. Driving a
+  tab in the everyday browser does not work — the extension's tabs stay backgrounded, and the few
+  seconds of visibility you can win by activating a tab are taken back before the next tool call
+  lands. A separate instance with its own profile *and its own flags* holds still:
+
+  ```
+  chrome --user-data-dir=<scratch>/chrome-profile --no-first-run --no-default-browser-check \
+         --disable-features=CalculateNativeWinOcclusion \
+         --disable-backgrounding-occluded-windows --disable-renderer-backgrounding \
+         --disable-background-timer-throttling --autoplay-policy=no-user-gesture-required \
+         http://localhost:5173/dev/cadence-check.html
+  ```
+
+  `CalculateNativeWinOcclusion` is the load-bearing one: without it Chrome marks the page hidden the
+  moment another window covers it, however briefly. With these, a full run reported
+  `hiddenEpisodes: 0` while the user carried on using the machine. The flags only apply to a fresh
+  process, so the separate `--user-data-dir` is required — passing them to an already-running Chrome
+  silently does nothing. Have the page POST its results to a small local collector; do not try to
+  read them back through the extension.
+
+  Three traps inside that setup, each of which produced a wrong answer first:
+  - **Editing the page while an old copy is open re-runs it.** Vite's HMR reloaded a stale window,
+    so two `MediaRecorder`s were encoding at once and the numbers were garbage. Close old windows by
+    title (`WM_CLOSE`) before every run.
+  - **`MediaRecorder` stalls for about a second shortly after `start()`.** It is the encoder warming
+    up, not the code under test. Record longer than you need and measure a window past it — the
+    harness records 9 s and uses 2 s–5 s.
+  - **`requestVideoFrameCallback` cannot measure a file's cadence.** It reports frames the player
+    chose to present, so any hiccup during playback invents a gap that is not in the file. This
+    faked a 2 s stall before the container parser replaced it. Read sample durations out of the MP4
+    (`moof`/`traf`/`trun`, `stts` for non-fragmented) — that is the encoded truth and needs no
+    playback. rVFC is still fine for "did the picture actually change", which is all the harness
+    uses it for now.
 - **Do not let a literal NUL byte into a source file.** A cache-key separator written as the actual
   U+0000 character, rather than as an escape sequence in the source, works perfectly at runtime —
   it compiles to the same character — but git then classifies the whole file as binary (`-text`) and
@@ -448,12 +525,23 @@ src/
       primitives.ts      ink-aligned text, tracking, cached metrics
       draw.ts            the card itself + foregroundKey                 (tested)
   components/            preview, controls, media picker, inputs
+dev/
+  cadence-check.html     browser harness: does the exported file judder?  (dev only)
 ```
 
 Tests sit next to their subjects as `*.test.ts`. There are no component tests — the renderer is
 where the risk is, and `__pnlCheckExport` covers the part that matters most. The video tests cover
 the parts that are pure (mime preference, the trim window, filenames, the 2× scale floor); the
 recorder itself has to be verified in the browser.
+
+`dev/cadence-check.html` is how you do that verification, and it is the only way to answer "does the
+export judder" — no unit test can. It synthesises a 30 fps clip, exports a card over it through the
+real `renderCardVideo`, and reads frame durations out of the MP4 container. Crucially it also
+records a **control** with the paint loop gated the way `a95983c` had it, so a clean result is
+demonstrably clean rather than a measurement that would have missed the bug. It is not part of the
+build: Vite's only entry is `index.html`, so the page exists in dev and never ships. Run it in an
+isolated Chrome — see the environment notes for the flags and for why the everyday browser cannot
+give you a trustworthy answer.
 
 `canvas/draw.test.ts` is the odd one out: it tests no drawing. It pins `foregroundKey` from both
 sides — every input the foreground reads must move the key, every background-only input must leave
