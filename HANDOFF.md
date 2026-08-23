@@ -431,9 +431,12 @@ still produced a 1680 × 1140 PNG with a clip selected; console clean.
    is phase drift between a 30 fps source and a 30 fps sampler, inherent to canvas capture, not the
    judder that was fixed. It is the residual to look at if anyone ever calls the motion less than
    perfectly smooth.
-8. **Nothing on this branch is merged.** `perf/render-loop-and-square-avatar` sits ahead of `main`
-   by `a95983c`, `e3c48ee` and the verification commit. Now that item 7 is confirmed, the branch
-   has no known blocker.
+8. **~~Nothing on this branch is merged.~~ Merged and deployed 2026-08-24.**
+   `perf/render-loop-and-square-avatar` fast-forwarded into `main` at `c32359d` and pushed. Vercel
+   rebuilt <https://nexocards.vercel.app> within about 15 s; the served bundle
+   (`assets/index-Mnp3TRib.js`) is byte-identical to a local `npm run build` of that commit, SHA-256
+   `18f85be6…e200c9`. Production therefore carries the render-loop rebuild, the square avatar and
+   moved footer, and the judder fix.
 
 ---
 
