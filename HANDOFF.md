@@ -1,13 +1,14 @@
 # Handoff — PnL Card Studio
 
-Written 2026-08-23, revised 2026-08-24 through `e3c48ee`. Repo:
+Written 2026-08-23, revised 2026-08-24 through the footer-gap change. Repo:
 <https://github.com/Artem2103/PnL> (private), initial commit `5216f81`. Working directory `D:\PnL`.
 Read `README.md` first for what the app *is*; this file covers what a newcomer would otherwise have
 to rediscover.
 
-The 2026-08-24 pass was a performance rebuild plus two layout fixes, on branch
-`perf/render-loop-and-square-avatar` (`a95983c`, `e3c48ee`) — **not yet merged to `main`**. Most of
-what follows about the render loop and the recorder is new in those two commits.
+The 2026-08-24 pass was a performance rebuild plus layout fixes, originally on branch
+`perf/render-loop-and-square-avatar` (`a95983c`, `e3c48ee`). It has since been **verified, merged
+into `main` and deployed** — see open items 7 and 8. Most of what follows about the render loop and
+the recorder is new in those commits.
 
 ---
 
@@ -202,7 +203,7 @@ works where brightness thresholds fail, e.g. when artwork fills the card.
 | Rows | label x55, value x301, baselines 319 / 360 / 401 |
 | Avatar | x35 y446, 52 × 52, **square, no corner radius** |
 | Handle | ink x103, baseline 486 |
-| Footer | icon x36 y542 23 × 15, ink x59, baseline 554 |
+| Footer | icon x36 y521 23 × 15, ink x59, baseline 533 |
 | Colours | accent `#2FE3AC`, text `#EAEDFF`, on-accent `#020307` |
 
 Four values **deliberately differ** from the reference, all on request:
@@ -210,12 +211,17 @@ Four values **deliberately differ** from the reference, all on request:
 - logo slot 66 × 54 (was 47 × 38) and wordmark 34px (was 42px); tracking scaled with the size.
 - avatar x35 (was 32) with square corners (was radius 12), so its left edge shares the accent
   block's and the title's. Handle moved 100 → 103 to hold its original 16px gap off the avatar.
-- footer dropped 35px (icon y507 → 542, baseline 519 → 554) so it sits the same distance below the
-  avatar as the avatar sits below the last stat row. Measured **off painted ink, not baselines**,
-  because that is what the eye reads: last row ends y403, avatar starts y446 (42 blank rows); avatar
-  ends y497, footer starts y540 (42). Side effect: the bottom margin is 12px against 35px on the
-  left. That is the arithmetic of the equal-gap rule on a 570px card, and it was flagged as such —
-  subtract 8 from both footer values for a 20px margin and a 34px gap if it ever reads too tight.
+- footer at icon y521 / baseline 533, against the reference's 507/519. It has moved twice and the
+  history matters, because both earlier values were wrong in opposite directions. The reference's
+  507/519 left only 8 blank rows under the avatar and read as the footer being stuck to the handle
+  with a dead band underneath. That was corrected to 542/554, giving 42 blank rows — exactly the gap
+  above the avatar — which was arithmetically tidy but pushed the ink to y557 on a 570px card,
+  leaving a 12px bottom margin against 35px on the left. On request the gap was then **halved to
+  21**, moving the footer up 21px without touching the avatar, so the avatar/handle row and the
+  footer read as one identity block. That also fixed the margin: the bottom now comes out at 33px,
+  near enough the 35px left margin to read as symmetric. All measured **off painted ink, not
+  baselines**, because that is what the eye reads — verified bands: last row 381–403, avatar
+  446–497, footer 519–536.
 
 To re-measure any of this, render with no background and scan for ink bands rather than trusting the
 spec numbers — antialiasing puts a row's visible bottom ~2px below its baseline, which is enough to
@@ -530,6 +536,7 @@ src/
   components/            preview, controls, media picker, inputs
 dev/
   cadence-check.html     browser harness: does the exported file judder?  (dev only)
+  layout-shot.html       renders the card and scans ink bands to measure gaps (dev only)
 ```
 
 Tests sit next to their subjects as `*.test.ts`. There are no component tests — the renderer is

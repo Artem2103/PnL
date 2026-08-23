@@ -111,19 +111,29 @@ export const SPEC = {
   },
 
   /**
-   * Dropped 35px from the reference's 507/519 so the footer sits the same
-   * distance below the avatar as the avatar sits below the last stat row.
-   * Measured off the painted ink rather than the baselines, since that is what
-   * the eye reads: the last row ends at y=403 and the avatar starts at 446, so
-   * 42 blank rows; the avatar ends at 497 and the footer now starts at 540,
-   * also 42. It used to be 8, which read as the footer being stuck to the
-   * handle with a dead band underneath it.
+   * Sits 21 blank rows under the avatar, half the 42 it used to sit at — the
+   * avatar/handle row and the footer now read as one identity block rather
+   * than two separate rows. Requested; the avatar deliberately did not move.
+   *
+   * All of these are measured off the painted ink rather than the baselines,
+   * since that is what the eye reads: antialiasing puts a row's visible bottom
+   * about 2px below its baseline. The avatar ends at y=497 and the footer ink
+   * now starts at 519.
+   *
+   * History worth keeping, because two of these numbers have been wrong in
+   * opposite directions. The reference has 507/519, which left only 8 blank
+   * rows and read as the footer being stuck to the handle with a dead band
+   * underneath. That was over-corrected to 542/554, matching the 42-row gap
+   * above the avatar exactly — arithmetically tidy, but it pushed the ink to
+   * y=557 on a 570px card and left a 12px bottom margin against 35px on the
+   * left. Halving the gap fixes both complaints at once: the bottom margin
+   * comes out at 33px, near enough the left margin to read as symmetric.
    */
   footer: {
-    icon: { x: 36, y: 542, width: 23, height: 15 },
+    icon: { x: 36, y: 521, width: 23, height: 15 },
     /** Left edge of the ink. */
     x: 59,
-    baseline: 554,
+    baseline: 533,
     size: 18,
     weight: 400,
     tracking: -0.15,

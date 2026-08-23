@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Layout shot</title>
+    <style>
+      body { background: #0b0d12; color: #eaedff; font: 13px/1.6 ui-monospace, monospace; padding: 20px; }
+      img { max-width: 100%; border: 1px solid #222; margin-top: 12px; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Dev-only. Renders the card at 1x with no background and a generated
+      avatar, then scans for horizontal bands of ink, so vertical gaps can be
+      measured off what is actually painted rather than off baselines —
+      antialiasing puts a row's visible bottom about 2px below its baseline,
+      which is enough to make "equal" gaps look unequal. At 1x the card is in
+      design units, so every band position is a spec.ts coordinate directly.
+
+      This is the procedure the handoff describes for re-measuring layout,
+      packaged so it can be run before and after a change instead of retyped
+      into a console. It also posts a 2x PNG. Run it the same way as
+      cadence-check.html — an isolated Chrome, results POSTed to 127.0.0.1:5199
+      if something is listening, otherwise just read the page.
+
+      It refuses to measure if Inter has not loaded, because the fallback stack
+      is wider and a measurement taken in that window looks exactly like a
+      layout regression.
+    -->
+    <div id="log"></div>
+    <script type="module">
+      const logEl = document.getElementById('log');
+      const post = (p, o) =>
+        fetch('http://127.0.0.1:5199' + p, { method: 'POST', body: JSON.stringify(o) }).catch(() => {});
+      const line = (m) => { const d = document.createElement('div'); d.textContent = m; logEl.appendChild(d); };
+
+      async function makeAvatar() {
+        const c = document.createElement('canvas');
+        c.width = 200; c.height = 200;
+        const x = c.getContext('2d');
+        const g = x.createLinearGradient(0, 0, 200, 200);
+        g.addColorStop(0, '#2fe3ac'); g.addColorStop(1, '#1b6ef3');
+        x.fillStyle = g; x.fillRect(0, 0, 200, 200);
+        x.fillStyle = 'rgba(255,255,255,.85)';
+        x.beginPath(); x.arc(100, 78, 34, 0, Math.PI * 2); x.fill();
+        x.beginPath(); x.arc(100, 200, 62, Math.PI, 0); x.fill();
+        return new Promise((r) => c.toBlob(r, 'image/png'));
+      }
+
+      (async () => {
+        try {
+          const [render, defaults, images] = await Promise.all([
+            import('/src/lib/render.ts'),
+            import('/src/lib/defaults.ts'),
+            import('/src/lib/images.ts'),
+          ]);
+          await document.fonts.ready;
+          if (!document.fonts.check('400 40px Inter')) throw new Error('Inter did not load — widths would be wrong');
+
+          // Clear anything a previous run left behind.
+          for (const a of await images.listImages('avatar')) {
+            if (a.name && a.name.startsWith('shot-avatar')) await images.deleteImage(a.id);
+          }
+          const av = await images.addImage(new File([await makeAvatar()], 'shot-avatar.png', { type: 'image/png' }), 'avatar');
+
+          const base = defaults.createDefaultState();
+          const state = {
+            ...base,
+            avatarId: av.id,
+            logoId: null,
+            artwork: { ...base.artwork, imageId: null },
+          };
+          const assets = await render.prepareAssets(state);
+
+          // 1x == design units, so band positions are spec coordinates.
+          const c1 = render.renderToOffscreenCanvas(state, assets, 1);
+          const ctx = c1.getContext('2d');
+          const { width, height } = c1;
+          const img = ctx.getImageData(0, 0, width, height).data;
+
+          // The themed ground is near-black; ink is anything clearly above it.
+          // Scan the left column only, where the avatar, handle and footer are.
+          const COL_FROM = 30, COL_TO = 520, THRESH = 42;
+          const inked = [];
+          for (let y = 0; y < height; y++) {
+            let hit = false;
+            for (let x = COL_FROM; x < COL_TO; x++) {
+              const i = (y * width + x) * 4;
+              const lum = 0.2126 * img[i] + 0.7152 * img[i + 1] + 0.0722 * img[i + 2];
+              if (lum > THRESH) { hit = true; break; }
+            }
+            inked.push(hit);
+          }
+          const bands = [];
+          let start = -1;
+          for (let y = 0; y <= height; y++) {
+            if (y < height && inked[y]) { if (start < 0) start = y; }
+            else if (start >= 0) { bands.push([start, y - 1]); start = -1; }
+          }
+          const gaps = bands.slice(1).map((b, i) => ({ between: bands[i][1] + '-' + b[0], blankRows: b[0] - bands[i][1] - 1 }));
+
+          const c2 = render.renderToOffscreenCanvas(state, assets, 2);
+          const png = c2.toDataURL('image/png');
+
+          await images.deleteImage(av.id);
+
+          const out = { bands, gaps, cardHeight: height, bottomMargin: height - bands[bands.length - 1][1] - 1 };
+          line('bands: ' + JSON.stringify(bands));
+          line('gaps: ' + JSON.stringify(gaps));
+          line('bottom margin: ' + out.bottomMargin);
+          const el = document.createElement('img');
+          el.src = png; logEl.appendChild(el);
+          await post('/result', out);
+          await post('/png', { png });
+          line('POSTED');
+        } catch (e) {
+          line('ERROR ' + ((e && e.stack) || e));
+          await post('/result', { error: String((e && e.stack) || e) });
+        }
+      })();
+    </script>
+  </body>
+</html>
