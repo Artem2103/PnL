@@ -1,4 +1,8 @@
 :root {
+  /* Height of the sticky topbar. The controls column hangs off it twice — as
+     its sticky offset and as the height it has left — so the two cannot drift
+     apart. Measured from the bar's padding and content, not guessed. */
+  --topbar-h: 67px;
   --bg: #06070a;
   --bg-elev: rgba(255, 255, 255, 0.035);
   --bg-elev-strong: rgba(255, 255, 255, 0.06);
@@ -130,13 +134,18 @@ kbd {
 .layout__controls {
   border-right: 1px solid var(--border);
   padding: 22px 22px 60px;
-  max-height: calc(100vh - 67px);
+  max-height: calc(100vh - var(--topbar-h));
   overflow-y: auto;
-  overscroll-behavior: contain;
   position: sticky;
-  top: 67px;
-  /* Scrolling this column cannot affect anything outside it, so the browser is
-     told not to look. */
+  top: var(--topbar-h);
+  /* Painting and layout inside this column cannot affect anything outside it,
+     so the browser is told not to look.
+
+     `overscroll-behavior: contain` was here too and had to go: it stops the
+     wheel chaining to the page once this column hits its own end, so with the
+     pointer anywhere over the panel the window simply stopped scrolling and
+     the only way on was to drag the scrollbar. Containment of paint is worth
+     having; containment of scroll intent is not. */
   contain: layout paint;
 }
 
@@ -162,6 +171,11 @@ kbd {
   .layout__controls {
     position: static;
     max-height: none;
+    /* Not a scroll container at this width — the whole page scrolls as one.
+       Leaving `overflow-y: auto` on an element with nothing to scroll is not
+       harmless: it still counts as a scroller, so it ate every wheel event
+       that landed on it and the page stopped dead partway down. */
+    overflow-y: visible;
     border-right: none;
     border-bottom: 1px solid var(--border);
     order: 2;

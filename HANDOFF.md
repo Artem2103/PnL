@@ -713,6 +713,49 @@ used): clip preview plays under the card; drag pans horizontally and, once zoome
 `march-2026-pnl.mp4`, 1680 × 1140, 2.98 s for a 3.0 s window, with an audio track; `Download PNG`
 still produced a 1680 × 1140 PNG with a clip selected; console clean.
 
+## The scroll trap in the editor shell
+
+Fixed 2026-08-25 after a report that the page stopped scrolling partway down when the window was
+about half a screen wide. It was two bugs wearing one coat, and both were `overscroll-behavior:
+contain` on `.layout__controls`.
+
+**Two columns (above 980px).** The controls column is a sticky, independently scrolling panel.
+`contain` stops the wheel chaining to the page once that panel reaches its own end, so with the
+pointer anywhere over the panel the window simply stopped. Measured: 25 wheel events over the panel
+moved `window.scrollY` by 0 against an available 75.
+
+**One column (980px and below).** The media query drops `position: sticky` and `max-height` but left
+`overflow-y: auto` behind. An element with `overflow-y: auto` and *nothing to scroll* is still a
+scroll container, and with `overscroll-behavior: contain` it swallows every wheel event that lands
+on it rather than passing it up. Since the column is the full height of the controls at that width,
+almost the whole page was covered by it. Measured: the page stopped at `scrollY` 300 out of 2722,
+which is exactly the report — you reach the point where the column slides under the pointer, and
+after that only the scrollbar works.
+
+The fix is to drop `overscroll-behavior` entirely and to set `overflow-y: visible` in the
+single-column query. `contain: layout paint` stays; that one is about painting, not about scroll
+intent, and the comment that used to sit above both conflated them.
+
+Two things to keep in mind if this area is touched again:
+
+- **`overflow-y: auto` is not free when there is nothing to overflow.** It makes the element a
+  scroller for event-routing purposes whatever its content height is. If a column only needs to
+  scroll at some widths, turn the overflow *off* at the others rather than relying on the height.
+- **Measure it with synthetic wheels, not by hand.** `Input.dispatchMouseEvent` with
+  `type: 'mouseWheel'` at a chosen x/y, then read `window.scrollY` and the panel's `scrollTop`
+  against `scrollHeight - clientHeight`. Hovering different regions by hand is how this survived as
+  long as it did: over the stage everything looked fine.
+
+`--topbar-h` was added at the same time. The controls column hangs off the topbar's height twice,
+as its sticky offset and as the height it has left, and the two were separate hard-coded `67px`.
+
+One known cosmetic edge, not worth code: in local mode the banner sits above the columns and is not
+sticky, so at scroll position zero the controls column overhangs the viewport bottom by the banner's
+height. It resolves the moment the banner scrolls away, and now that the wheel chains properly it
+costs nothing.
+
+---
+
 ## Design decisions that look wrong until you know why
 
 - **Position size is not an input.** It differs per platform (MT5 lots, contracts, base units) and
