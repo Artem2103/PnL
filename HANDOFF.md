@@ -1,54 +1,45 @@
 # Handoff — PnL Card Studio
 
-Written 2026-08-23, revised 2026-08-25 through the colour controls. Repo:
-<https://github.com/Artem2103/PnL> (private), initial commit `5216f81`. Working directory `D:\PnL`.
-Read `README.md` first for what the app *is*; this file covers what a newcomer would otherwise have
-to rediscover.
+Written 2026-08-23, revised 2026-08-26. Repo: <https://github.com/Artem2103/PnL> (private), initial
+commit `5216f81`. Working directory `D:\PnL`. Read `README.md` first for what the app *is*; this
+file covers what a newcomer would otherwise have to rediscover.
 
-The 2026-08-24 pass was a performance rebuild plus layout fixes, originally on branch
-`perf/render-loop-and-square-avatar` (`a95983c`, `e3c48ee`). It has since been **verified, merged
-into `main` and deployed** — see open items 7 and 8. Most of what follows about the render loop and
-the recorder is new in those commits.
+Four passes have landed since the first release, and knowing which is which makes the rest of this
+file easier to read:
+
+| | what it was | where it is |
+|---|---|---|
+| 2026-08-24 | render-loop rebuild, square avatar, video judder fix | `a95983c`, `e3c48ee` → `main` |
+| 2026-08-25 (a) | accounts: Supabase auth, per-account card and media | `62b4a5b` → `main` |
+| 2026-08-25 (b) | reference-sized pictures, white/black text, cherry and custom colour | `c96f703` → `main` |
+| 2026-08-25 (c) | local mode, and the scroll fix that came out of testing it | `f3d739d`, `45c4b95` → `main` |
+
+All of it is on `main` and deployed. Most of what follows about the render loop and the recorder is
+new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
+the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
+the fourth.
 
 ---
 
-## Start here (2026-08-25)
+## Start here (2026-08-26)
 
-**Merged into `main` and deployed on 2026-08-25.** `feat/supabase-accounts` fast-forwarded to
-`45c4b95` and pushed; Vercel rebuilt <https://nexocards.vercel.app>. Verified rather than assumed:
-the served `assets/index-SegEAKjL.js` is byte-identical to a local `npm run build` of that commit,
-SHA-256 `955d8f0f…a7a8`, and the CSS filename matches. Note the *local* build only reproduces it
-with `.env.local` moved aside — an empty `VITE_SUPABASE_URL` and an absent one inline differently,
-so a hash mismatch there is the env file, not a different commit.
+Everything described in this file is **on `main` and deployed**. <https://nexocards.vercel.app> is
+serving commit `1658528`. There is no work sitting on a branch.
 
-**Production is running in local mode**, confirmed on the live site: the studio opens with no
-sign-in, the banner is up, the badge reads "This browser only", there is no Sign out button, and
-the wheel reaches the bottom of the page from a pointer over the panel. That is open item 17
-happening, deliberately and on request — there is no Supabase project to point it at yet.
+**The app currently has no sign-in.** That is deliberate and was requested: there is still no
+Supabase project to register against, so registration and login are paused until there is one. With
+`VITE_SUPABASE_URL` or `VITE_SUPABASE_ANON_KEY` missing, the studio opens straight away and keeps
+everything in the browser under the id `local`, with a banner across the top saying so. See **Local
+mode** under *Authentication*. This is not a flag anyone has to remember to flip back: it is what
+being unconfigured *means*, so filling in the two variables restores the sign-in screen by itself.
 
-Everything below was written while this was still a branch; the two sections it describes are now
-what `main` is.
+**The one thing outstanding is that accounts have never run against a live project.** Sign-up,
+sign-in, and per-account storage of the card and its images are written, typechecked, built and
+unit-tested, and the merge policy is covered by `useCloudCard.test.ts` — but no account has been
+created, no row written and no file uploaded, because there have never been credentials. Nothing
+below is a known bug; this is untested, not broken.
 
-**The colour and picture pass is done and verified in a browser** (`c96f703`, committed, not
-pushed). The logo and avatar are back at the reference's own sizes, text can be white or black,
-cherry red joined the presets, and there is a custom colour with an RGB picker behind it. All of it
-is measured, not eyeballed — see **Colour, ink and the two picture slots** below, and
-`dev/colour-shot.html`, which is the instrument that measured it. Nothing there is outstanding.
-
-**Accounts are still unverified against a live project, and are currently switched off in
-practice.** Sign-up, sign-in, and per-account storage of the card and its images are **written,
-typechecked, built and unit-tested**. They have **not** been run against a real Supabase project,
-because there are still no credentials — `.env.local` has both variables present and empty.
-
-Because of that, and on request, **an unconfigured app now opens the studio instead of a setup
-notice** — see **Local mode** below. This is not a flag: filling in the two variables restores the
-sign-in screen on its own. Read that section before deploying anything, because it changes what a
-credential-less production build does.
-
-Closing the account verification is still the one thing outstanding, and the walkthrough below is
-how to do it. Nothing below is a known bug.
-
-**Three steps to see it work:**
+### Turning accounts on
 
 1. Create a project at [supabase.com](https://supabase.com). In **SQL Editor → New query**, paste
    the whole of `supabase/schema.sql` and run it once.
@@ -57,9 +48,10 @@ how to do it. Nothing below is a known bug.
    VITE_SUPABASE_URL=https://your-project-ref.supabase.co
    VITE_SUPABASE_ANON_KEY=your-anon-public-key
    ```
-3. `npm run dev`, then create an account. If **Authentication → Providers → Email → Confirm email**
-   is on, you get a "check your inbox" message; turn it off to skip straight in while testing.
-   Either way, add `http://localhost:5173` under **Authentication → URL Configuration**.
+3. `npm run dev`. The banner is gone and the sign-in screen is back — that alone confirms the
+   variables are being read. Create an account. If **Authentication → Providers → Email → Confirm
+   email** is on, you get a "check your inbox" message; turn it off to skip straight in while
+   testing. Either way, add `http://localhost:5173` under **Authentication → URL Configuration**.
 
 **Then check these six things, in this order.** They are the walkthrough, not a list of suspicions:
 
@@ -72,15 +64,28 @@ how to do it. Nothing below is a known bug.
 | sign in from a second browser | same card, same tiles |
 | delete an image | gone from the picker and from Storage |
 
-If all six pass, it works. Merge `feat/supabase-accounts` into `main` — **but before you do**, add
-the same two variables to the Vercel project and redeploy, or <https://nexocards.vercel.app> will
-show the setup notice to everyone. Vite bakes those values into the bundle at build time, so
-setting them without a rebuild does nothing. Add the Vercel URL to Supabase's URL Configuration too.
+Two things that will look like failures and are not. The card you made while accounts were off does
+**not** come with you — it lives under the id `local` and is deliberately not adopted, so expect to
+start from the sample card. And the first sign-in on a second browser paints tiles before their
+bytes exist, because `syncLibrary` pulls the manifest and not the files; a background chosen
+elsewhere takes a moment to appear the first time.
 
 **If something fails**, the useful places to look: the browser console (upload and sync failures are
 logged there rather than shown), the Supabase dashboard's **Table Editor** (is there a row in
 `cards`? in `media`?) and **Storage → media** (are the bytes there?). A row with no object, or a
 tile that never loads, means the upload half failed and the manifest half did not.
+
+### Before the next deploy
+
+Production has no environment variables, so it is running in local mode — an open, anonymous,
+browser-only editor rather than a locked door. Nothing can leak, because there are no accounts and
+nothing reaches the network, but it is a different thing to be publishing than a sign-in screen.
+
+Once the six checks pass, add the same two variables to the **Vercel** project and redeploy. Vite
+inlines them at build time, so setting them without a rebuild does nothing. Add the Vercel origin
+to Supabase's **Authentication → URL Configuration** as well, or confirmation emails link somewhere
+the app is not. Until both are done, every deploy of `main` republishes the open editor. That is
+open item 10.
 
 The rest of this file is background — how the pieces fit and why they are shaped that way. Read
 **Authentication** and **Persistence** when you need to change them, not before.
@@ -89,7 +94,8 @@ The rest of this file is background — how the pieces fit and why they are shap
 
 ## State
 
-Working and verified end to end. `npm run dev` → <http://localhost:5173>.
+Working, and deployed. `npm run dev` → <http://localhost:5173>. Everything except the account round
+trip has been exercised in a real browser; that one exception is open item 9.
 
 ```bash
 npm install
@@ -100,16 +106,16 @@ npm run build     # clean
 ```
 
 The app renders one card format (840 × 570) matching the Axiom reference cards, exports PNG at
-1×/2×/3×, exports MP4/WebM when the background is a clip, and stores everything client-side.
+1×/2×/3×, exports MP4/WebM when the background is a clip, and can store everything either in the
+browser alone or in a Supabase account.
 
-`npm test` is 144 tests as of 2026-08-25 — the colour pass added `color.test.ts` and
-`themes.test.ts`, and two more cases to `draw.test.ts`.
+`npm test` is 144 as of 2026-08-25 — the colour pass added `color.test.ts` and `themes.test.ts`,
+and two more cases to `draw.test.ts`.
 
-Since 2026-08-24 the studio sits behind a Supabase email/password gate, and the card and its media
-are stored **in the account**, not just in the browser. Setting the project up now takes two steps
-that are not `npm install`: run `supabase/schema.sql` in the SQL editor, and fill in `.env.local`.
-Without the second, the app renders a setup notice instead of a sign-in form. See
-**Authentication** and **Persistence** below.
+**With no `.env.local`, `npm install && npm run dev` is the whole setup** and the studio opens with
+no sign-in. That is local mode; see **Authentication**. Wiring up an account adds two steps that
+are not `npm install`: run `supabase/schema.sql` in the SQL editor, and fill in `.env.local`. See
+**Authentication** and **Persistence** below, and **Start here** for the order to do it in.
 
 ---
 
@@ -119,6 +125,7 @@ Without the second, the app renders a setup notice instead of a sign-in form. Se
 main.tsx
   └ AuthProvider          lib/auth.tsx     — one session, held in React context
       └ AuthGate          components/AuthGate.tsx
+          ├ local mode    App.tsx — straight through, no session consulted
           ├ loading       spinner while the stored session is restored
           ├ no session    components/AuthScreen.tsx  — sign in / create account
           └ session       App.tsx — the studio, unchanged
@@ -127,12 +134,16 @@ main.tsx
 There is **no router**, and adding one would be the wrong instinct: the app has exactly one page and
 one gate in front of it. `AuthGate` is the whole routing story.
 
+The first branch is checked before the other three and is decided entirely by whether the two
+environment variables exist — see **Local mode**.
+
 Three things worth knowing about the gate:
 
 1. **The loading state is not decoration.** `getSession()` is async, so on first paint there is no
    session even for someone who is signed in. Rendering `AuthScreen` during that window flashes a
    login form at a signed-in user on every reload. The gate holds a spinner instead, and
-   `loading` starts `false` when Supabase is unconfigured so the setup notice is immediate.
+   `loading` starts `false` when Supabase is unconfigured, so local mode opens the studio on the
+   first frame rather than spinning for a session that is never coming.
 
 2. **`onAuthStateChange` is what actually swaps the screen.** `signIn` and `signUp` do not set
    state themselves; they let the listener do it, which means a sign-out in another tab lands here
@@ -145,10 +156,16 @@ Three things worth knowing about the gate:
    both paths have to keep working.
 
 `lib/supabase.ts` builds the client lazily and exports `null` when either variable is missing,
-because `createClient` throws on an empty URL and a blank screen is a worse answer than a page
-naming the two variables to set. `friendlyMessage` in `lib/auth.tsx` rewrites the three Supabase
-errors a person actually hits; everything else passes through verbatim rather than being flattened
-into "something went wrong".
+because `createClient` throws on an empty URL and every unconfigured path downstream keys off that
+null rather than off a half-built client. `friendlyMessage` in `lib/auth.tsx` rewrites the three
+Supabase errors a person actually hits; everything else passes through verbatim rather than being
+flattened into "something went wrong".
+
+One piece of `AuthScreen` is currently unreachable and was kept on purpose: the `configured ?
+null : (...)` branch that renders the "Supabase is not configured" notice. Local mode means the
+screen is never mounted while unconfigured, so that notice cannot appear — but the branch is three
+lines, and deleting it would have to be undone by anyone who reintroduces a gate before
+credentials. Do not read its presence as evidence the notice still shows.
 
 **Not implemented, and deliberately:** password reset and OAuth providers. Per-account storage *is*
 implemented — that is what the section after next is about.
@@ -171,11 +188,11 @@ Four things to know:
    revert. If this is ever made into a real flag, that property is the one to keep — a flag left on
    is how an auth gate quietly stops existing.
 
-2. **A credential-less production build is now an open editor**, not a locked door. Until
-   `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are in the Vercel project,
-   <https://nexocards.vercel.app> would deploy as an anonymous local-only studio rather than the
-   setup notice it shows today. Nothing can leak — there is no account data and nothing reaches the
-   network — but it is a different thing to publish, so it is open item 17.
+2. **A credential-less production build is an open editor**, not a locked door — and that is what
+   <https://nexocards.vercel.app> is serving right now, since the Vercel project has no environment
+   variables. Nothing can leak: there are no accounts, no bucket and nothing reaches the network.
+   But it is a different thing to be publishing than a sign-in screen, and every deploy of `main`
+   republishes it. Open item 10.
 
 3. **Work done in local mode does not migrate into an account.** It lives under
    `pnl-card-studio:v2:local` and IndexedDB records stamped `userId: 'local'`. `takeOrphanCard` and
@@ -851,21 +868,29 @@ costs nothing.
    rebuilt <https://nexocards.vercel.app> within about 15 s; the served bundle
    (`assets/index-Mnp3TRib.js`) is byte-identical to a local `npm run build` of that commit, SHA-256
    `18f85be6…e200c9`. Production therefore carries the render-loop rebuild, the square avatar and
-   moved footer, and the judder fix.
+   moved footer, and the judder fix. Everything since has been deployed the same way and checked the
+   same way — most recently `1658528` on 2026-08-25, served as `assets/index-6NyeXdXR.js`, SHA-256
+   `232eee72…9203`.
 9. **None of the Supabase work has been run against a live project.** Both auth screens render, the
    merge policy is unit-tested, the build is clean and the unconfigured path is verified — but no
    account has been created, no row written and no file uploaded, because there were no credentials
-   to do it with. The checks that matter, in order: sign up and confirm; edit the card and watch the
-   topbar reach *Saved*; upload a background and watch the tile's *Saving...* badge clear; reload
-   and confirm both came back; sign in from a second browser and confirm the card and the tiles are
-   there; delete a file and confirm it is gone from Storage as well as the picker.
-10. **Deploying this needs two settings changed outside the repo, or production breaks.**
-    `.env.local` is gitignored and Vercel does not read it, so <https://nexocards.vercel.app> has
-    no accounts until `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are added to the project's
-    environment variables **and it is redeployed** — Vite inlines them at build time, so an env
-    change alone does nothing. Since 2026-08-25 the symptom of getting this wrong changed: it used
-    to be a setup notice, and is now an open anonymous editor. See item 17. Separately, that origin has to be listed under
-    Supabase's **Authentication → URL Configuration**, or confirmation emails link somewhere else.
+   to do it with. **This is the only open item that is work rather than a note.** The walkthrough is
+   in **Start here**; the short version is sign up and confirm, edit the card and watch the topbar
+   reach *Saved*, upload a background and watch the tile's *Saving...* badge clear, reload and
+   confirm both came back, sign in from a second browser and confirm the card and the tiles are
+   there, delete a file and confirm it is gone from Storage as well as the picker. Note that until
+   the two variables are set you cannot even reach the sign-in screen — local mode opens the studio
+   instead — so step one is always `.env.local`.
+10. **Production is an open editor until two variables are set in Vercel.** `.env.local` is
+    gitignored and Vercel does not read it, so <https://nexocards.vercel.app> has no accounts —
+    which since local mode landed means an anonymous browser-only studio rather than the setup
+    notice it used to show. Nothing can leak, because there are no accounts and nothing reaches the
+    network, but it is a different thing to be publishing, and **every deploy of `main` republishes
+    it**. Fixing it needs `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in the project's
+    environment variables **and a redeploy** — Vite inlines them at build time, so an env change
+    alone does nothing. The Vercel origin also has to be listed under Supabase's
+    **Authentication → URL Configuration**, or confirmation emails link somewhere the app is not.
+    Close this at the same time as item 9.
 11. **~~Accounts do not carry anything yet.~~ Done.** Cards and media are account-backed; see
     **Persistence**. It did end the "nothing is ever uploaded" property, and the README's privacy
     section was rewritten to say so rather than left quietly wrong.
@@ -893,11 +918,6 @@ costs nothing.
     approximately right under a scrim, and wrong for a card with the scrim at zero over a busy
     photo. Sampling the actual pixels behind the row would fix it and would also cost a readback
     every frame; it has not been worth it.
-17. **Local mode changes what a credential-less deploy is.** Covered under **Local mode** above and
-    worth repeating here because it is the one item with a consequence outside the repo: with no
-    environment variables set, a deployed build is now an open anonymous editor rather than a setup
-    notice. Set the two variables in Vercel **before** the next deploy, or decide deliberately that
-    an open editor is what should be published.
 
 ---
 

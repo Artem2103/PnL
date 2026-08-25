@@ -1,21 +1,25 @@
 # PnL Card Studio
 
 A web app for traders to turn a closed trade — or a whole month — into a shareable card, and
-download it as a high-resolution PNG or, over a background clip, an MP4. Every pixel is still drawn
-in the browser — there is no server-side rendering — but the card and the images behind it now live
-in a Supabase account, so they are there when you open the app somewhere else.
+download it as a high-resolution PNG or, over a background clip, an MP4. Every pixel is drawn in the
+browser; there is no server-side rendering.
 
 ```bash
 npm install
-cp .env.example .env.local   # then fill in the two Supabase values, see below
 npm run dev        # http://localhost:5173
 npm run build      # typecheck + production bundle into dist/
 npm test           # unit tests for the PnL math, formatting, card content and sync
 npm run typecheck
 ```
 
-Setting up a fresh Supabase project takes two one-off steps: paste `supabase/schema.sql` into the
-SQL editor, and put the project's URL and anon key in `.env.local`. Details below.
+That is the whole setup. Out of the box there is no sign-in and nothing leaves the machine: the
+card and the images behind it are kept in the browser, and a banner across the top says so.
+
+**Accounts are optional and off until you configure them.** Add a Supabase project — paste
+`supabase/schema.sql` into its SQL editor, put the URL and anon key in `.env.local` — and the app
+puts a sign-in screen in front of the studio and starts keeping the card and its media in the
+account, so they are there when you open it somewhere else. Nothing else changes. See
+**Accounts** below.
 
 ## Accounts
 
@@ -78,7 +82,9 @@ objects are named, change the policies in the same commit.
 ### What syncs, and when
 
 Both the card and the media library are **local-first**: this browser keeps a copy and the account
-is reconciled behind it, so the editor paints on the first frame instead of after a round trip.
+is reconciled behind it, so the editor paints on the first frame instead of after a round trip. It
+is also why turning accounts off is not a special case — with nothing to reconcile against, the
+local half is simply the whole of it.
 
 - **The card.** Every edit is written to `localStorage` immediately and pushed to `cards` after a
   900 ms pause in typing. The topbar shows *Saved* / *Saving...* / *Not saved*. On load the two
@@ -130,7 +136,7 @@ Exported at 1×, 2× or 3× (up to 2520 × 1710).
   PNG.
 - **Your own marks**: wordmark, handle, avatar, logo, and both footer strings are yours to set.
 - Download, copy to clipboard, or system share. `Ctrl`/`⌘` + `S` exports.
-- Settings persist in `localStorage`.
+- Settings persist across reloads — in `localStorage`, and in your account when you have one.
 
 ## How the layout was matched
 
@@ -257,9 +263,15 @@ a 15 s clip takes 15 s. Points worth knowing:
 
 ## Media and privacy
 
-**This changed when accounts landed, and the previous version of this section said the opposite.**
-Uploads now leave the device — that is the point of them being in your account. What follows is what
-actually happens to them.
+**Which of two things is true depends on whether accounts are configured**, so start there.
+
+*With no Supabase project*, nothing leaves the machine at all. The card is in `localStorage`, the
+images and clips are in IndexedDB, and there is no network call to make. That is the app's default
+state and the banner across the top says so. The flip side is that clearing site data loses the
+card, and nothing follows you to another device.
+
+*With accounts on*, uploads leave the device — that is the point of them being in your account. The
+rest of this section is about that case.
 
 A selected photo is decoded and re-encoded through a canvas, capping the long edge and **stripping
 EXIF, including GPS**, *before* anything is sent. The file that reaches Storage is not the file off
@@ -277,12 +289,14 @@ enforced by row-level security in Postgres rather than by the client asking nice
 because the client is a bundle anyone can read.
 
 What the account holds: your email address, your card's contents, and the images and clips you
-upload. What it does not: anything rendered on a server. Every card is still drawn by the canvas
-renderer in your own browser, and the PNG or MP4 you download never touches the network.
+upload. What it does not: anything rendered on a server. Every card is drawn by the canvas renderer
+in your own browser in **both** modes, and the PNG or MP4 you download never touches the network
+either way.
 
-The trade-off worth stating plainly, in the other direction now: your media is on someone else's
-computer. It follows you to a new device, and it is also there to be breached, subpoenaed, or lost
-if the project is deleted. If that is the wrong trade for a particular file, do not upload it.
+The trade-off worth stating plainly: your media is on someone else's computer. It follows you to a
+new device, and it is also there to be breached, subpoenaed, or lost if the project is deleted. If
+that is the wrong trade for a particular file, do not upload it — or do not configure accounts at
+all, which is a supported way to run this and not a broken one.
 
 ## Layout
 
