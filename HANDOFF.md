@@ -16,11 +16,11 @@ the recorder is new in those commits.
 
 Two things sit on branch `feat/supabase-accounts`.
 
-**The colour and picture pass is done and verified in a browser.** The logo and avatar are back at
-the reference's own sizes, text can be white or black, cherry red joined the presets, and there is a
-custom colour with an RGB picker behind it. All of it is measured, not eyeballed — see **Colour, ink
-and the two picture slots** below, and `dev/colour-shot.html`, which is the instrument that
-measured it. Nothing there is outstanding.
+**The colour and picture pass is done and verified in a browser** (`c96f703`, committed, not
+pushed). The logo and avatar are back at the reference's own sizes, text can be white or black,
+cherry red joined the presets, and there is a custom colour with an RGB picker behind it. All of it
+is measured, not eyeballed — see **Colour, ink and the two picture slots** below, and
+`dev/colour-shot.html`, which is the instrument that measured it. Nothing there is outstanding.
 
 **Accounts are still unverified against a live project.** Sign-up, sign-in, and per-account storage
 of the card and its images are **written, typechecked, built and unit-tested**. They have **not**
