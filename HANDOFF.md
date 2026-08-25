@@ -14,7 +14,20 @@ the recorder is new in those commits.
 
 ## Start here (2026-08-25)
 
-Two things sit on branch `feat/supabase-accounts`.
+**Merged into `main` and deployed on 2026-08-25.** `feat/supabase-accounts` fast-forwarded to
+`45c4b95` and pushed; Vercel rebuilt <https://nexocards.vercel.app>. Verified rather than assumed:
+the served `assets/index-SegEAKjL.js` is byte-identical to a local `npm run build` of that commit,
+SHA-256 `955d8f0f…a7a8`, and the CSS filename matches. Note the *local* build only reproduces it
+with `.env.local` moved aside — an empty `VITE_SUPABASE_URL` and an absent one inline differently,
+so a hash mismatch there is the env file, not a different commit.
+
+**Production is running in local mode**, confirmed on the live site: the studio opens with no
+sign-in, the banner is up, the badge reads "This browser only", there is no Sign out button, and
+the wheel reaches the bottom of the page from a pointer over the panel. That is open item 17
+happening, deliberately and on request — there is no Supabase project to point it at yet.
+
+Everything below was written while this was still a branch; the two sections it describes are now
+what `main` is.
 
 **The colour and picture pass is done and verified in a browser** (`c96f703`, committed, not
 pushed). The logo and avatar are back at the reference's own sizes, text can be white or black,

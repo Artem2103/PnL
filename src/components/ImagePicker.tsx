@@ -36,7 +36,7 @@ function ImagePickerView({
   // at all, and reading the id off it left this whole picker keyed on the empty
   // string, so every refresh and every upload returned early and the library
   // was silently dead.
-  const { userId: owner, librarySyncedAt } = useAuth();
+  const { userId: owner, mode, librarySyncedAt } = useAuth();
   const userId = owner ?? '';
   const [items, setItems] = useState<MediaSummary[]>([]);
   const [busy, setBusy] = useState(false);
@@ -188,7 +188,8 @@ function ImagePickerView({
       </div>
 
       <p className="muted-note">
-        {items.length}/{maxImagesFor(role)} saved to your account
+        {items.length}/{maxImagesFor(role)}{' '}
+        {mode === 'local' ? 'saved in this browser' : 'saved to your account'}
       </p>
     </div>
   );
