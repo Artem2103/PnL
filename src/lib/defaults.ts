@@ -1,6 +1,6 @@
 import type { CardState } from '../types';
 import { MAX_CLIP_SECONDS } from './images';
-import { DEFAULT_THEME_ID } from './themes';
+import { DEFAULT_CUSTOM_ACCENT, DEFAULT_THEME_ID } from './themes';
 
 /**
  * Bumped from v1: the card model changed shape entirely.
@@ -42,6 +42,8 @@ export function createDefaultState(): CardState {
     },
     display: {
       themeId: DEFAULT_THEME_ID,
+      customAccent: DEFAULT_CUSTOM_ACCENT,
+      textTone: 'light',
       showRows: true,
       showHandle: true,
       showFooter: true,

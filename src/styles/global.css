@@ -662,6 +662,50 @@ kbd {
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.72));
 }
 
+.rgb {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rgb__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The native well: chrome stripped back so it reads as a swatch, not a button. */
+.rgb__well {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+}
+
+.rgb__well::-webkit-color-swatch-wrapper {
+  padding: 3px;
+}
+
+.rgb__well::-webkit-color-swatch {
+  border: none;
+  border-radius: 3px;
+}
+
+.rgb__well::-moz-color-swatch {
+  border: none;
+  border-radius: 3px;
+}
+
+.rgb__hex {
+  flex: 1 1 auto;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+}
+
 /* ------------------------------------------------------------ Background */
 
 .bg-picker {

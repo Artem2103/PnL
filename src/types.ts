@@ -44,8 +44,20 @@ export interface BrandState {
   currency: string;
 }
 
+/**
+ * Which of the two inks every string outside the accent block is printed in.
+ * `light` is the reference card; `dark` turns the whole card over — the plain
+ * ground and the artwork scrim follow it, or black text would be painted on a
+ * near-black ground and simply not be there.
+ */
+export type TextTone = 'light' | 'dark';
+
 export interface DisplayState {
+  /** A preset id from `THEMES`, or `'custom'` to use `customAccent`. */
   themeId: string;
+  /** The colour behind `themeId === 'custom'`. Any `#rrggbb`. */
+  customAccent: string;
+  textTone: TextTone;
   /** Accent-coloured percentage on the first row. */
   showRows: boolean;
   showHandle: boolean;

@@ -57,6 +57,11 @@ describe('foregroundKey', () => {
     ['footer right', (s) => ({ ...s, brand: { ...s.brand, footerSecondary: 'Code: OTHER' } })],
     ['currency', (s) => ({ ...s, brand: { ...s.brand, currency: 'EUR' } })],
     ['theme', (s) => ({ ...s, display: { ...s.display, themeId: 'gold' } })],
+    ['text tone', (s) => ({ ...s, display: { ...s.display, textTone: 'dark' } })],
+    [
+      'custom accent',
+      (s) => ({ ...s, display: { ...s.display, themeId: 'custom', customAccent: '#00FF88' } }),
+    ],
     ['compact hero', (s) => ({ ...s, display: { ...s.display, compactHero: false } })],
     ['show rows', (s) => ({ ...s, display: { ...s.display, showRows: false } })],
     ['show handle', (s) => ({ ...s, display: { ...s.display, showHandle: false } })],
@@ -70,6 +75,19 @@ describe('foregroundKey', () => {
       expect(keyFor(mutate(base))).not.toBe(keyFor(base));
     });
   }
+
+  /**
+   * The custom accent is the one field that changes the card without changing
+   * `themeId`, so a key that read the id alone would freeze a clip's whole
+   * foreground on whatever colour was picked first.
+   */
+  it('changes when only the custom colour moves', () => {
+    const custom = (accent: string): CardState => ({
+      ...base,
+      display: { ...base.display, themeId: 'custom', customAccent: accent },
+    });
+    expect(keyFor(custom('#00FF88'))).not.toBe(keyFor(custom('#FF0088')));
+  });
 
   it('changes when the avatar changes', () => {
     expect(keyFor(base, { avatar: markAt('blob:a') })).not.toBe(

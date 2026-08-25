@@ -1,8 +1,9 @@
 import type { BackgroundMedia, CardState, RenderAssets } from '../../types';
 import type { CardContent } from '../content';
 import type { PnlResult } from '../pnl';
-import { getTheme, type Theme } from '../themes';
-import { CARD, PALETTE, SPEC } from './spec';
+import { ensureContrast, readableOn, withAlpha } from '../color';
+import { resolveTheme, type Theme } from '../themes';
+import { CARD, GROUND, PALETTE, SPEC } from './spec';
 import { placeCover } from './placement';
 import {
   FONT_DISPLAY,
@@ -45,24 +46,47 @@ export function drawCard(ctx: Ctx2D, width: number, height: number, input: DrawI
 
 /** Ground, artwork and scrim — the only part of the card a moving clip changes. */
 export function drawCardBackground(ctx: Ctx2D, input: DrawInput): void {
-  const theme = getTheme(input.state.display.themeId);
-  drawBackground(ctx, input, theme);
+  drawBackground(ctx, input, resolveTheme(input.state.display));
+}
+
+/**
+ * The ink for everything outside the accent block, and the ground it sits on.
+ *
+ * The two move together on purpose. `textTone: 'dark'` alone would paint
+ * near-black strings onto the near-black ground and produce a blank card, so
+ * the plain ground inverts with it and the artwork scrim lightens instead of
+ * darkening. Over a photo the tone is a genuine choice; with no photo it is
+ * the difference between a dark card and a light one.
+ */
+function inkFor(state: CardState): string {
+  return state.display.textTone === 'dark' ? PALETTE.textDark : PALETTE.text;
+}
+
+/** The three-stop ramp the ink and the accent row have to read against. */
+function groundFor(state: CardState): (typeof GROUND)['dark'] {
+  return state.display.textTone === 'dark' ? GROUND.light : GROUND.dark;
 }
 
 /** Everything painted over the background. Fixed for a given card state. */
 export function drawCardForeground(ctx: Ctx2D, input: DrawInput): void {
   const { state } = input;
-  const theme = getTheme(state.display.themeId);
+  const theme = resolveTheme(state.display);
   const accent = input.result.isProfit ? theme.accent : theme.loss;
+  const ink = inkFor(state);
+  // On the block the accent is a fill and anything goes. On the percentage row
+  // it is ink, and there it has to clear the ground behind it — a dark custom
+  // accent on the dark card, or mint on the light one, is otherwise a row you
+  // cannot read. The block keeps the exact colour that was picked.
+  const accentInk = ensureContrast(accent, groundFor(state)[1]);
 
   ctx.save();
   if (state.display.showLogo) drawLogo(ctx, input);
-  if (state.display.showWordmark) drawWordmark(ctx, input);
-  drawTitle(ctx, input);
+  if (state.display.showWordmark) drawWordmark(ctx, input, ink);
+  drawTitle(ctx, input, ink);
   drawHeroBlock(ctx, input, accent);
-  if (state.display.showRows) drawRows(ctx, input, accent);
-  if (state.display.showHandle) drawHandle(ctx, input);
-  if (state.display.showFooter) drawFooter(ctx, input);
+  if (state.display.showRows) drawRows(ctx, input, accentInk, ink);
+  if (state.display.showHandle) drawHandle(ctx, input, ink);
+  if (state.display.showFooter) drawFooter(ctx, input, ink);
   ctx.restore();
 }
 
@@ -84,6 +108,10 @@ export function foregroundKey(input: DrawInput): string {
     state.brand.footerPrimary,
     state.brand.footerSecondary,
     d.themeId,
+    // Only meaningful for the custom slot, but cheap and unconditional beats a
+    // branch that has to stay in step with `resolveTheme`.
+    d.customAccent,
+    d.textTone,
     result.isProfit ? 1 : 0,
     d.showLogo ? 1 : 0,
     d.showWordmark ? 1 : 0,
@@ -110,6 +138,8 @@ function isPaintable(media: BackgroundMedia): boolean {
 function drawBackground(ctx: Ctx2D, input: DrawInput, theme: Theme): void {
   const { state, assets } = input;
   const { width, height } = CARD;
+  const light = state.display.textTone === 'dark';
+  const ground = groundFor(state);
 
   const media = assets.artwork;
   const showArtwork = Boolean(
@@ -122,15 +152,15 @@ function drawBackground(ctx: Ctx2D, input: DrawInput, theme: Theme): void {
     // it would never be seen. A flat fill still backs any clip that carries an
     // alpha channel, at a fraction of the cost of building and rasterising a
     // gradient thirty times a second.
-    ctx.fillStyle = '#010103';
+    ctx.fillStyle = ground[0];
   } else {
     // Near-black ground with the faint lift toward the bottom seen on the
-    // reference cards.
-    ctx.fillStyle = cachedGradient(ctx, 'ground', (target) => {
+    // reference cards — or its mirror image, when the ink is dark.
+    ctx.fillStyle = cachedGradient(ctx, `ground:${light ? 'light' : 'dark'}`, (target) => {
       const gradient = target.createLinearGradient(0, 0, width * 0.35, height);
-      gradient.addColorStop(0, '#010103');
-      gradient.addColorStop(0.6, '#05080F');
-      gradient.addColorStop(1, '#0C0E1B');
+      gradient.addColorStop(0, ground[0]);
+      gradient.addColorStop(0.6, ground[1]);
+      gradient.addColorStop(1, ground[2]);
       return gradient;
     });
   }
@@ -164,14 +194,17 @@ function drawBackground(ctx: Ctx2D, input: DrawInput, theme: Theme): void {
   ctx.restore();
 
   // The text column lives on the left, so the scrim is a horizontal ramp
-  // that leaves the artwork on the right untouched.
+  // that leaves the artwork on the right untouched. It veils the photo *away*
+  // from the ink: near-black under light text, near-white under dark, so the
+  // slider means the same thing — "make the text readable" — in both.
   const scrim = state.artwork.scrim;
+  const veil = light ? '253, 253, 255' : '1, 1, 3';
   ctx.save();
-  ctx.fillStyle = cachedGradient(ctx, `scrim:${scrim}`, (target) => {
+  ctx.fillStyle = cachedGradient(ctx, `scrim:${veil}:${scrim}`, (target) => {
     const gradient = target.createLinearGradient(0, 0, width, 0);
-    gradient.addColorStop(0, `rgba(1, 1, 3, ${scrim})`);
-    gradient.addColorStop(0.45, `rgba(1, 1, 3, ${scrim * 0.72})`);
-    gradient.addColorStop(0.78, 'rgba(1, 1, 3, 0)');
+    gradient.addColorStop(0, `rgba(${veil}, ${scrim})`);
+    gradient.addColorStop(0.45, `rgba(${veil}, ${scrim * 0.72})`);
+    gradient.addColorStop(0.78, `rgba(${veil}, 0)`);
     return gradient;
   });
   ctx.fillRect(0, 0, width, height);
@@ -193,7 +226,7 @@ function drawLogo(ctx: Ctx2D, input: DrawInput): void {
   ctx.drawImage(logo, x, y + (maxHeight - h) / 2, w, h);
 }
 
-function drawWordmark(ctx: Ctx2D, input: DrawInput): void {
+function drawWordmark(ctx: Ctx2D, input: DrawInput, ink: string): void {
   const text = input.state.brand.wordmark.trim();
   if (!text) return;
   const { right, baseline, size, weight, tracking } = SPEC.wordmark;
@@ -204,13 +237,13 @@ function drawWordmark(ctx: Ctx2D, input: DrawInput): void {
     align: 'right',
     inkAlign: true,
     baseline: 'alphabetic',
-    color: PALETTE.text,
+    color: ink,
     maxWidth: 300,
     minSize: size * 0.5,
   });
 }
 
-function drawTitle(ctx: Ctx2D, input: DrawInput): void {
+function drawTitle(ctx: Ctx2D, input: DrawInput, ink: string): void {
   const text = input.content.title.trim();
   if (!text) return;
   const { x, baseline, size, weight, tracking, maxWidth } = SPEC.title;
@@ -220,7 +253,7 @@ function drawTitle(ctx: Ctx2D, input: DrawInput): void {
     tracking,
     inkAlign: true,
     baseline: 'alphabetic',
-    color: PALETTE.text,
+    color: ink,
     maxWidth,
     minSize: size * 0.55,
   });
@@ -246,13 +279,16 @@ function drawHeroBlock(ctx: Ctx2D, input: DrawInput, accent: string): void {
   ctx.fillRect(x, y, blockWidth, height);
   ctx.restore();
 
+  // Chosen from the accent rather than fixed. Every accent the card had before
+  // cherry was light enough for near-black; cherry is not, and a custom colour
+  // can be anything, so the higher-contrast of the two inks wins.
   drawText(ctx, text, x + textInset, textBaseline, {
     size: textSize,
     weight: textWeight,
     tracking: textTracking,
     inkAlign: true,
     baseline: 'alphabetic',
-    color: PALETTE.onAccent,
+    color: readableOn(accent, PALETTE.onAccent, PALETTE.onAccentLight),
     // Never let the value spill past the block it sits in.
     maxWidth: CARD.width - x - textInset * 2,
     minSize: textSize * 0.5,
@@ -263,7 +299,7 @@ function drawHeroBlock(ctx: Ctx2D, input: DrawInput, accent: string): void {
 /* Rows                                                                */
 /* ------------------------------------------------------------------ */
 
-function drawRows(ctx: Ctx2D, input: DrawInput, accent: string): void {
+function drawRows(ctx: Ctx2D, input: DrawInput, accent: string, ink: string): void {
   const { labelX, valueX, baselines, size, weight, tracking, labelMaxWidth, valueMaxWidth } =
     SPEC.rows;
 
@@ -275,7 +311,7 @@ function drawRows(ctx: Ctx2D, input: DrawInput, accent: string): void {
       tracking,
       inkAlign: true,
       baseline: 'alphabetic',
-      color: PALETTE.text,
+      color: ink,
       maxWidth: labelMaxWidth,
       minSize: size * 0.7,
     });
@@ -285,7 +321,7 @@ function drawRows(ctx: Ctx2D, input: DrawInput, accent: string): void {
       tracking,
       inkAlign: true,
       baseline: 'alphabetic',
-      color: row.accent ? accent : PALETTE.text,
+      color: row.accent ? accent : ink,
       maxWidth: valueMaxWidth,
       minSize: size * 0.7,
     });
@@ -296,7 +332,7 @@ function drawRows(ctx: Ctx2D, input: DrawInput, accent: string): void {
 /* Handle and footer                                                   */
 /* ------------------------------------------------------------------ */
 
-function drawHandle(ctx: Ctx2D, input: DrawInput): void {
+function drawHandle(ctx: Ctx2D, input: DrawInput, ink: string): void {
   const { state, assets } = input;
   const avatar = assets.avatar;
   const { x, y, size } = SPEC.avatar;
@@ -311,8 +347,9 @@ function drawHandle(ctx: Ctx2D, input: DrawInput): void {
     const rect = coverRect(avatar.width, avatar.height, size, size);
     ctx.drawImage(avatar, x + rect.x, y + rect.y, rect.w, rect.h);
   } else {
-    // Placeholder keeps the layout honest when no avatar is set.
-    ctx.fillStyle = 'rgba(234, 237, 255, 0.10)';
+    // Placeholder keeps the layout honest when no avatar is set. Tinted from
+    // the ink, or it disappears on a light card.
+    ctx.fillStyle = withAlpha(ink, 0.1);
     ctx.fillRect(x, y, size, size);
   }
   ctx.restore();
@@ -325,7 +362,7 @@ function drawHandle(ctx: Ctx2D, input: DrawInput): void {
     tracking: SPEC.handle.tracking,
     inkAlign: true,
     baseline: 'alphabetic',
-    color: PALETTE.text,
+    color: ink,
     maxWidth: SPEC.handle.maxWidth,
     minSize: SPEC.handle.size * 0.6,
   });
@@ -350,7 +387,7 @@ function drawGlobeIcon(ctx: Ctx2D, x: number, y: number, w: number, h: number, c
   ctx.restore();
 }
 
-function drawFooter(ctx: Ctx2D, input: DrawInput): void {
+function drawFooter(ctx: Ctx2D, input: DrawInput, ink: string): void {
   const { brand } = input.state;
   const { icon, x, baseline, size, weight, tracking, gap, maxWidth } = SPEC.footer;
   const primary = brand.footerPrimary.trim();
@@ -359,14 +396,14 @@ function drawFooter(ctx: Ctx2D, input: DrawInput): void {
 
   let cursor: number = x;
   if (primary) {
-    drawGlobeIcon(ctx, icon.x, icon.y, icon.width, icon.height, PALETTE.text);
+    drawGlobeIcon(ctx, icon.x, icon.y, icon.width, icon.height, ink);
     const width = drawText(ctx, primary, cursor, baseline, {
       size,
       weight,
       tracking,
       inkAlign: true,
       baseline: 'alphabetic',
-      color: PALETTE.text,
+      color: ink,
       maxWidth: maxWidth / 2,
       minSize: size * 0.75,
     });
@@ -382,7 +419,7 @@ function drawFooter(ctx: Ctx2D, input: DrawInput): void {
       tracking,
       inkAlign: true,
       baseline: 'alphabetic',
-      color: PALETTE.text,
+      color: ink,
       maxWidth: CARD.width - cursor - SPEC.marginRight,
       minSize: size * 0.75,
     });

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Controls playground</title>
+    <style>
+      .dev-playground {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 420px;
+        gap: 24px;
+        padding: 24px;
+        align-items: start;
+      }
+      .dev-playground__card canvas {
+        width: 100%;
+        max-width: 840px;
+        height: auto;
+        border-radius: 10px;
+      }
+      .dev-playground__card pre {
+        margin-top: 12px;
+        font: 12px/1.5 ui-monospace, monospace;
+        color: #8a90a8;
+      }
+      .dev-playground__panel {
+        max-height: calc(100vh - 48px);
+        overflow-y: auto;
+      }
+      @media (max-width: 900px) {
+        .dev-playground { grid-template-columns: minmax(0, 1fr); }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/dev/controls.tsx"></script>
+  </body>
+</html>

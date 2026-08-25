@@ -101,9 +101,18 @@ Exported at 1×, 2× or 3× (up to 2520 × 1710).
   only scales the money, never the percentage, which is `price move × leverage` either way. So the
   profit is typed straight in as it reads on your statement, and the editor flags it when the sign
   contradicts the entry/exit prices rather than silently rewriting it.
-- **Five accents** — the reference cards keep a constant near-black ground and vary only the accent
-  per artwork, so themes here are just that: an accent plus a matching ambient glow. A negative
-  result switches the block and the percentage to red.
+- **Six accents, or any colour at all.** The reference cards keep a constant near-black ground and
+  vary only the accent per artwork, so a theme here is just that: an accent plus a matching ambient
+  glow. Mint, cyan, violet, gold, cherry red and bone are built in; **Custom** opens a colour well,
+  a hex field and red/green/blue sliders for anything else. On the four light presets a negative
+  result switches the block and the percentage to red — cherry and a custom colour stay as picked,
+  because a card someone deliberately coloured should not repaint itself on a bad month.
+- **White text or black.** The ink for everything outside the block. Black turns the whole card
+  over: the plain background goes light and the scrim over a photo lightens instead of darkening,
+  so the words stay readable either way.
+- **Nothing goes unreadable.** The big value picks black or white from whichever reads better on
+  the block, and the percentage row is lifted or darkened if the accent would otherwise disappear
+  into the ground. The block itself always keeps the exact colour that was chosen.
 - **Background: a photo or a clip.** Either fills the card, with a horizontal scrim protecting the
   text column. Placement is yours: zoom, horizontal and vertical pan, or just drag the preview and
   the background follows the cursor. `Recentre` puts it back.
@@ -124,13 +133,15 @@ heights.
 
 Two parts of the bottom-left corner are deliberately *not* the reference's:
 
-- The avatar sat at x=32 while the accent block and the title sit at x=35, so that corner was three
-  pixels out of column with the rest of the card. It is now a sharp-cornered square on x=35, sharing
-  the block's left edge, with the handle following at the same 16px gap it always had.
-- The footer sat 8px under the avatar with a 48px dead band beneath it. It now sits the same
-  distance below the avatar as the avatar sits below the last stat row — 42 blank rows either side,
-  measured off painted ink rather than baselines, since antialiasing puts a row's visible bottom
-  about 2px below its baseline. The trade-off is a 12px bottom margin against 35px on the left.
+- The avatar sat at x=30.5 while the accent block and the title sit at x=35, so that corner was out
+  of column with the rest of the card. It is now a sharp-cornered square on x=35, sharing the
+  block's left edge, with the handle following at the same 15px gap it has in the reference. Its
+  **size** is the reference's own, 54 × 54.
+- The footer sat 8px under the avatar with a 48px dead band beneath it. It now sits 19 blank rows
+  below, half the 42 that separate the avatar from the last stat row, so the avatar/handle line and
+  the footer read as one identity block. Measured off painted ink rather than baselines, since
+  antialiasing puts a row's visible bottom about 2px below its baseline. The bottom margin comes out
+  at 33px against 35px on the left.
 
 Two techniques do most of the work:
 
@@ -158,13 +169,20 @@ Everything is within 1–2px; several are exact. The remaining difference is let
 reference face is not Inter and is not on Google Fonts.
 
 That table is the record of the original calibration, measured against the reference's own strings.
-Two of those elements have since been **moved** on purpose, as described above: the handle 3px right
-(x100 → x103), and the footer 35px down (baseline y519 → y554, ink now y540–557). The widths and
-letterforms are unchanged — only the positions.
+Two of those elements have since been **moved** on purpose, as described above: the handle 4px right
+(x100 → x104, holding its gap off a wider avatar), and the footer 14px down (baseline y519 → y533,
+ink now y519–536). The widths and letterforms are unchanged — only the positions.
 
-Two header values deviate from the reference on purpose: the logo slot is 66×54 rather than 47×38,
-and the wordmark is 34px rather than 42px. Both are single values in `spec.ts` if you want the
-reference proportions back.
+**The pictures are the reference's own size.** The logo slot is 49 × 41 at (35, 34) and the avatar is
+54 × 54 — both re-measured on 2026-08-25 from half-coverage edges rather than a luminance threshold,
+which is what the first pass used and which loses a pixel of the antialiased edge on each side. The
+logo was briefly grown to 66 × 54; at the reference size its optical centre lines up with the
+wordmark's again. One value deviates on purpose and is text rather than a picture: the wordmark is
+34px rather than the reference's 42px. It is a single number in `spec.ts`.
+
+`dev/colour-shot.html` renders into both slots with deliberately wide and tall probe images and
+checks the resulting boxes against `spec.ts`, which is the only way to observe a slot; it also pins
+the colour behaviour above. `dev/layout-shot.html` measures the vertical gaps the same way.
 
 ### What is deliberately not reproduced
 
@@ -274,7 +292,8 @@ src/
     pnl.ts               trade and period math                      (tested)
     content.ts           state -> the exact strings on the card     (tested)
     format.ts            price, money, compact money, percentages   (tested)
-    themes.ts            accents
+    color.ts             hex, luminance, contrast, readable ink      (tested)
+    themes.ts            accents, presets and the custom one         (tested)
     fonts.ts             webfont readiness gate
     images.ts            IndexedDB cache for the media library
     defaults.ts          card defaults, hydration, per-account cache     (tested)
@@ -300,7 +319,11 @@ src/
 - Cards illustrate numbers the user types in. Nothing is verified against an exchange, so a card is
   not evidence of a trade.
 - The loss colour is an assumption — every reference card shows a profit, so there was nothing to
-  measure. It is one value in `themes.ts` if you want to change it.
+  measure. It is one value per preset in `themes.ts` if you want to change it, and cherry and the
+  custom slot deliberately opt out of it entirely.
+- The readability floor for the percentage row is WCAG's 3:1, which is the threshold for text this
+  size. A near-black accent on the dark card is lifted only as far as that, so it stays recognisably
+  the colour that was picked — legible, but still a quiet row.
 - Browser canvases are capped at 8192px per edge; `clampScale` lowers the export scale rather than
   producing a blank image.
 - Video export needs `MediaRecorder` and `canvas.captureStream`. Where they are missing the clip

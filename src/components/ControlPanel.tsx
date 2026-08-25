@@ -8,14 +8,14 @@ import type {
   PeriodState,
   TradeState,
 } from '../types';
-import { THEMES } from '../lib/themes';
+import { CUSTOM_THEME_ID, THEMES } from '../lib/themes';
 import { approximateLiquidationPrice, computeCard, signsDisagree } from '../lib/pnl';
 import { buildContent } from '../lib/content';
 import { formatPrice } from '../lib/format';
 import { MAX_CLIP_SECONDS, MAX_SOURCE_SECONDS } from '../lib/images';
 import { resolveClip } from '../lib/video';
 import { ImagePicker } from './ImagePicker';
-import { Field, NumberInput, Section, Segmented, Slider, TextInput, Toggle } from './ui';
+import { Field, NumberInput, RgbPicker, Section, Segmented, Slider, TextInput, Toggle } from './ui';
 
 /**
  * Hoisted out of the render: it never changes, and a fresh string every
@@ -68,6 +68,7 @@ export function ControlPanel({
   const clip = resolveClip(background?.duration ?? 0, artwork.clipStart, artwork.clipLength);
   // Leave at least a second of clip after the start point, or the window is empty.
   const maxStart = Math.max(0, (background?.duration ?? 0) - 1);
+  const isCustom = display.themeId === CUSTOM_THEME_ID;
 
   // Stable identity, so the memoised pickers sit out every unrelated re-render.
   const selectArtwork = useCallback(
@@ -229,7 +230,7 @@ export function ControlPanel({
         ) : null}
       </Section>
 
-      <Section title="Accent" hint="Colour of the block and the percentage.">
+      <Section title="Colour" hint="The block, the percentage and the ink.">
         <div className="theme-grid">
           {THEMES.map((theme) => (
             <button
@@ -244,7 +245,48 @@ export function ControlPanel({
               <span className="theme-swatch__name">{theme.name}</span>
             </button>
           ))}
+          <button
+            type="button"
+            className={`theme-swatch${isCustom ? ' is-selected' : ''}`}
+            style={{ background: display.customAccent }}
+            onClick={() => patchDisplay({ themeId: CUSTOM_THEME_ID })}
+            aria-pressed={isCustom}
+            title="Any colour you like"
+          >
+            <span className="theme-swatch__name">Custom</span>
+          </button>
         </div>
+
+        {isCustom ? (
+          <div className="subsection">
+            <RgbPicker
+              label="Accent colour"
+              value={display.customAccent}
+              onChange={(customAccent) => patchDisplay({ customAccent })}
+            />
+            <p className="muted-note">
+              A custom colour is used whether the card is up or down — the presets swap to red on a
+              loss, this one stays the colour you picked. The big value flips between black and
+              white on its own, whichever reads better on it.
+            </p>
+          </div>
+        ) : null}
+
+        <Field label="Text" hint="everything outside the block">
+          <Segmented
+            ariaLabel="Text colour"
+            value={display.textTone}
+            onChange={(textTone) => patchDisplay({ textTone })}
+            options={[
+              { value: 'light', label: 'White' },
+              { value: 'dark', label: 'Black' },
+            ]}
+          />
+        </Field>
+        <p className="muted-note">
+          Black text turns the whole card over: the plain background goes light and the scrim over a
+          photo lightens instead of darkening, so the words stay readable either way.
+        </p>
       </Section>
 
       <Section title="Background" hint="A photo or a clip. Saved to your account.">

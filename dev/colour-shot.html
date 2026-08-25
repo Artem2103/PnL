@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Colour shot</title>
+    <style>
+      body { background: #0b0d12; color: #eaedff; font: 13px/1.6 ui-monospace, monospace; padding: 20px; }
+      img { width: 420px; border: 1px solid #222; margin: 6px 6px 0 0; }
+      .bad { color: #ff7a90; }
+      .ok { color: #2fe3ac; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Dev-only, and the companion to layout-shot.html: that one measures
+      vertical gaps, this one measures the two picture slots and checks that
+      the colour controls actually reach the pixels.
+
+      Why it exists. Three things added on 2026-08-25 are invisible to a unit
+      test and easy to get subtly wrong:
+
+        * the logo and avatar slots were resized to the reference's own
+          measurements, and a slot is only observable by rendering into it;
+        * the text tone flips the ink, the plain ground and the scrim
+          together, and getting one of the three wrong produces a card that is
+          merely ugly rather than obviously broken;
+        * the hero value's ink is now chosen from the accent, so a dark accent
+          must flip it — the case a fixed near-black used to get away with.
+
+      The probes for the slots are deliberately extreme aspect ratios. A wide
+      mark is limited by the slot's width and a tall one by its height, so the
+      two together pin both numbers; a square probe would only ever report the
+      smaller of them.
+
+      Run it the way cadence-check.html is run — an isolated Chrome, results
+      POSTed to 127.0.0.1:5199 if something is listening, otherwise read off
+      the page. It refuses to measure until Inter has loaded, for the same
+      reason layout-shot.html does.
+    -->
+    <div id="log"></div>
+    <script type="module">
+      const logEl = document.getElementById('log');
+      const post = (p, o) =>
+        fetch('http://127.0.0.1:5199' + p, { method: 'POST', body: JSON.stringify(o) }).catch(() => {});
+      const line = (m, cls) => {
+        const d = document.createElement('div');
+        if (cls) d.className = cls;
+        d.textContent = m;
+        logEl.appendChild(d);
+      };
+
+      /** A flat opaque block of a known aspect: its ink box *is* the slot it landed in. */
+      function probe(w, h, fill) {
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        const x = c.getContext('2d');
+        x.fillStyle = fill;
+        x.fillRect(0, 0, w, h);
+        return new Promise((r) => c.toBlob(r, 'image/png'));
+      }
+
+      const lum = (d, i) => 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+
+      /**
+       * Bounding box of the pixels where two renders of the same card differ.
+       *
+       * Not a brightness threshold. The ground is a diagonal gradient, so any
+       * single reference pixel is the wrong ground colour a few hundred pixels
+       * away and the whole card reads as ink — which is exactly what the first
+       * version of this file did. Rendering twice with one thing turned on and
+       * diffing is immune to that: whatever changed *is* the element.
+       */
+      function diffBox(a, b, width, rect, tol) {
+        let minX = 1e9, minY = 1e9, maxX = -1, maxY = -1;
+        for (let y = rect.y; y < rect.y + rect.h; y++) {
+          for (let x = rect.x; x < rect.x + rect.w; x++) {
+            const i = (y * width + x) * 4;
+            const d = Math.max(
+              Math.abs(a[i] - b[i]),
+              Math.abs(a[i + 1] - b[i + 1]),
+              Math.abs(a[i + 2] - b[i + 2]),
+            );
+            if (d > tol) {
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (y < minY) minY = y;
+              if (y > maxY) maxY = y;
+            }
+          }
+        }
+        if (maxX < 0) return null;
+        return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+      }
+
+      function range(data, width, rect) {
+        let lo = Infinity, hi = -Infinity;
+        for (let y = rect.y; y < rect.y + rect.h; y++) {
+          for (let x = rect.x; x < rect.x + rect.w; x++) {
+            const v = lum(data, (y * width + x) * 4);
+            if (v < lo) lo = v;
+            if (v > hi) hi = v;
+          }
+        }
+        return { lo: Math.round(lo), hi: Math.round(hi) };
+      }
+
+      const px = (data, width, x, y) => {
+        const i = (y * width + x) * 4;
+        return [data[i], data[i + 1], data[i + 2]];
+      };
+
+      (async () => {
+        try {
+          const [render, defaults, images, spec] = await Promise.all([
+            import('/src/lib/render.ts'),
+            import('/src/lib/defaults.ts'),
+            import('/src/lib/images.ts'),
+            import('/src/lib/canvas/spec.ts'),
+          ]);
+          await document.fonts.ready;
+          if (!document.fonts.check('400 40px Inter')) throw new Error('Inter did not load — widths would be wrong');
+
+          // Per-account cache, so the harness owns an id rather than borrowing
+          // whoever is signed in. Same one layout-shot.html uses.
+          const USER = 'dev-harness';
+          for (const role of ['avatar', 'logo']) {
+            for (const m of await images.listRecords(role, USER)) {
+              if (m.name && m.name.startsWith('shot-')) await images.deleteRecord(m.id);
+            }
+          }
+          const mk = async (blob, name, role) =>
+            images.addLocalMedia(new File([blob], name, { type: 'image/png' }), role, USER);
+          const wide = await mk(await probe(400, 100, '#ffffff'), 'shot-wide.png', 'logo');
+          const tall = await mk(await probe(100, 400, '#ffffff'), 'shot-tall.png', 'logo');
+          const face = await mk(await probe(300, 300, '#ffffff'), 'shot-face.png', 'avatar');
+
+          const base = defaults.createDefaultState();
+          const bare = (patch) => ({
+            ...base,
+            ...patch,
+            artwork: { ...base.artwork, imageId: null },
+            display: { ...base.display, ...(patch.display || {}) },
+          });
+
+          async function shot(state) {
+            const assets = await render.prepareAssets(state);
+            const canvas = render.renderToOffscreenCanvas(state, assets, 1);
+            const ctx = canvas.getContext('2d');
+            return {
+              canvas,
+              data: ctx.getImageData(0, 0, canvas.width, canvas.height).data,
+              width: canvas.width,
+            };
+          }
+
+          const out = { spec: { logo: spec.SPEC.logo, avatar: spec.SPEC.avatar, handleX: spec.SPEC.handle.x } };
+          let ok = true;
+          const check = (label, got, want) => {
+            const pass = JSON.stringify(got) === JSON.stringify(want);
+            line((pass ? 'PASS  ' : 'FAIL  ') + label + '  got ' + JSON.stringify(got) + ' want ' + JSON.stringify(want), pass ? 'ok' : 'bad');
+            ok = ok && pass;
+          };
+
+          /* ---- the two picture slots ---- */
+          const L = spec.SPEC.logo;
+          const A = spec.SPEC.avatar;
+
+          // The baseline every slot is diffed against: no mark, no avatar. With
+          // `logoId` null `drawLogo` returns before painting, so the header is
+          // untouched ground; the avatar slot still has its placeholder, which
+          // the white probe differs from across the whole square.
+          const blank = await shot(bare({ logoId: null, avatarId: null, display: { showWordmark: false } }));
+          const W = blank.width;
+          const header = { x: 0, y: 0, w: 320, h: 130 };
+          const foot = { x: 0, y: 420, w: 120, h: 90 };
+
+          const wideShot = await shot(bare({ logoId: wide.id, avatarId: null, display: { showWordmark: false } }));
+          const wideBox = diffBox(wideShot.data, blank.data, W, header, 8);
+          // Width-limited: the mark fills the slot's width, centred in its
+          // height. That height is fractional (49 * 100 / 400 = 12.25) and is
+          // centred on a fractional top, so the expectation has to be the rows
+          // the antialiased edges actually touch — rounding the height first
+          // gives 12 against a real 13 and reads as an off-by-one that isn't.
+          const wideH = (L.maxWidth * 100) / 400;
+          const wideTop = L.y + (L.maxHeight - wideH) / 2;
+          const wideWant = {
+            x: L.x,
+            y: Math.floor(wideTop),
+            w: L.maxWidth,
+            h: Math.ceil(wideTop + wideH) - Math.floor(wideTop),
+          };
+
+          const tallShot = await shot(bare({ logoId: tall.id, avatarId: null, display: { showWordmark: false } }));
+          const tallBox = diffBox(tallShot.data, blank.data, W, header, 8);
+          // Height-limited: the mark fills the slot's height, anchored left.
+          const tallWant = { x: L.x, y: L.y, w: Math.round((L.maxHeight * 100) / 400), h: L.maxHeight };
+
+          const faceShot = await shot(bare({ logoId: null, avatarId: face.id, display: { showWordmark: false } }));
+          const avatarBox = diffBox(faceShot.data, blank.data, W, foot, 8);
+
+          out.logoWide = { got: wideBox, want: wideWant };
+          out.logoTall = { got: tallBox, want: tallWant };
+          out.avatar = { got: avatarBox, want: { x: A.x, y: A.y, w: A.size, h: A.size } };
+
+          line('spec: ' + JSON.stringify(out.spec));
+          check('logo slot width  (wide mark)', wideBox, wideWant);
+          check('logo slot height (tall mark)', tallBox, tallWant);
+          check('avatar slot', avatarBox, out.avatar.want);
+
+          /* ---- colour and tone ---- */
+          const combos = [
+            ['mint / white text', { themeId: 'mint', textTone: 'light' }],
+            ['mint / black text', { themeId: 'mint', textTone: 'dark' }],
+            ['cherry / white text', { themeId: 'cherry', textTone: 'light' }],
+            ['custom #1B1F3B / white text', { themeId: 'custom', customAccent: '#1B1F3B', textTone: 'light' }],
+            ['custom #FFE066 / black text', { themeId: 'custom', customAccent: '#FFE066', textTone: 'dark' }],
+          ];
+          out.colour = [];
+          for (const [label, display] of combos) {
+            const s = bare({ display, avatarId: face.id, logoId: null });
+            const shotOut = await shot(s);
+            const data = shotOut.data;
+            const width = shotOut.width;
+            const B = spec.SPEC.block;
+            const row = {
+              label,
+              ground: px(data, width, 820, 12),
+              // Well inside the block and past the end of the hero string.
+              blockFill: px(data, width, B.x + B.width - 6, B.y + 6),
+              // The hero glyphs against that fill.
+              blockInk: range(data, width, { x: B.x + B.textInset, y: B.y + 8, w: 260, h: B.height - 16 }),
+              // The title, which is plain ink on the ground.
+              titleInk: range(data, width, { x: 35, y: 120, w: 260, h: 40 }),
+            };
+            out.colour.push(row);
+            line(label + ': ground rgb(' + row.ground + ') block rgb(' + row.blockFill + ') blockInk ' +
+              row.blockInk.lo + '..' + row.blockInk.hi + ' titleInk ' + row.titleInk.lo + '..' + row.titleInk.hi);
+            const png = shotOut.canvas.toDataURL('image/png');
+            const img = document.createElement('img');
+            img.src = png;
+            img.title = label;
+            logEl.appendChild(img);
+            // Every combination goes to the collector as well as onto the page:
+            // the numbers say the right colours reached the right pixels, but
+            // only looking at the card says whether it is worth shipping.
+            await post('/png', { name: label.replace(/[^a-z0-9]+/gi, '-'), png });
+          }
+
+          for (const m of [wide, tall, face]) await images.deleteRecord(m.id);
+
+          out.pass = ok;
+          line(ok ? 'SLOTS PASS' : 'SLOTS FAIL', ok ? 'ok' : 'bad');
+          await post('/result', out);
+          line('POSTED');
+        } catch (e) {
+          line('ERROR ' + ((e && e.stack) || e), 'bad');
+          await post('/result', { error: String((e && e.stack) || e) });
+        }
+      })();
+    </script>
+  </body>
+</html>

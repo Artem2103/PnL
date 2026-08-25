@@ -1,6 +1,6 @@
 # Handoff — PnL Card Studio
 
-Written 2026-08-23, revised 2026-08-24 through the footer-gap change. Repo:
+Written 2026-08-23, revised 2026-08-25 through the colour controls. Repo:
 <https://github.com/Artem2103/PnL> (private), initial commit `5216f81`. Working directory `D:\PnL`.
 Read `README.md` first for what the app *is*; this file covers what a newcomer would otherwise have
 to rediscover.
@@ -14,10 +14,19 @@ the recorder is new in those commits.
 
 ## Start here (2026-08-25)
 
-Accounts landed on branch `feat/supabase-accounts`. Sign-up, sign-in, and per-account storage of the
-card and its images are **written, typechecked, built and unit-tested**. They have **not** been run
-against a real Supabase project, because there were no credentials yet. That is the only thing
-outstanding. Nothing below is a known bug.
+Two things sit on branch `feat/supabase-accounts`.
+
+**The colour and picture pass is done and verified in a browser.** The logo and avatar are back at
+the reference's own sizes, text can be white or black, cherry red joined the presets, and there is a
+custom colour with an RGB picker behind it. All of it is measured, not eyeballed — see **Colour, ink
+and the two picture slots** below, and `dev/colour-shot.html`, which is the instrument that
+measured it. Nothing there is outstanding.
+
+**Accounts are still unverified against a live project.** Sign-up, sign-in, and per-account storage
+of the card and its images are **written, typechecked, built and unit-tested**. They have **not**
+been run against a real Supabase project, because there are still no credentials — `.env.local` has
+both variables present and empty. That is the one thing outstanding, and the walkthrough below is
+how to close it. Nothing below is a known bug.
 
 **Three steps to see it work:**
 
@@ -65,13 +74,16 @@ Working and verified end to end. `npm run dev` → <http://localhost:5173>.
 ```bash
 npm install
 npm run dev
-npm test          # 96 tests, all passing
+npm test          # 144 tests, all passing
 npm run typecheck
 npm run build     # clean
 ```
 
 The app renders one card format (840 × 570) matching the Axiom reference cards, exports PNG at
 1×/2×/3×, exports MP4/WebM when the background is a clip, and stores everything client-side.
+
+`npm test` is 144 tests as of 2026-08-25 — the colour pass added `color.test.ts` and
+`themes.test.ts`, and two more cases to `draw.test.ts`.
 
 Since 2026-08-24 the studio sits behind a Supabase email/password gate, and the card and its media
 are stored **in the account**, not just in the browser. Setting the project up now takes two steps
@@ -367,27 +379,33 @@ works where brightness thresholds fail, e.g. when artwork fills the card.
 | Card | 840 × 570 |
 | Accent block | x35 y177, 385 × 79, sharp corners, text ink inset 19 |
 | Rows | label x55, value x301, baselines 319 / 360 / 401 |
-| Avatar | x35 y446, 52 × 52, **square, no corner radius** |
-| Handle | ink x103, baseline 486 |
+| Logo | x35 y34, slot 49 × 41, contain |
+| Avatar | x35 y446, 54 × 54, **square, no corner radius** |
+| Handle | ink x104, baseline 486 |
 | Footer | icon x36 y521 23 × 15, ink x59, baseline 533 |
-| Colours | accent `#2FE3AC`, text `#EAEDFF`, on-accent `#020307` |
+| Colours | accent `#2FE3AC`, text `#EAEDFF` / `#05070B`, on-accent picked from the accent |
 
-Four values **deliberately differ** from the reference, all on request:
+Three values **deliberately differ** from the reference, all on request:
 
-- logo slot 66 × 54 (was 47 × 38) and wordmark 34px (was 42px); tracking scaled with the size.
-- avatar x35 (was 32) with square corners (was radius 12), so its left edge shares the accent
-  block's and the title's. Handle moved 100 → 103 to hold its original 16px gap off the avatar.
+- **wordmark 34px** (reference 42px); tracking scaled with the size. This is the only remaining
+  size deviation, and it is text rather than a picture — the logo and avatar were put *back* to the
+  reference's sizes on 2026-08-25.
+- avatar x35 (was 30.5) with square corners (was radius 12), so its left edge shares the accent
+  block's and the title's. Handle at 104, holding the reference's 15px gap off it.
 - footer at icon y521 / baseline 533, against the reference's 507/519. It has moved twice and the
   history matters, because both earlier values were wrong in opposite directions. The reference's
   507/519 left only 8 blank rows under the avatar and read as the footer being stuck to the handle
   with a dead band underneath. That was corrected to 542/554, giving 42 blank rows — exactly the gap
   above the avatar — which was arithmetically tidy but pushed the ink to y557 on a 570px card,
-  leaving a 12px bottom margin against 35px on the left. On request the gap was then **halved to
-  21**, moving the footer up 21px without touching the avatar, so the avatar/handle row and the
-  footer read as one identity block. That also fixed the margin: the bottom now comes out at 33px,
-  near enough the 35px left margin to read as symmetric. All measured **off painted ink, not
-  baselines**, because that is what the eye reads — verified bands: last row 381–403, avatar
-  446–497, footer 519–536.
+  leaving a 12px bottom margin against 35px on the left. On request the gap was then **halved**,
+  moving the footer up 21px without touching the avatar, so the avatar/handle row and the footer
+  read as one identity block. That also fixed the margin: the bottom comes out at 33px, near enough
+  the 35px left margin to read as symmetric. All measured **off painted ink, not baselines**,
+  because that is what the eye reads — verified bands as of 2026-08-25: last row 381–403, avatar
+  446–**499**, footer 519–536, gaps 42 above the avatar and **19** below. The gap below was 21
+  until the avatar grew two pixels to its reference size; the footer deliberately stayed put, since
+  19 against 21 is not a difference the eye can find and the number that was requested was
+  "half", not "exactly 21".
 
 To re-measure any of this, render with no background and scan for ink bands rather than trusting the
 spec numbers — antialiasing puts a row's visible bottom ~2px below its baseline, which is enough to
@@ -412,6 +430,128 @@ Two things will hand you wrong numbers here:
   not against the default sample state. `@yourhandle` is ~35px wider than the handle those numbers
   describe, so measuring the default card and comparing to that table will look like a mismatch.
   Set the same strings first, or compare only against a render you measured the same way.
+
+---
+
+## Colour, ink and the two picture slots
+
+Added 2026-08-25 on request: the pictures at the reference's own size, a white/black text switch,
+cherry red, and a custom colour with an RGB picker. Four files carry it — `lib/color.ts` (new),
+`lib/themes.ts`, `lib/canvas/spec.ts` and `lib/canvas/draw.ts` — plus the picker in `ui.tsx` and the
+section in `ControlPanel.tsx`.
+
+### The measurement that started it
+
+The first pass measured the reference's picture slots with a luminance threshold, which loses a
+pixel of the antialiased edge on each side. Re-measured by **half-coverage edges** — find the pixel
+whose value sits halfway between the ground and the fill, and put the edge there — the reference
+gives:
+
+| | first pass | actual |
+|---|---|---|
+| logo ink | 47 × 38 at (36, 37) | 48.5 × 40.5 at (35, 34), slot **49 × 41** |
+| avatar slot | 52 × 52 at (32, 446) | x30.5–85.0, y446.2–500.6, so **54.5 × 54.4** |
+| handle ink → avatar gap | "16" | **15** (avatar ends x85, ink starts x100) |
+
+All five reference cards agree on the avatar to within a tenth of a pixel. The logo had also been
+grown ~35% on an earlier request, to 66 × 54; that is what pulled its optical centre to y64 while
+the wordmark's stayed near y55, which is open item 1's complaint about the header. **Putting the
+logo back at 49 × 41 closes that item** — the centre is 54 now.
+
+If you re-measure, do it the same way. The script that produced the table above is four lines: read
+the PNG, take a strip of rows through the flat part of an edge, and solve
+`(value - ground) / (fill - ground)` for the boundary pixel's coverage. A threshold will hand you
+the old numbers back.
+
+### The one rule the tone switch has to obey
+
+`display.textTone` is `'light' | 'dark'`, and it does **not** just change the ink. It changes three
+things together, in `draw.ts`:
+
+1. the ink for everything outside the block (`inkFor`),
+2. the plain ground, which flips to `GROUND.light` (`groundFor`),
+3. the artwork scrim, which veils toward near-white instead of near-black.
+
+Change one without the others and you get a card that is merely ugly rather than obviously broken —
+black text on the near-black ground is a blank card, and it will not look like a bug in a
+screenshot, it will look like a rendering failure. The scrim is the subtle one: its slider means
+"make the text readable", and over a photo that has to mean *lighten* when the ink is dark.
+
+### Two places a colour is chosen rather than fixed
+
+Both exist because the accent is no longer guaranteed to be light.
+
+- **`readableOn(accent, dark, light)`** picks the hero value's ink from whichever of `PALETTE.onAccent`
+  and `PALETTE.onAccentLight` has more contrast with the block. Cherry red is the first preset a
+  fixed near-black would have swallowed. `color.test.ts` sweeps 4096 colours and asserts the result
+  never drops below 3:1.
+- **`ensureContrast(color, ground)`** lifts or darkens the accent **only where it is used as ink** —
+  the percentage row. The block keeps the exact colour that was picked; that is the whole point of
+  a custom colour. It walks away from the ground in 5% steps rather than jumping to black or white,
+  so a colour that only just fails stays recognisably itself, and it returns its input untouched
+  whenever it already passes, which is every preset on the dark card.
+
+The floor is 3:1, WCAG's threshold for text at that size, not 4.5:1. A near-black custom accent on
+the dark card therefore comes out legible but quiet — `#1B1F3B` becomes about `#5F6276`. That is
+deliberate: pushing it to 4.5 would leave a colour the person did not choose.
+
+### The custom slot is not in `THEMES`
+
+`themeId: 'custom'` has no entry in the list; `customTheme(hex)` builds one from
+`display.customAccent`. **Everything that draws must call `resolveTheme(display)`, never
+`getTheme(id)`** — `getTheme('custom')` finds nothing and falls back to `THEMES[0]`, so the card
+would silently paint mint. `themes.test.ts` pins exactly that.
+
+Two deliberate asymmetries in the theme data:
+
+- Cherry and the custom slot set `loss` equal to `accent`. Every other preset keeps the shared
+  `#FF4D6D`. A card someone deliberately coloured red or purple flipping to pink on a bad month
+  reads as a bug, not as a signal, and for cherry the red already carries the meaning.
+- `customAccent` is stored even when the custom slot is not selected, so switching to a preset and
+  back does not lose the colour.
+
+### What this adds to the foreground-key contract
+
+`textTone` and `customAccent` are both read by the foreground, so both are in `foregroundKey`.
+`customAccent` is the interesting one: it is the only field that changes the card **without changing
+`themeId`**, so a key that read the id alone would freeze a clip's entire foreground on whichever
+colour was picked first. `draw.test.ts` has a case for it by name.
+
+### How it was verified
+
+`dev/colour-shot.html`, new, run in an isolated Chrome exactly the way `cadence-check.html` is run.
+It does two things no unit test can:
+
+- **Measures the slots by rendering into them.** A slot is not observable any other way. It uploads
+  a 400 × 100 probe and a 100 × 400 probe as logo marks — a wide mark is limited by the slot's width
+  and a tall one by its height, so the two together pin both numbers; a square probe reports only
+  the smaller. Results on 2026-08-25: wide `{35, 48, 49, 13}`, tall `{35, 34, 10, 41}`, avatar
+  `{35, 446, 54, 54}`, all matching `spec.ts`.
+- **Samples the ground, the block fill, the hero ink and the title ink** across five
+  colour/tone combinations, and posts a PNG of each so the numbers can be checked against a card
+  someone actually looked at.
+
+Two traps it hit first, both worth knowing before writing anything similar:
+
+- **Do not find ink with a luminance threshold against one reference pixel.** The ground is a
+  diagonal gradient, so a pixel sampled at the top right is the wrong ground colour at the top left
+  by more than the tolerance, and the whole card reads as ink. The first run reported the logo box
+  as `{0, 0, 233, 120}`. Render twice with the element on and off and **diff the bitmaps** — that is
+  the technique the layout notes already recommend, and it is immune to the gradient.
+- **Expectations have to allow for fractional geometry.** A 49-wide slot at 4:1 is 12.25px tall,
+  centred on a fractional top, and touches 13 rows. Rounding the height first gives 12 and looks
+  exactly like an off-by-one bug.
+
+`dev/controls.html` is also new and is the reason any of the UI could be looked at: the studio sits
+behind the Supabase gate, so with no credentials there is no way to reach a control. It mounts the
+real `ControlPanel` against local state with the real renderer beside it, wrapped in `AuthProvider`
+because `ImagePicker` calls `useAuth` and throws outside one. Uploading is the one thing it cannot
+exercise.
+
+Both dev pages had to be repointed at the post-accounts media API while doing this —
+`addImage`/`listImages`/`deleteImage` became `addLocalMedia`/`listRecords`/`deleteRecord` and take a
+user id. `layout-shot.html` had been silently broken since accounts landed. They both use the id
+`dev-harness` so they never touch a real account's cache.
 
 ---
 
@@ -559,14 +699,16 @@ still produced a 1680 × 1140 PNG with a clip selected; console clean.
 
 ## Open items
 
-1. **Symmetry — answered, partly.** The 2026-08-24 pass resolved what was meant: the avatar block
-   was to line up with the accent block's left edge (done, x32 → x35, square corners), and the
-   footer was to sit the same distance below the avatar as the avatar sits below the last stat row
-   (done). **Still open from the original note:** the header. The logo spans y37–91 while the
-   wordmark baseline stayed at 70, so their optical centres no longer align — the reference had both
-   near y55. Not raised since. Ask before changing.
+1. **~~Symmetry.~~ Closed 2026-08-25.** The 2026-08-24 pass resolved the bottom-left corner: the
+   avatar lines up with the accent block's left edge (x30.5 → x35, square corners) and the footer
+   sits below it at half the gap above. The header half — the logo spanning y37–91 against a
+   wordmark baseline of 70, optical centres 64 against 55 — is closed by the same change that put
+   the logo back at the reference's 49 × 41: it now spans y34–75, centre 54, and the two line up
+   the way they do on the reference cards. Nothing was done to the wordmark to achieve it.
 2. **Loss state is unverified.** All five reference cards show a profit, so the red used for a
-   negative result is an assumption, not a measurement. One value per theme in `themes.ts`.
+   negative result is an assumption, not a measurement. One value per theme in `themes.ts` — and
+   note that cherry and the custom slot now opt out of it entirely, using their own accent for both
+   directions.
 3. **Percentage semantics.** `PNL %` is return on *margin* for the position. If MT5 shows return
    against the whole account balance, that is a different number and would need its own input.
 4. **Typeface.** The reference face is not Inter and is not on Google Fonts. Remaining visual
@@ -633,6 +775,22 @@ still produced a 1680 × 1140 PNG with a clip selected; console clean.
     remove the row, the next sync deletes the local copy and the row stays — pointing at nothing.
     The reverse (row gone, object left) just wastes space. Neither is currently detectable without
     querying both sides; a periodic reconciliation job is the fix if it ever matters.
+14. **The wordmark is the last size still off the reference** — 34px against 42px, from an earlier
+    request. The pictures went back to the reference's sizes on 2026-08-25 and it did not, because
+    it is text and the request was about pictures. It is one number in `spec.ts`, and its tracking
+    is scaled with the size, so putting it back means restoring `size: 42` and `tracking: 3.75`
+    together. Ask before changing.
+15. **A light card has never been checked over a real photo.** Every combination in
+    `dev/colour-shot.html` renders on the plain ground, because a synthetic background proves
+    nothing about how the lightened scrim reads over an actual image. The maths is symmetric with
+    the dark path and the slider means the same thing, but if someone reports black text washing out
+    on a bright photo, the scrim ramp in `drawBackground` is where to look — the stops are the dark
+    path's, mirrored, and they may want different falloff.
+16. **`ensureContrast` only ever sees the flat ground, never the artwork.** The percentage row is
+    corrected against `GROUND.dark[1]` or `GROUND.light[1]`, which is right for a plain card and
+    approximately right under a scrim, and wrong for a card with the scrim at zero over a busy
+    photo. Sampling the actual pixels behind the row would fix it and would also cost a readback
+    every frame; it has not been worth it.
 
 ---
 
@@ -693,6 +851,13 @@ still produced a 1680 × 1140 PNG with a clip selected; console clean.
     (`moof`/`traf`/`trun`, `stts` for non-fragmented) — that is the encoded truth and needs no
     playback. rVFC is still fine for "did the picture actually change", which is all the harness
     uses it for now.
+- **A driven Chrome can be screenshotted over CDP without the extension.** Launch the isolated
+  instance with `--remote-debugging-port=9222`, read `http://127.0.0.1:9222/json/list`, and open the
+  target's `webSocketDebuggerUrl` with node's global `WebSocket` — `Page.captureScreenshot` with
+  `captureBeyondViewport: true`, and `Emulation.setDeviceMetricsOverride` first when the thing you
+  want is taller than the window. This is how the control panel was verified. Note that a `clip`
+  without `captureBeyondViewport` silently crops to the viewport and hands back a half-black image
+  that looks like a rendering bug.
 - **Do not let a literal NUL byte into a source file.** A cache-key separator written as the actual
   U+0000 character, rather than as an escape sequence in the source, works perfectly at runtime —
   it compiles to the same character — but git then classifies the whole file as binary (`-text`) and
@@ -711,7 +876,8 @@ src/
     pnl.ts               trade + period math, sign-disagreement check   (tested)
     content.ts           state -> the exact strings on the card         (tested)
     format.ts            price / money / compact money / percentages    (tested)
-    themes.ts            accents
+    color.ts             hex, luminance, contrast, readable ink         (tested)
+    themes.ts            accents + the custom one                       (tested)
     fonts.ts             webfont readiness gate
     images.ts            IndexedDB media library (photos / clips / avatar / logo)
     supabase.ts          client, or null when the env vars are missing
@@ -732,6 +898,8 @@ src/
 dev/
   cadence-check.html     browser harness: does the exported file judder?  (dev only)
   layout-shot.html       renders the card and scans ink bands to measure gaps (dev only)
+  colour-shot.html       measures the picture slots and the colour rules  (dev only)
+  controls.html/.tsx     the editor panel and a live card, with no account gate
 ```
 
 Tests sit next to their subjects as `*.test.ts`. There are no component tests — the renderer is
@@ -751,5 +919,9 @@ give you a trustworthy answer.
 `canvas/draw.test.ts` is the odd one out: it tests no drawing. It pins `foregroundKey` from both
 sides — every input the foreground reads must move the key, every background-only input must leave
 it alone. That is the failure mode the layer cache introduces, and it is invisible without a clip
-playing, so it is worth the 31 cases. **Add a case there whenever you add a control that changes
+playing, so it is worth the 34 cases. **Add a case there whenever you add a control that changes
 anything above the background.**
+
+`dev/colour-shot.html` is the equivalent for anything that changes a *colour* or a picture slot —
+neither is observable without rendering. `dev/controls.html` is how the editor UI itself gets
+looked at while the studio is behind the auth gate.

@@ -57,11 +57,18 @@
           await document.fonts.ready;
           if (!document.fonts.check('400 40px Inter')) throw new Error('Inter did not load — widths would be wrong');
 
-          // Clear anything a previous run left behind.
-          for (const a of await images.listImages('avatar')) {
-            if (a.name && a.name.startsWith('shot-avatar')) await images.deleteImage(a.id);
+          // Clear anything a previous run left behind. The media cache is keyed
+          // per account since accounts landed, so the harness owns one id of
+          // its own rather than borrowing whoever happens to be signed in.
+          const USER = 'dev-harness';
+          for (const a of await images.listRecords('avatar', USER)) {
+            if (a.name && a.name.startsWith('shot-avatar')) await images.deleteRecord(a.id);
           }
-          const av = await images.addImage(new File([await makeAvatar()], 'shot-avatar.png', { type: 'image/png' }), 'avatar');
+          const av = await images.addLocalMedia(
+            new File([await makeAvatar()], 'shot-avatar.png', { type: 'image/png' }),
+            'avatar',
+            USER,
+          );
 
           const base = defaults.createDefaultState();
           const state = {
@@ -102,7 +109,7 @@
           const c2 = render.renderToOffscreenCanvas(state, assets, 2);
           const png = c2.toDataURL('image/png');
 
-          await images.deleteImage(av.id);
+          await images.deleteRecord(av.id);
 
           const out = { bands, gaps, cardHeight: height, bottomMargin: height - bands[bands.length - 1][1] - 1 };
           line('bands: ' + JSON.stringify(bands));

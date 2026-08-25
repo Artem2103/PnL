@@ -1,4 +1,5 @@
-import { useId, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
+import { hexToRgb, normaliseHex, rgbToHex } from '../lib/color';
 
 export function Section({
   title,
@@ -215,5 +216,96 @@ export function Slider({
         onChange={(event) => onChange(event.target.valueAsNumber)}
       />
     </label>
+  );
+}
+
+/**
+ * Any colour at all: the OS picker, a hex field and three channels.
+ *
+ * Three ways in rather than one because they fail differently — the native
+ * well is the fastest way to land somewhere close, the channels are the only
+ * way to nudge one dimension without disturbing the others, and the hex field
+ * is how a brand colour gets pasted in.
+ */
+export function RgbPicker({
+  value,
+  onChange,
+  label,
+}: {
+  value: string;
+  onChange: (hex: string) => void;
+  label: string;
+}) {
+  const rgb = hexToRgb(value) ?? { r: 255, g: 255, b: 255 };
+  const [draft, setDraft] = useState(value);
+
+  // Follow the colour when it changes from the well or the sliders, but leave
+  // a half-typed hex alone: if what is in the field already means `value`,
+  // rewriting it would fight the caret and helpfully uppercase mid-word.
+  useEffect(() => {
+    setDraft((current) => (normaliseHex(current) === value ? current : value));
+  }, [value]);
+
+  const channel = (key: 'r' | 'g' | 'b') => (next: number) =>
+    onChange(rgbToHex({ ...rgb, [key]: next }));
+
+  return (
+    <div className="rgb">
+      <div className="rgb__row">
+        <input
+          className="rgb__well"
+          type="color"
+          value={value}
+          aria-label={label}
+          onChange={(event) => onChange(normaliseHex(event.target.value) ?? value)}
+        />
+        <input
+          className="input rgb__hex"
+          type="text"
+          value={draft}
+          spellCheck={false}
+          autoComplete="off"
+          maxLength={7}
+          aria-label={`${label}, hex`}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            const hex = normaliseHex(event.target.value);
+            if (hex) onChange(hex);
+          }}
+          // Anything unparseable snaps back rather than sitting there looking
+          // like it took effect.
+          onBlur={() => setDraft(value)}
+        />
+      </div>
+      <div className="sliders">
+        <Slider
+          label="Red"
+          value={rgb.r}
+          min={0}
+          max={255}
+          step={1}
+          format={(v) => String(Math.round(v))}
+          onChange={channel('r')}
+        />
+        <Slider
+          label="Green"
+          value={rgb.g}
+          min={0}
+          max={255}
+          step={1}
+          format={(v) => String(Math.round(v))}
+          onChange={channel('g')}
+        />
+        <Slider
+          label="Blue"
+          value={rgb.b}
+          min={0}
+          max={255}
+          step={1}
+          format={(v) => String(Math.round(v))}
+          onChange={channel('b')}
+        />
+      </div>
+    </div>
   );
 }
