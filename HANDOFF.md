@@ -22,11 +22,18 @@ cherry red joined the presets, and there is a custom colour with an RGB picker b
 is measured, not eyeballed — see **Colour, ink and the two picture slots** below, and
 `dev/colour-shot.html`, which is the instrument that measured it. Nothing there is outstanding.
 
-**Accounts are still unverified against a live project.** Sign-up, sign-in, and per-account storage
-of the card and its images are **written, typechecked, built and unit-tested**. They have **not**
-been run against a real Supabase project, because there are still no credentials — `.env.local` has
-both variables present and empty. That is the one thing outstanding, and the walkthrough below is
-how to close it. Nothing below is a known bug.
+**Accounts are still unverified against a live project, and are currently switched off in
+practice.** Sign-up, sign-in, and per-account storage of the card and its images are **written,
+typechecked, built and unit-tested**. They have **not** been run against a real Supabase project,
+because there are still no credentials — `.env.local` has both variables present and empty.
+
+Because of that, and on request, **an unconfigured app now opens the studio instead of a setup
+notice** — see **Local mode** below. This is not a flag: filling in the two variables restores the
+sign-in screen on its own. Read that section before deploying anything, because it changes what a
+credential-less production build does.
+
+Closing the account verification is still the one thing outstanding, and the walkthrough below is
+how to do it. Nothing below is a known bug.
 
 **Three steps to see it work:**
 
@@ -131,7 +138,43 @@ errors a person actually hits; everything else passes through verbatim rather th
 into "something went wrong".
 
 **Not implemented, and deliberately:** password reset and OAuth providers. Per-account storage *is*
-implemented — that is what the next section is about.
+implemented — that is what the section after next is about.
+
+### Local mode
+
+Added 2026-08-25, on request, so the app could be used before a Supabase project existed.
+
+With `VITE_SUPABASE_URL` or `VITE_SUPABASE_ANON_KEY` missing, `AuthProvider` reports
+`mode: 'local'` and `userId: LOCAL_USER_ID` (`'local'`), `AuthGate` renders the studio without
+looking at the session, and a banner across the top says accounts are off. That is the whole
+mechanism. Everything downstream already degraded correctly — `useCloudCard` settles on status
+`local` and skips every remote call, and `library.ts` guards each of its four remote paths on
+`isSupabaseConfigured` — so nothing else had to change. The app is the pre-accounts app again.
+
+Four things to know:
+
+1. **There is no switch, and that is the point.** Nothing turns local mode on; it is what being
+   unconfigured *means*. Fill in `.env.local` and the sign-in screen is back with no code to
+   revert. If this is ever made into a real flag, that property is the one to keep — a flag left on
+   is how an auth gate quietly stops existing.
+
+2. **A credential-less production build is now an open editor**, not a locked door. Until
+   `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are in the Vercel project,
+   <https://nexocards.vercel.app> would deploy as an anonymous local-only studio rather than the
+   setup notice it shows today. Nothing can leak — there is no account data and nothing reaches the
+   network — but it is a different thing to publish, so it is open item 17.
+
+3. **Work done in local mode does not migrate into an account.** It lives under
+   `pnl-card-studio:v2:local` and IndexedDB records stamped `userId: 'local'`. `takeOrphanCard` and
+   `claimOrphans` rescue the *pre-accounts* state (the bare key, records with no user), not this,
+   and deliberately so: adopting `local` would hand one person's test card to whoever signs up
+   first in a shared browser. Anyone testing should expect to redo their card once accounts are on.
+
+4. **Read the owner off `userId`, never `user?.id`.** In local mode there is no `user` object at
+   all. `ImagePicker` did read `user?.id ?? ''`, which made the whole media library silently
+   inert — every `refresh` and `upload` returned early on the empty string, with no error anywhere.
+   That is exactly the failure this mode invites, and `userId` on the context exists so it cannot
+   happen again. It is now the only correct source in either mode.
 
 ---
 
@@ -542,11 +585,13 @@ Two traps it hit first, both worth knowing before writing anything similar:
   centred on a fractional top, and touches 13 rows. Rounding the height first gives 12 and looks
   exactly like an off-by-one bug.
 
-`dev/controls.html` is also new and is the reason any of the UI could be looked at: the studio sits
-behind the Supabase gate, so with no credentials there is no way to reach a control. It mounts the
-real `ControlPanel` against local state with the real renderer beside it, wrapped in `AuthProvider`
-because `ImagePicker` calls `useAuth` and throws outside one. Uploading is the one thing it cannot
-exercise.
+`dev/controls.html` is also new. It was written because the studio then sat behind the Supabase
+gate and there was no way to reach a control without credentials — **local mode**, added later the
+same day, has since made the real app reachable too, so this is now the narrower tool: just the
+panel and a card, no topbar, no persistence, no library. It mounts the real `ControlPanel` against
+local state with the real renderer beside it, wrapped in `AuthProvider` because `ImagePicker` calls
+`useAuth` and throws outside one. Prefer `npm run dev` for anything involving saving or uploading;
+prefer this for looking at a control in isolation.
 
 Both dev pages had to be repointed at the post-accounts media API while doing this —
 `addImage`/`listImages`/`deleteImage` became `addLocalMedia`/`listRecords`/`deleteRecord` and take a
@@ -759,10 +804,11 @@ still produced a 1680 × 1140 PNG with a clip selected; console clean.
    and confirm both came back; sign in from a second browser and confirm the card and the tiles are
    there; delete a file and confirm it is gone from Storage as well as the picker.
 10. **Deploying this needs two settings changed outside the repo, or production breaks.**
-    `.env.local` is gitignored and Vercel does not read it, so <https://nexocards.vercel.app> will
-    render the setup notice until `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are added to
-    the project's environment variables **and it is redeployed** — Vite inlines them at build time,
-    so an env change alone does nothing. Separately, that origin has to be listed under
+    `.env.local` is gitignored and Vercel does not read it, so <https://nexocards.vercel.app> has
+    no accounts until `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are added to the project's
+    environment variables **and it is redeployed** — Vite inlines them at build time, so an env
+    change alone does nothing. Since 2026-08-25 the symptom of getting this wrong changed: it used
+    to be a setup notice, and is now an open anonymous editor. See item 17. Separately, that origin has to be listed under
     Supabase's **Authentication → URL Configuration**, or confirmation emails link somewhere else.
 11. **~~Accounts do not carry anything yet.~~ Done.** Cards and media are account-backed; see
     **Persistence**. It did end the "nothing is ever uploaded" property, and the README's privacy
@@ -791,6 +837,11 @@ still produced a 1680 × 1140 PNG with a clip selected; console clean.
     approximately right under a scrim, and wrong for a card with the scrim at zero over a busy
     photo. Sampling the actual pixels behind the row would fix it and would also cost a readback
     every frame; it has not been worth it.
+17. **Local mode changes what a credential-less deploy is.** Covered under **Local mode** above and
+    worth repeating here because it is the one item with a consequence outside the repo: with no
+    environment variables set, a deployed build is now an open anonymous editor rather than a setup
+    notice. Set the two variables in Vercel **before** the next deploy, or decide deliberately that
+    an open editor is what should be published.
 
 ---
 

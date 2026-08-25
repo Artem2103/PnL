@@ -23,6 +23,14 @@ The app is one page — the studio — behind one gate. `AuthGate` renders the s
 there is no session and the studio when there is; there is no router, because there is nowhere else
 to go.
 
+**With no Supabase credentials there is no gate at all.** The studio opens straight away and
+everything is kept in this browser, under the id `local` — the app exactly as it was before accounts
+landed. A banner across the top says so. Nothing switches this on: it is what being unconfigured
+means, and filling in the two variables below puts the sign-in screen back by itself. Two
+consequences worth knowing before relying on it: work done this way does **not** move into the first
+account you create, and a build deployed without those variables set is an open, anonymous
+editor rather than a locked door.
+
 Set up a project at [supabase.com](https://supabase.com), then copy **Project Settings → API** into
 `.env.local`:
 
@@ -34,8 +42,8 @@ VITE_SUPABASE_ANON_KEY=your-anon-public-key
 Vite inlines `VITE_`-prefixed variables at build time, so restart the dev server after editing this
 file. Both values are meant to reach the browser: the anon key is the public half of the pair, and
 what it can read is decided by row-level security rather than by keeping the key secret. The
-`service_role` key must never be put in a `VITE_` variable. With either value missing the sign-in
-screen renders a setup notice instead of a form that could only fail.
+`service_role` key must never be put in a `VITE_` variable. With either value missing the app runs
+in local mode, as above, rather than showing a form that could only fail.
 
 Two dashboard settings decide how registration feels:
 

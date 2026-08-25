@@ -13,10 +13,38 @@ import { syncLibrary } from './library';
 import { purgeUser } from './images';
 import { clearLocalCard } from './defaults';
 
+/**
+ * Whether there is an account behind the app at all.
+ *
+ * `local` is what you get with no Supabase credentials: the studio opens
+ * straight away and everything stays in this browser, exactly as it did before
+ * accounts landed. It is not a setting — nothing switches it on. It is what
+ * being unconfigured *means*, and filling in the two variables in `.env.local`
+ * turns it back off by itself.
+ */
+export type AuthMode = 'account' | 'local';
+
+/**
+ * The id everything per-account is keyed on while in local mode.
+ *
+ * A real Supabase id is a UUID, so this cannot collide with one. Work done
+ * here therefore lives under its own `localStorage` key and its own IndexedDB
+ * records, and does **not** follow you into the first account you create —
+ * `takeOrphanCard` rescues the card from before accounts existed, not this one.
+ */
+export const LOCAL_USER_ID = 'local';
+
 interface AuthValue {
-  /** Null until the first session lookup resolves — see `loading`. */
+  /** Null until the first session lookup resolves — see `loading`. Always null in local mode. */
   session: Session | null;
   user: User | null;
+  /** An account, or no account at all. */
+  mode: AuthMode;
+  /**
+   * Who the card and the media belong to: the signed-in user, or `LOCAL_USER_ID`.
+   * Prefer this over `user?.id` — it is the one that is right in both modes.
+   */
+  userId: string | null;
   /** True while the stored session is being restored on first paint. */
   loading: boolean;
   configured: boolean;
@@ -38,9 +66,10 @@ const AuthContext = createContext<AuthValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [librarySyncedAt, setLibrarySyncedAt] = useState(0);
-  // With no credentials there is no session to wait for, so the gate can render
-  // its setup notice immediately instead of spinning forever.
+  // With no credentials there is no session to wait for, so the gate can open
+  // the studio immediately instead of spinning forever.
   const [loading, setLoading] = useState(isSupabaseConfigured);
+  const mode: AuthMode = isSupabaseConfigured ? 'account' : 'local';
 
   useEffect(() => {
     if (!supabase) return;
@@ -70,9 +99,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Pull the account's media manifest once per signed-in user. Bytes are not
   // downloaded here — this only makes the tiles exist, and `ensureBlob` fetches
   // a file the first time something actually draws it.
-  const userId = session?.user.id ?? null;
+  const userId = mode === 'local' ? LOCAL_USER_ID : (session?.user.id ?? null);
   useEffect(() => {
-    if (!userId) return;
+    // There is no account to reconcile against in local mode. `syncLibrary`
+    // guards the unconfigured case itself; this just skips the pointless call.
+    if (!userId || mode === 'local') return;
     let cancelled = false;
     void syncLibrary(userId)
       .catch((error: unknown) => {
@@ -86,7 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [mode, userId]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     const { error } = await requireSupabase().auth.signInWithPassword({
@@ -114,6 +145,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    // Nothing to sign out of in local mode, and the button is hidden there —
+    // but a no-op beats `requireSupabase()` throwing at whoever calls this next.
+    if (!isSupabaseConfigured) return;
     // Read before the sign-out: afterwards there is no session to ask.
     const leaving = session?.user.id ?? null;
     const { error } = await requireSupabase().auth.signOut();
@@ -135,6 +169,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       session,
       user: session?.user ?? null,
+      mode,
+      userId,
       loading,
       configured: isSupabaseConfigured,
       librarySyncedAt,
@@ -142,7 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signUp,
       signOut,
     }),
-    [librarySyncedAt, loading, session, signIn, signOut, signUp],
+    [librarySyncedAt, loading, mode, session, signIn, signOut, signUp, userId],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

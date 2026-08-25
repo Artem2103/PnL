@@ -32,8 +32,12 @@ function ImagePickerView({
   emptyLabel: string;
   hint?: string;
 }) {
-  const { user, librarySyncedAt } = useAuth();
-  const userId = user?.id ?? '';
+  // `userId`, not `user?.id`: with no Supabase credentials there is no `user`
+  // at all, and reading the id off it left this whole picker keyed on the empty
+  // string, so every refresh and every upload returned early and the library
+  // was silently dead.
+  const { userId: owner, librarySyncedAt } = useAuth();
+  const userId = owner ?? '';
   const [items, setItems] = useState<MediaSummary[]>([]);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);

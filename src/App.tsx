@@ -52,10 +52,10 @@ const SYNC_LABEL: Record<CardSyncStatus, string> = {
 };
 
 export default function App() {
-  const { user, signOut } = useAuth();
+  const { user, userId, mode: authMode, signOut } = useAuth();
   // The card lives in the account now. This still paints from the local cache
   // on the first frame; the reconciliation lands behind it.
-  const { state, setState, status: cardStatus, error: cardError } = useCloudCard(user?.id ?? '');
+  const { state, setState, status: cardStatus, error: cardError } = useCloudCard(userId ?? '');
   const [scale, setScale] = useState(2);
   const [busy, setBusy] = useState<null | 'download' | 'copy' | 'share' | 'video'>(null);
   const [toast, setToast] = useState<Toast | null>(null);
@@ -264,19 +264,34 @@ export default function App() {
               {user.email}
             </span>
           ) : null}
-          <button
-            type="button"
-            className="btn btn--ghost btn--small"
-            onClick={() => {
-              void signOut().catch((error: unknown) =>
-                notify(error instanceof Error ? error.message : 'Sign out failed.', 'error'),
-              );
-            }}
-          >
-            Sign out
-          </button>
+          {authMode === 'account' ? (
+            <button
+              type="button"
+              className="btn btn--ghost btn--small"
+              onClick={() => {
+                void signOut().catch((error: unknown) =>
+                  notify(error instanceof Error ? error.message : 'Sign out failed.', 'error'),
+                );
+              }}
+            >
+              Sign out
+            </button>
+          ) : null}
         </div>
       </header>
+
+      {/* Says what "This browser only" in the topbar actually costs, and where
+          the two variables go. Not dismissible: it is the whole difference
+          between this and the signed-in app, and it disappears on its own the
+          moment the credentials are there. */}
+      {authMode === 'local' ? (
+        <p className="localnote" role="status">
+          <strong>Accounts are off.</strong> Your card and your images are saved in this browser and
+          nowhere else — they will not follow you to another device, and clearing site data loses
+          them. To turn accounts back on, put <code>VITE_SUPABASE_URL</code> and{' '}
+          <code>VITE_SUPABASE_ANON_KEY</code> in <code>.env.local</code> and restart the dev server.
+        </p>
+      ) : null}
 
       <main className="layout">
         <aside className="layout__controls" aria-label="Card settings">
