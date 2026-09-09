@@ -23,8 +23,8 @@ the fourth.
 
 ## Start here (2026-09-10)
 
-**Two more export bugs were reported later the same day and are fixed in the working tree — not
-committed, not pushed, not deployed.** The sound in an exported MP4 ran ahead of the picture and
+**Two more export bugs were reported later the same day and are fixed, on `main` and deployed** as
+`82f2eea`. The sound in an exported MP4 ran ahead of the picture and
 stopped early, players disagreed with each other about how long the file was, and the clip window
 was capped at 15 s when the clip was 23 s. Read *The sound and the length, reported 2026-09-10
 (second pass)* and *The clip window went from 15 s to 30 s* under **Background placement and video**.
@@ -50,12 +50,19 @@ What was wrong and what changed:
   three different code paths blamed the clip for it; and `navigator.share` on Windows can hang for
   ever, which left every export button disabled until a reload.
 
-Everything else described in this file is **on `main` and deployed** — everything, that is, except
-the second pass above, which is uncommitted in the working tree on `main` and has never been near
-Vercel. <https://nexocards.vercel.app> served `1658528` until the first push of the day and rebuilt on its own
-within a couple of minutes of it: the live bundle is `assets/index-sfzXDYKB.js`, and both new
-strings — "has to be in front to record" and "share sheet never opened" — are in it, which is what
-was actually checked rather than trusting the dashboard.
+Everything described in this file is **on `main` and deployed**. There is no work sitting on a
+branch. <https://nexocards.vercel.app> rebuilt on its own within a couple of minutes of each of the
+day's two pushes: after the first the live bundle was `assets/index-sfzXDYKB.js` and held both new
+strings, "has to be in front to record" and "share sheet never opened"; after the second it is
+`assets/index-C6Q_ZLd8.js` and holds `tfdt`, `moof` and `mvhd` from the new container repair, with
+the clip cap inlined as 30 and the source cap as 120. That is what was actually checked, rather than
+trusting the dashboard.
+
+One trap in checking it that way, found doing exactly this: **do not grep the bundle for a string
+built from a constant.** "the card plays 30 s of it" is a template literal, so the bundle holds
+`(the card plays ${xe} s of it)` and a search for the assembled sentence answers no on a deploy that
+has perfectly well landed. Grep for a plain literal — a box type, an error message — or read the
+constant out of the bundle (`grep -o "xe=[0-9]*"`).
 
 Note the deployed bundle hash does **not** match a local `npm run build` (`index-bl-0MmQG.js` here).
 That is not a mismatch worth chasing: Vite inlines `VITE_`-prefixed variables, and this machine's
