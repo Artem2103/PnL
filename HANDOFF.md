@@ -23,7 +23,8 @@ the fourth.
 
 ## Start here (2026-09-10)
 
-**Two export bugs were reported and fixed today, and the fix is on `main` and pushed.** It touches
+**Two export bugs were reported and fixed today, and the fix is on `main` and pushed** as
+`61195fb`. It touches
 `src/lib/video.ts`, `src/lib/share.ts`, `src/lib/images.ts` and `src/App.tsx`, plus
 `src/lib/share.test.ts` and two dev instruments. Typecheck, build and all 151 unit tests pass, and
 both fixes were verified against the real UI in a driven Chrome. Vercel deploys from `main`, so the
@@ -37,8 +38,16 @@ What was wrong and what changed:
   three different code paths blamed the clip for it; and `navigator.share` on Windows can hang for
   ever, which left every export button disabled until a reload.
 
-Everything else described in this file is **on `main` and deployed**. <https://nexocards.vercel.app>
-is serving commit `1658528`. There is no work sitting on a branch.
+Everything else described in this file is **on `main` and deployed**. There is no work sitting on a
+branch. <https://nexocards.vercel.app> served `1658528` until today's push and rebuilt on its own
+within a couple of minutes of it: the live bundle is `assets/index-sfzXDYKB.js`, and both new
+strings — "has to be in front to record" and "share sheet never opened" — are in it, which is what
+was actually checked rather than trusting the dashboard.
+
+Note the deployed bundle hash does **not** match a local `npm run build` (`index-bl-0MmQG.js` here).
+That is not a mismatch worth chasing: Vite inlines `VITE_`-prefixed variables, and this machine's
+`.env.local` is empty while the Vercel project's environment is whatever it is, so the two builds
+differ by content. Grep the bundle for a string you just wrote; do not compare hashes.
 
 **The app currently has no sign-in.** That is deliberate and was requested: there is still no
 Supabase project to register against, so registration and login are paused until there is one. With
