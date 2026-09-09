@@ -405,7 +405,7 @@
 
           const ext = srcBlob.type.includes('webm') ? 'webm' : 'mp4';
           const file = new File([srcBlob], 'cadence-test.' + ext, { type: srcBlob.type });
-          const rec = await images.addImage(file, 'artwork');
+          const rec = await images.addLocalMedia(file, 'artwork', 'local');
           log('stored in library', { id: rec.id, duration: +Number(rec.duration).toFixed(3) });
 
           const base = defaults.createDefaultState();
@@ -436,7 +436,7 @@
             frames: out.control.frames, seconds: out.control.totalSeconds,
           });
 
-          await images.deleteImage(rec.id);
+          await images.deleteRecord(rec.id);
           out.ok = true;
         } catch (e) {
           out.ok = false;

@@ -21,10 +21,24 @@ the fourth.
 
 ---
 
-## Start here (2026-08-26)
+## Start here (2026-09-10)
 
-Everything described in this file is **on `main` and deployed**. <https://nexocards.vercel.app> is
-serving commit `1658528`. There is no work sitting on a branch.
+**Two export bugs were reported and fixed today, and the fix is on `main` and pushed.** It touches
+`src/lib/video.ts`, `src/lib/share.ts`, `src/lib/images.ts` and `src/App.tsx`, plus
+`src/lib/share.test.ts` and two dev instruments. Typecheck, build and all 151 unit tests pass, and
+both fixes were verified against the real UI in a driven Chrome. Vercel deploys from `main`, so the
+site picks this up on its own — confirm the new build is live before assuming anyone else has it.
+What was wrong and what changed:
+
+- **"Recording failed when trying to export MP4"** and **"sharing doesn't work"** — read
+  *The two export failures reported on 2026-09-10* under **Background placement and video**, then
+  *Closing the resume seam* and *What was verified in the browser, 2026-09-10* directly after it.
+  The short version: a browser does not decode video in a window that is behind another one, and
+  three different code paths blamed the clip for it; and `navigator.share` on Windows can hang for
+  ever, which left every export button disabled until a reload.
+
+Everything else described in this file is **on `main` and deployed**. <https://nexocards.vercel.app>
+is serving commit `1658528`. There is no work sitting on a branch.
 
 **The app currently has no sign-in.** That is deliberate and was requested: there is still no
 Supabase project to register against, so registration and login are paused until there is one. With
@@ -743,6 +757,109 @@ used): clip preview plays under the card; drag pans horizontally and, once zoome
 `march-2026-pnl.mp4`, 1680 × 1140, 2.98 s for a 3.0 s window, with an audio track; `Download PNG`
 still produced a 1680 × 1140 PNG with a clip selected; console clean.
 
+### The two export failures reported on 2026-09-10, and what they were
+
+Both reproduced against the real UI in a driven Chrome, both caused by the same thing the earlier
+verification passes had to disable flags to avoid: **a window that is not in front**. Chrome marks
+a page hidden the moment another app covers it — a Zoom window is enough, it does not have to be a
+background tab — and a hidden page does not decode `<video>` at all. `readyState` stays 0 and
+stays there.
+
+Three things followed from that, and all three lied about the cause:
+
+1. **Picking a clip with the window covered removed the video UI.** `loadMedia` answered null, App
+   read that as "no background", and the trim controls and the `Download MP4` button were simply not
+   rendered. The export looked missing, not postponed. Fixed by reading the *record* first
+   (`describeMedia`, no decoder involved) and letting the decode refine it: the record already knows
+   it is a clip, and only the pixels have to wait.
+2. **Exporting with the window covered waited 20 s and then blamed the clip** — `readVideoMetadata`
+   timed out into "That video took too long to open. Try a shorter clip." Now `blockedByVisibility`
+   refuses in the click handler, immediately, and says which window to bring forward. The timeout
+   message itself also names the real cause when the page is hidden.
+3. **Covering the window *during* a recording ruined the file.** It records in real time, so the
+   frames for however long you were away were frozen — or the whole thing died on the deadline with
+   "The clip stalled while recording". The recorder and the clip are now paused together on
+   `visibilitychange` and resumed when the window comes back, with the deadline and the wall-clock
+   tail both slid by the time away, and a `MAX_HIDDEN_SECONDS` cap so an abandoned export says so
+   instead of hanging.
+
+The first version of that pause left a **0.4 s gap at the join** — one long frame where the recorder
+had been resumed but the decoder had not yet handed over a picture. That is fixed too; see the next
+section for what caused it and what the file measures now.
+
+### Closing the resume seam (the 0.4 s gap)
+
+Pausing on hidden fixed the ruined file but left one visible stutter, and it is worth knowing why,
+because the naive ordering is the obvious one and it is wrong.
+
+Coming back, `video.play()` returns long before the decoder produces a frame — a few hundred
+milliseconds on this machine. The first cut resumed the recorder immediately on `visibilitychange`,
+so that warm-up was inside the recording: the last frame before the pause was held on screen until
+the first new picture arrived, and the container recorded a single sample 418 ms long.
+
+**The recorder must stay paused until there are fresh pixels to hand it.** A paused recorder
+contributes nothing to the timeline, so the warm-up costs nothing instead of costing a frame. The
+resume is now a small state machine — `phase: 'recording' | 'paused' | 'resuming'` — and the order
+is exactly:
+
+1. `video.play()`.
+2. Wait for a genuinely decoded frame: `requestVideoFrameCallback` where it exists, a moving
+   `currentTime` where it does not, and a 1.2 s guard so a clip that will not restart falls through
+   to the deadline instead of hanging here.
+3. Re-check visibility — the window can go away again during the warm-up, and resuming into one that
+   is not there would start the whole problem over.
+4. `renderToCanvas`, so the canvas holds the new frame *before* the recorder is running.
+5. Slide `deadline` and `tailAt` by the whole gap, warm-up included.
+6. Resume the audio context, then the recorder, then `requestFrame()` on the canvas track —
+   otherwise `captureStream` waits for its own next sampling instant, which is up to another frame
+   of dead time at the join.
+
+Going the other way, the recorder is paused **before** the video: anything painted between the two
+would be encoded as part of the pause.
+
+`tick` paints only in `'recording'`, so nothing is captured while the export is held, and the
+`MAX_HIDDEN_SECONDS` cap applies to `'paused'` only — a resume in progress is not an abandoned one.
+
+### What was verified in the browser, 2026-09-10
+
+Driven Chrome, real UI, real `Download MP4` button, 8 s synthetic clip, frame durations read out of
+each finished file with `dev/mp4-cadence.mjs`. Runs marked *minimised* had the window minimised
+2 s in and restored 5 s later — the machine was in a video call throughout, which is the ambient
+load these numbers carry.
+
+| run | frames | length | fps | jitter (sd) | worst gap | gaps > 200 ms |
+|---|---|---|---|---|---|---|
+| window in front | 238 | 7.960 s | 29.90 | 7.66 ms | 60.1 ms | 0 |
+| window in front | 239 | 7.986 s | 29.93 | 9.05 ms | 56.1 ms | 0 |
+| **minimised 5 s** | 235 | 7.945 s | 29.58 | 9.39 ms | 73.5 ms | 0 |
+| **minimised 5 s** | 238 | 7.952 s | 29.93 | 8.36 ms | 69.1 ms | 0 |
+| **minimised 5 s** | 231 | 7.948 s | 29.06 | 11.09 ms | 87.9 ms | 0 |
+
+An interrupted export is now within a frame of an uninterrupted one: the seam costs about 30 ms over
+baseline, against 418 ms before, and nothing in any file exceeds 200 ms. Length is right in every
+case — 7.95 s for an 8 s window, short by the recorder's start/stop latency, as open item 6 records.
+
+Two cautions on reading this table:
+
+- **The first export after a page load is the worst one.** A run taken straight after a reload
+  measured 27.13 fps, sd 18.8 ms, worst gap 143.8 ms, on an uninterrupted window — cold decoder and
+  a cold foreground-layer cache, not a regression. Warm runs are the ones above. Discard the first.
+- **The residual ~56–60 ms baseline gap is the machine, not the code.** The quiet-machine number
+  from 2026-08-24 was 44.1 ms. Two frame intervals under load is ambient jitter.
+
+**Sharing hung forever.** `navigator.share` is allowed never to settle, and in Chrome on Windows it
+does exactly that when the sheet cannot open — an unfocused window is enough. No sheet, no resolve,
+no reject. `handleShare`'s `finally` never ran, so `busy` stayed `'share'` and *every* export button
+stayed disabled until a reload; the button read "Sharing…" indefinitely. Reproduced twice. The call
+is now raced against a 12 s timeout, and `shareCard` returns an outcome
+(`shared`/`cancelled`/`unsupported`/`pending`/`timeout`) rather than a boolean — the boolean was why
+a sheet that never opened was reported as "Sharing was cancelled.", which is the one thing that
+definitely had not happened. `shareMessage()` holds the wording and is unit-tested.
+
+A share left pending is pending for the life of the page: `sharePending` stays set and later clicks
+answer `'pending'`, because `navigator.share` would only throw `InvalidStateError` at them anyway.
+That is correct, and the message points at Download PNG.
+
 ## The scroll trap in the editor shell
 
 Fixed 2026-08-25 after a report that the page stopped scrolling partway down when the window was
@@ -978,6 +1095,22 @@ costs nothing.
     (`moof`/`traf`/`trun`, `stts` for non-fragmented) — that is the encoded truth and needs no
     playback. rVFC is still fine for "did the picture actually change", which is all the harness
     uses it for now.
+- **`dev/mp4-cadence.mjs <file.mp4>`** reads frames, length, fps, jitter and worst gap out of a
+  finished export, from the command line — the same container reader as `cadence-check.html`,
+  without the browser. This is how the pause-on-hidden fix was measured; reach for it before
+  believing anything about a file from watching it play.
+- **`dev/app-probe.mjs "<expression>" [--gesture] [--nowait]`** evaluates an expression in the
+  driven Chrome over CDP (port 9223). `--gesture` sets `userGesture: true`, which is what lets the
+  real buttons be pressed the way a person presses them — `navigator.share`, autoplay and the
+  download anchor all behave differently without it. This is how both 2026-09-10 bugs were
+  reproduced against the shipping UI rather than against a harness.
+  - Two traps, both of which cost a run here: **match picker tiles by label, not by index** (an
+    index-based click landed on a tile's `×` and deleted the test clip), and **`Get-ChildItem
+    -Filter "*-pnl.mp4"` does not match `name (4).mp4`** — a successful export looked like a failed
+    one twice before that was noticed.
+- **`dev/cadence-check.html` called `images.addImage`/`deleteImage`**, which the accounts commit
+  renamed to `addLocalMedia(file, role, userId)` and `deleteRecord(id)`. Fixed 2026-09-10; the
+  harness had been dead since `62b4a5b` and would have failed on its first line of real work.
 - **A driven Chrome can be screenshotted over CDP without the extension.** Launch the isolated
   instance with `--remote-debugging-port=9222`, read `http://127.0.0.1:9222/json/list`, and open the
   target's `webSocketDebuggerUrl` with node's global `WebSocket` — `Page.captureScreenshot` with

@@ -303,7 +303,19 @@ export async function readVideoMetadata(
 ): Promise<{ width: number; height: number; duration: number }> {
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(
-      () => reject(new ImageError('That video took too long to open. Try a shorter clip.')),
+      () =>
+        reject(
+          new ImageError(
+            document.visibilityState === 'visible'
+              ? 'That video took too long to open. Try an MP4 (H.264) or WebM file.'
+              : // Chrome stops decoding media in a page it considers hidden, and a
+                // window covered by another app counts. Nothing is wrong with the
+                // clip, so saying "try a shorter one" sent people to re-encode a
+                // file that was fine.
+                'The browser stopped decoding video while this window was in the ' +
+                'background. Bring it to the front and try again.',
+          ),
+        ),
       20_000,
     );
     const done = () => {
@@ -680,6 +692,28 @@ export function loadMedia(id: string): Promise<Media | null> {
   return promise;
 }
 
+/**
+ * What a library item *is*, straight from the record — no decoding.
+ *
+ * `loadMedia` needs a working decoder, and in a background window there is not
+ * one: it returns null, which the app read as "no background", so choosing a
+ * clip with the window covered hid the trim controls and the MP4 button
+ * entirely. The kind and duration are already on the record; the UI can be
+ * driven from those and only the *pixels* need to wait for a decode.
+ */
+export async function describeMedia(
+  id: string,
+): Promise<{ kind: MediaKind; duration: number; width: number; height: number } | null> {
+  const record = await getRecord(id);
+  if (!record) return null;
+  return {
+    kind: kindOf(record),
+    duration: record.duration ?? 0,
+    width: record.width,
+    height: record.height,
+  };
+}
+
 /** Synchronous cache hit, used by the render loop. */
 export function peekMedia(id: string): Media | null {
   return mediaCache.get(id)?.media ?? null;
@@ -705,7 +739,12 @@ export async function openVideoForExport(
   const stored = await getRecord(id);
   if (!stored || kindOf(stored) !== 'video') return null;
   const record = await ensureBlob(stored);
-  if (!record?.blob) return null;
+  // Not the same as "this is a photo": the record is a clip whose bytes are in
+  // the account and could not be fetched here. Saying otherwise sent people
+  // looking for a background they had already chosen correctly.
+  if (!record?.blob) {
+    throw new ImageError('That clip has not downloaded to this browser yet. Try again in a moment.');
+  }
   const url = URL.createObjectURL(record.blob);
   const element = makeVideoElement(url);
   try {

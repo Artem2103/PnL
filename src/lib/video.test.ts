@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_VIDEO_SCALE,
   MIN_VIDEO_SCALE,
+  blockedByVisibility,
   pickMimeType,
   resolveClip,
   videoFileName,
@@ -102,5 +103,23 @@ describe('videoScaleFor', () => {
       expect(resolved).toBeGreaterThanOrEqual(MIN_VIDEO_SCALE);
       expect(resolved).toBeLessThanOrEqual(MAX_VIDEO_SCALE);
     }
+  });
+});
+
+describe('blockedByVisibility', () => {
+  it('lets a recording start in a visible window', () => {
+    expect(blockedByVisibility('visible')).toBeNull();
+  });
+
+  it('refuses a hidden window, because the browser will not decode video there', () => {
+    const reason = blockedByVisibility('hidden');
+    expect(reason).toBeTruthy();
+    // The old message blamed the clip; the window is the actual cause.
+    expect(reason).toContain('in front');
+    expect(reason).not.toContain('shorter');
+  });
+
+  it('treats an unknown visibility as not visible rather than assuming the best', () => {
+    expect(blockedByVisibility('prerender')).toBeTruthy();
   });
 });

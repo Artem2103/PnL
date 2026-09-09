@@ -129,6 +129,27 @@ export interface VideoExportResult {
 
 export class VideoExportError extends Error {}
 
+/**
+ * Chrome does not decode media in a page it considers hidden — and a window
+ * covered by another app counts as hidden, not just a background tab. A
+ * recording started in that state produced either a 20 s wait on metadata that
+ * never arrived or a file of frozen frames, and blamed the clip for both.
+ *
+ * Kept pure so the rule is testable; the caller passes `document.visibilityState`.
+ */
+export function blockedByVisibility(visibility: string): string | null {
+  return visibility === 'visible'
+    ? null
+    : 'This window has to be in front to record: browsers stop decoding video in a ' +
+        'background window. Bring it forward and press Download again.';
+}
+
+/**
+ * How long the export waits, paused, for a window that went away. Long enough
+ * to answer a message and come back, short enough not to look like a hang.
+ */
+export const MAX_HIDDEN_SECONDS = 60;
+
 function waitForEvent(target: EventTarget, name: string, timeoutMs: number): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -155,6 +176,12 @@ async function seekTo(video: HTMLVideoElement, time: number): Promise<void> {
   if (video.readyState < 2) await waitForEvent(video, 'loadeddata', 15_000);
 }
 
+interface AudioRoute {
+  /** Brings the context back after a hidden page suspended it. */
+  resume: () => Promise<void>;
+  detach: () => void;
+}
+
 /**
  * Attaches the clip's own audio to the recording without letting it out of the
  * speakers: a `MediaElementAudioSourceNode` takes the element's output over,
@@ -169,7 +196,7 @@ async function seekTo(video: HTMLVideoElement, time: number): Promise<void> {
 async function attachAudio(
   video: HTMLVideoElement,
   stream: MediaStream,
-): Promise<(() => void) | null> {
+): Promise<AudioRoute | null> {
   const Ctor =
     typeof window === 'undefined'
       ? undefined
@@ -198,13 +225,18 @@ async function attachAudio(
     stream.addTrack(track);
     video.muted = false;
     video.volume = 1;
-    return () => {
-      try {
-        source.disconnect();
-      } catch {
-        /* already torn down */
-      }
-      void context.close();
+    return {
+      resume: async () => {
+        if (context.state === 'suspended') await context.resume().catch(() => undefined);
+      },
+      detach: () => {
+        try {
+          source.disconnect();
+        } catch {
+          /* already torn down */
+        }
+        void context.close();
+      },
     };
   } catch {
     await context.close().catch(() => undefined);
@@ -243,6 +275,8 @@ export async function renderCardVideo(
   if (!state.artwork.imageId) {
     throw new VideoExportError('Pick a background clip first.');
   }
+  const blocked = typeof document === 'undefined' ? null : blockedByVisibility(document.visibilityState);
+  if (blocked) throw new VideoExportError(blocked);
 
   const opened = await openVideoForExport(state.artwork.imageId);
   if (!opened) throw new VideoExportError('That background is a photo, not a clip.');
@@ -268,7 +302,7 @@ export async function renderCardVideo(
   };
 
   const canvas = document.createElement('canvas');
-  let detachAudio: (() => void) | null = null;
+  let audio: AudioRoute | null = null;
   let stream: MediaStream | null = null;
   let recorder: MediaRecorder | null = null;
 
@@ -279,7 +313,15 @@ export async function renderCardVideo(
     renderToCanvas(canvas, state, assets, scale);
 
     stream = canvas.captureStream(VIDEO_FPS);
-    if (!state.artwork.muteAudio) detachAudio = await attachAudio(video, stream);
+    // A canvas track can be told to sample *now* rather than at its own next
+    // instant. Only used at the seam after a pause, where waiting for the
+    // sampler costs a frame of dead time in the file.
+    const canvasTrack = stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack | undefined;
+    const frameRequest =
+      canvasTrack && typeof canvasTrack.requestFrame === 'function'
+        ? () => canvasTrack.requestFrame()
+        : null;
+    if (!state.artwork.muteAudio) audio = await attachAudio(video, stream);
 
     const active = new MediaRecorder(stream, {
       mimeType: support.mimeType,
@@ -303,8 +345,8 @@ export async function renderCardVideo(
       await video.play();
     } catch {
       // Autoplay policy refused an audible element; record it silent instead.
-      detachAudio?.();
-      detachAudio = null;
+      audio?.detach();
+      audio = null;
       video.muted = true;
       await video.play();
     }
@@ -315,8 +357,10 @@ export async function renderCardVideo(
 
     const end = clip.start + clip.length;
     // Recording is real time, so a clip that stalls would otherwise sit here
-    // forever and hand back a file minutes long full of frozen frames.
-    const deadline = performance.now() + clip.length * 1000 * 3 + 10_000;
+    // forever and hand back a file minutes long full of frozen frames. Time
+    // spent paused for a hidden window is added back below, so a pause is not
+    // mistaken for a stall.
+    let deadline = performance.now() + clip.length * 1000 * 3 + 10_000;
 
     await new Promise<void>((resolve, reject) => {
       /**
@@ -336,17 +380,124 @@ export async function renderCardVideo(
       let frames = 0;
       let raf = 0;
       let timer = 0;
-      let tail = 0;
       let done = false;
+
+      /**
+       * The window went behind something. Chrome stops decoding the clip
+       * there, so carrying on would encode however many seconds of frozen
+       * frames the person was away for — which is what "the recording failed"
+       * looked like from the outside. Both ends are held instead: the clip
+       * pauses where it is and the recorder pauses with it, and the file picks
+       * up on the same frame when the window comes back.
+       *
+       * `resuming` is the state that closes the seam. Coming back, the decoder
+       * needs a few hundred ms to hand over its first frame, and a recorder
+       * resumed before then stamps that whole wait onto the last frame — a
+       * visible ~0.4 s freeze at the join. So the recorder stays paused, which
+       * excludes the wait from the timeline entirely, until there are fresh
+       * pixels on the canvas to give it.
+       */
+      type Phase = 'recording' | 'paused' | 'resuming';
+      let phase: Phase = 'recording';
+      let hiddenSince = 0;
+
+      // The loop notices the end of the window only when it paints, so a
+      // throttled page would overrun by however long it slept. Wall clock
+      // bounds the tail independently — and moves with the pauses.
+      let tailAt = performance.now() + clip.length * 1000 + 150;
 
       const finish = (error?: Error) => {
         done = true;
         cancelAnimationFrame(raf);
         clearInterval(timer);
-        clearTimeout(tail);
+        document.removeEventListener('visibilitychange', onVisibility);
         if (error) reject(error);
         else resolve();
       };
+
+      /**
+       * The next decoded frame, or a short wait if none arrives. Chrome's
+       * `requestVideoFrameCallback` reports exactly that; where it is missing,
+       * a moving `currentTime` says the same thing a little more coarsely.
+       */
+      const nextDecodedFrame = () =>
+        new Promise<void>((settle) => {
+          const at = video.currentTime;
+          let over = false;
+          let poll = 0;
+          let guard = 0;
+          const once = () => {
+            if (over) return;
+            over = true;
+            clearInterval(poll);
+            clearTimeout(guard);
+            settle();
+          };
+          // Never hang on this: a clip that will not restart is caught by the
+          // deadline, and a missed frame here only costs the seam it saves.
+          guard = setTimeout(once, 1200) as unknown as number;
+          poll = setInterval(() => {
+            if (video.currentTime > at) once();
+          }, 16) as unknown as number;
+          if (typeof video.requestVideoFrameCallback === 'function') {
+            video.requestVideoFrameCallback(() => once());
+          }
+        });
+
+      async function resumeAfterHidden() {
+        try {
+          await video.play();
+        } catch {
+          finish(new VideoExportError('The clip would not restart after the window came back.'));
+          return;
+        }
+        await nextDecodedFrame();
+        if (done) return;
+        // Went away again while the decoder was warming up: stay paused rather
+        // than resume into a window that is not there.
+        if (document.visibilityState !== 'visible') {
+          video.pause();
+          phase = 'paused';
+          hiddenSince = performance.now();
+          return;
+        }
+
+        // The pixels the recorder will be handed, painted before it is running
+        // so its first sample after the resume is already the new frame.
+        renderToCanvas(canvas, state, assets, scale);
+        painted = performance.now();
+
+        // Everything that measures elapsed time slides by the whole gap —
+        // including the warm-up above — or the tail fires on the way back in.
+        const away = performance.now() - hiddenSince;
+        deadline += away;
+        tailAt += away;
+
+        await audio?.resume();
+        if (active.state === 'paused') active.resume();
+        // `captureStream` would otherwise wait for its own next sampling
+        // instant, which is up to a frame of dead time at the join.
+        frameRequest?.();
+        hiddenSince = 0;
+        phase = 'recording';
+      }
+
+      function onVisibility() {
+        if (done) return;
+        if (document.visibilityState !== 'visible') {
+          if (phase !== 'recording') return;
+          phase = 'paused';
+          hiddenSince = performance.now();
+          // Recorder first: any frame painted between here and the video
+          // stopping would be encoded as part of the pause.
+          if (active.state === 'recording') active.pause();
+          video.pause();
+          return;
+        }
+        if (phase !== 'paused') return;
+        phase = 'resuming';
+        void resumeAfterHidden();
+      }
 
       const tick = () => {
         if (done) return;
@@ -354,6 +505,20 @@ export async function renderCardVideo(
 
         if (options.signal?.aborted) {
           finish(new VideoExportError('Export cancelled.'));
+          return;
+        }
+
+        if (phase !== 'recording') {
+          // Paused, waiting for the window. Not forever, though: an export
+          // left behind for good should say so rather than look like a hang.
+          if (phase === 'paused' && now - hiddenSince > MAX_HIDDEN_SECONDS * 1000) {
+            finish(
+              new VideoExportError(
+                `The window stayed in the background for over ${MAX_HIDDEN_SECONDS} s, so the ` +
+                  'recording was stopped. Keep it in front and try again.',
+              ),
+            );
+          }
           return;
         }
 
@@ -367,38 +532,29 @@ export async function renderCardVideo(
           frames += 1;
         }
 
-        if (video.ended || video.currentTime >= end) {
+        if (video.ended || video.currentTime >= end || now >= tailAt) {
           finish();
           return;
         }
         if (now > deadline) {
           finish(
             new VideoExportError(
-              'The clip stalled while recording. Keep this tab in front while it runs, then try again.',
+              'The clip stalled while recording. Keep this window in front while it runs, then try again.',
             ),
           );
         }
       };
 
-      // rAF alone stops firing when the window is hidden or fully covered,
-      // which would freeze the picture while the clip kept playing. The timer
-      // keeps painting — slowly — in that case.
+      // rAF alone stops firing when the window is hidden or fully covered, and
+      // that is exactly when the pause above has to be noticed. The timer keeps
+      // ticking — slowly — in that case.
       const loop = () => {
         tick();
         if (!done) raf = requestAnimationFrame(loop);
       };
+      document.addEventListener('visibilitychange', onVisibility);
       raf = requestAnimationFrame(loop);
       timer = setInterval(tick, Math.round(paintGap)) as unknown as number;
-
-      // The loop notices the end of the window only when it paints, so a
-      // throttled page would overrun by however long it slept. Wall clock
-      // bounds the tail independently.
-      tail = setTimeout(
-        () => {
-          if (!done) finish();
-        },
-        clip.length * 1000 + 150,
-      ) as unknown as number;
     });
 
     video.pause();
@@ -419,7 +575,7 @@ export async function renderCardVideo(
     };
   } finally {
     if (recorder && recorder.state !== 'inactive') recorder.stop();
-    detachAudio?.();
+    audio?.detach();
     stream?.getTracks().forEach((track) => track.stop());
     release();
   }

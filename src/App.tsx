@@ -14,12 +14,13 @@ import { useCloudCard, type CardSyncStatus } from './lib/useCloudCard';
 import {
   canCopyImage,
   canShareFiles,
+  shareMessage,
   copyCardToClipboard,
   downloadCard,
   shareCard,
 } from './lib/share';
 import { CARD } from './lib/render';
-import { loadMedia } from './lib/images';
+import { describeMedia, loadMedia } from './lib/images';
 import { downloadCardVideo, resolveClip, videoScaleFor, videoSupport } from './lib/video';
 import { checkExportMatchesPreview } from './lib/selftest';
 import { useAuth } from './lib/auth';
@@ -87,6 +88,13 @@ export default function App() {
 
   // What the chosen background actually is. The renderer shares this cache, so
   // resolving it here costs no second decode.
+  //
+  // The record is read first and the decode second, because they can disagree:
+  // a browser will not decode video in a window that is behind another one, and
+  // `loadMedia` then answers null. Driving the UI off that answer meant picking
+  // a clip with the window covered hid the trim controls and the MP4 button
+  // altogether — the export looked missing rather than postponed. The record
+  // knows it is a clip either way; only the pixels have to wait.
   useEffect(() => {
     const id = state.artwork.imageId;
     if (!id) {
@@ -94,9 +102,17 @@ export default function App() {
       return;
     }
     let cancelled = false;
+    let decoded = false;
+    void describeMedia(id).then((info) => {
+      // The decode can win the race on a cache hit; its duration is measured
+      // rather than remembered, so it is not overwritten by the record's.
+      if (cancelled || decoded) return;
+      setBackground(info ? { kind: info.kind, duration: info.duration } : null);
+    });
     void loadMedia(id).then((media) => {
       if (cancelled) return;
-      setBackground(media ? { kind: media.kind, duration: media.duration } : null);
+      decoded = true;
+      if (media) setBackground({ kind: media.kind, duration: media.duration });
       setPlaying(true);
     });
     return () => {
@@ -181,8 +197,12 @@ export default function App() {
   const handleShare = useCallback(async () => {
     setBusy('share');
     try {
-      const shared = await shareCard(state, scale);
-      if (!shared) notify('Sharing was cancelled.', 'info');
+      const outcome = await shareCard(state, scale);
+      // Only 'shared' is worth a cheerful toast; the rest each mean something
+      // different, and reporting them all as "cancelled" was why a share that
+      // never opened looked like one the person had called off.
+      const { message, tone } = shareMessage(outcome);
+      if (outcome !== 'shared') notify(message, tone);
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Sharing failed.', 'error');
     } finally {
@@ -412,9 +432,11 @@ export default function App() {
                   <>
                     One renderer paints the preview, the PNG and every video frame, so the card is
                     identical in all three. Recording runs in real time — {clip.length.toFixed(1)} s
-                    of clip takes {clip.length.toFixed(1)} s, and the tab has to stay in front while
-                    it does. The scale buttons set the PNG; video always records at {videoScale}×,
-                    because anything smaller is smeared by the time a platform has re-encoded it.
+                    of clip takes {clip.length.toFixed(1)} s. Browsers stop decoding video in a
+                    window that is behind another one, so the recording pauses there and picks up
+                    when this window comes back. The scale buttons set the PNG; video always records
+                    at {videoScale}×, because anything smaller is smeared by the time a platform has
+                    re-encoded it.
                   </>
                 ) : (
                   <>
