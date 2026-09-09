@@ -9,3 +9,8 @@ reference/
 .DS_Store
 .vite/
 *.tsbuildinfo
+
+# The clip dev/audio-check.html records over. Drop any MP4 that has sound
+# there; it stays out of the repo because someone else's clip is not this
+# project's to redistribute.
+dev/sample-clip.mp4

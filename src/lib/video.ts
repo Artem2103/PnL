@@ -8,11 +8,16 @@
  * colour on a video frame is produced by the code that produces the PNG.
  *
  * Recording happens in real time — the browser has no way to encode a canvas
- * faster than playback — so a 15 s clip takes 15 s to export.
+ * faster than playback — so a 30 s clip takes 30 s to export.
+ *
+ * What `MediaRecorder` hands back is not quite a finished file, and the last
+ * step here is `repairFragmentedMp4`: see `lib/mp4.ts` for the two container
+ * faults it fixes and why they are fixed there rather than avoided here.
  */
 
 import type { CardState, RenderAssets } from '../types';
 import { MAX_CLIP_SECONDS, openVideoForExport } from './images';
+import { repairFragmentedMp4, type RecordingRepair } from './mp4';
 import { prepareAssets, renderToCanvas } from './render';
 import { slugify } from './format';
 
@@ -124,7 +129,10 @@ export interface VideoExportResult {
   extension: string;
   width: number;
   height: number;
+  /** Measured from the finished file, not from the window that was asked for. */
   duration: number;
+  /** What the container repair found and changed. */
+  repair: RecordingRepair;
 }
 
 export class VideoExportError extends Error {}
@@ -150,6 +158,13 @@ export function blockedByVisibility(visibility: string): string | null {
  */
 export const MAX_HIDDEN_SECONDS = 60;
 
+/**
+ * How long the clip runs before the recorder starts, to bring both decoders
+ * up. Long enough for the audio pipeline, which is the slow one; short enough
+ * that nobody reads it as the export having stalled.
+ */
+const PRIME_MS = 500;
+
 function waitForEvent(target: EventTarget, name: string, timeoutMs: number): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -162,6 +177,39 @@ function waitForEvent(target: EventTarget, name: string, timeoutMs: number): Pro
       resolve();
     };
     target.addEventListener(name, handler);
+  });
+}
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The next decoded frame, or a short wait if none arrives. Chrome's
+ * `requestVideoFrameCallback` reports exactly that; where it is missing, a
+ * moving `currentTime` says the same thing a little more coarsely.
+ *
+ * Never hangs: every caller has a deadline of its own behind it, and a missed
+ * frame here only costs the moment it was there to save.
+ */
+function nextDecodedFrame(video: HTMLVideoElement): Promise<void> {
+  return new Promise<void>((settle) => {
+    const at = video.currentTime;
+    let over = false;
+    let poll = 0;
+    let guard = 0;
+    const once = () => {
+      if (over) return;
+      over = true;
+      clearInterval(poll);
+      clearTimeout(guard);
+      settle();
+    };
+    guard = setTimeout(once, 1200) as unknown as number;
+    poll = setInterval(() => {
+      if (video.currentTime > at) once();
+    }, 16) as unknown as number;
+    if (typeof video.requestVideoFrameCallback === 'function') {
+      video.requestVideoFrameCallback(() => once());
+    }
   });
 }
 
@@ -220,6 +268,24 @@ async function attachAudio(
     const source = context.createMediaElementSource(video);
     const destination = context.createMediaStreamDestination();
     source.connect(destination);
+
+    // A destination whose only input is a media element that has not started
+    // decoding has nothing to hand anyone, and the sound track then begins
+    // whenever the decoder gets round to it — over a second into the file, on
+    // the exports that prompted this. A source that is always running keeps
+    // the track live from the moment it exists, so it is producing before the
+    // recorder asks. -100 dBFS is a third of a bit at 16 bits: silence in
+    // every respect except being there.
+    const keepAlive =
+      typeof context.createConstantSource === 'function' ? context.createConstantSource() : null;
+    if (keepAlive) {
+      const floor = context.createGain();
+      floor.gain.value = 1e-5;
+      keepAlive.connect(floor);
+      floor.connect(destination);
+      keepAlive.start();
+    }
+
     const track = destination.stream.getAudioTracks()[0];
     if (!track) throw new Error('no audio track');
     stream.addTrack(track);
@@ -231,6 +297,7 @@ async function attachAudio(
       },
       detach: () => {
         try {
+          keepAlive?.stop();
           source.disconnect();
         } catch {
           /* already torn down */
@@ -341,15 +408,37 @@ export async function renderCardVideo(
     // below is reached; awaiting it still surfaces the failure.
     stopped.catch(() => undefined);
 
-    try {
-      await video.play();
-    } catch {
-      // Autoplay policy refused an audible element; record it silent instead.
-      audio?.detach();
-      audio = null;
-      video.muted = true;
-      await video.play();
-    }
+    const play = async () => {
+      try {
+        await video.play();
+      } catch {
+        // Autoplay policy refused an audible element; record it silent instead.
+        audio?.detach();
+        audio = null;
+        video.muted = true;
+        await video.play();
+      }
+    };
+
+    /**
+     * A throwaway run at the clip before anything is recorded.
+     *
+     * `play()` resolves well before either decoder is delivering, and whatever
+     * is not delivering when the recorder starts is simply absent from the
+     * front of that track. For the picture that costs a held frame; for the
+     * sound it costs the alignment of the entire file, because both tracks are
+     * stamped from zero regardless and the sound then runs ahead of the
+     * picture by however late it was. Half a second thrown away here takes the
+     * race away — and `repairFragmentedMp4` still catches whatever is left.
+     */
+    await play();
+    await nextDecodedFrame(video);
+    await wait(PRIME_MS);
+    video.pause();
+    await seekTo(video, clip.start);
+    renderToCanvas(canvas, state, assets, scale);
+
+    await play();
     // Started after playback so the file does not open on a held frame while
     // the decoder spins up. Tracks added later would not be recorded, which is
     // why the audio is wired in above.
@@ -415,35 +504,6 @@ export async function renderCardVideo(
         else resolve();
       };
 
-      /**
-       * The next decoded frame, or a short wait if none arrives. Chrome's
-       * `requestVideoFrameCallback` reports exactly that; where it is missing,
-       * a moving `currentTime` says the same thing a little more coarsely.
-       */
-      const nextDecodedFrame = () =>
-        new Promise<void>((settle) => {
-          const at = video.currentTime;
-          let over = false;
-          let poll = 0;
-          let guard = 0;
-          const once = () => {
-            if (over) return;
-            over = true;
-            clearInterval(poll);
-            clearTimeout(guard);
-            settle();
-          };
-          // Never hang on this: a clip that will not restart is caught by the
-          // deadline, and a missed frame here only costs the seam it saves.
-          guard = setTimeout(once, 1200) as unknown as number;
-          poll = setInterval(() => {
-            if (video.currentTime > at) once();
-          }, 16) as unknown as number;
-          if (typeof video.requestVideoFrameCallback === 'function') {
-            video.requestVideoFrameCallback(() => once());
-          }
-        });
-
       async function resumeAfterHidden() {
         try {
           await video.play();
@@ -451,7 +511,7 @@ export async function renderCardVideo(
           finish(new VideoExportError('The clip would not restart after the window came back.'));
           return;
         }
-        await nextDecodedFrame();
+        await nextDecodedFrame(video);
         if (done) return;
         // Went away again while the decoder was warming up: stay paused rather
         // than resume into a window that is not there.
@@ -562,8 +622,15 @@ export async function renderCardVideo(
     await stopped;
     options.onProgress?.(1);
 
-    const blob = new Blob(chunks, { type: support.mimeType });
-    if (blob.size === 0) throw new VideoExportError('The recorder produced an empty file.');
+    const recorded = new Blob(chunks, { type: support.mimeType });
+    if (recorded.size === 0) throw new VideoExportError('The recorder produced an empty file.');
+
+    // What comes out of `MediaRecorder` says it is zero seconds long and, when
+    // the sound started late, plays out of step for its whole length. Neither
+    // is worth avoiding by recording differently; both are a few fields in the
+    // container. See `lib/mp4.ts`.
+    const { buffer, repair } = repairFragmentedMp4(await recorded.arrayBuffer());
+    const blob = repair.patched ? new Blob([buffer], { type: support.mimeType }) : recorded;
 
     return {
       blob,
@@ -571,7 +638,8 @@ export async function renderCardVideo(
       extension: support.extension,
       width: canvas.width,
       height: canvas.height,
-      duration: clip.length,
+      duration: repair.patched ? repair.durationSeconds : clip.length,
+      repair,
     };
   } finally {
     if (recorder && recorder.state !== 'inactive') recorder.stop();

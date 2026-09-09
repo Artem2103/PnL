@@ -23,7 +23,19 @@ the fourth.
 
 ## Start here (2026-09-10)
 
-**Two export bugs were reported and fixed today, and the fix is on `main` and pushed** as
+**Two more export bugs were reported later the same day and are fixed in the working tree — not
+committed, not pushed, not deployed.** The sound in an exported MP4 ran ahead of the picture and
+stopped early, players disagreed with each other about how long the file was, and the clip window
+was capped at 15 s when the clip was 23 s. Read *The sound and the length, reported 2026-09-10
+(second pass)* and *The clip window went from 15 s to 30 s* under **Background placement and video**.
+The short version: `MediaRecorder` writes a fragmented MP4 that never states its own duration and
+stamps a late-starting sound track as if it had started on time, so both are now repaired in the
+container by `src/lib/mp4.ts`; the recorder is also primed before it starts so there is usually
+nothing left to repair. Touches `src/lib/mp4.ts` (new), `src/lib/video.ts`, `src/lib/images.ts`,
+`src/lib/defaults.ts`, `README.md`, plus `src/lib/mp4.test.ts` (new) and `dev/audio-check.html`
+(new). Typecheck, build and 160 unit tests pass, and both fixes were measured in a driven Chrome.
+
+**The earlier two export bugs from the same day are on `main` and pushed** as
 `61195fb`. It touches
 `src/lib/video.ts`, `src/lib/share.ts`, `src/lib/images.ts` and `src/App.tsx`, plus
 `src/lib/share.test.ts` and two dev instruments. Typecheck, build and all 151 unit tests pass, and
@@ -38,8 +50,9 @@ What was wrong and what changed:
   three different code paths blamed the clip for it; and `navigator.share` on Windows can hang for
   ever, which left every export button disabled until a reload.
 
-Everything else described in this file is **on `main` and deployed**. There is no work sitting on a
-branch. <https://nexocards.vercel.app> served `1658528` until today's push and rebuilt on its own
+Everything else described in this file is **on `main` and deployed** — everything, that is, except
+the second pass above, which is uncommitted in the working tree on `main` and has never been near
+Vercel. <https://nexocards.vercel.app> served `1658528` until the first push of the day and rebuilt on its own
 within a couple of minutes of it: the live bundle is `assets/index-sfzXDYKB.js`, and both new
 strings — "has to be in front to record" and "share sheet never opened" — are in it, which is what
 was actually checked rather than trusting the dashboard.
@@ -869,6 +882,113 @@ A share left pending is pending for the life of the page: `sharePending` stays s
 answer `'pending'`, because `navigator.share` would only throw `InvalidStateError` at them anyway.
 That is correct, and the message points at Download PNG.
 
+### The sound and the length, reported 2026-09-10 (second pass)
+
+Reported after the first pass shipped: *"the sound after the first few seconds is DONE, it's
+lagging, it's delayed... the video is 11 seconds, I need it to be full 23 seconds."* Three
+complaints, two causes, and neither is in the frames — the picture measured clean in the very same
+files.
+
+**What the file actually said.** `7d-realized-pnl.mp4`, the export that prompted the report, read
+with the box walk from `dev/mp4-cadence.mjs` extended to both tracks:
+
+| | |
+|---|---|
+| `mvhd` duration | **0** — the file does not state its own length |
+| `tkhd` / `mdhd` durations | 0.111 s and 0.042 s, which are not durations at all |
+| picture | 452 samples, 15.055 s, 30.02 fps, sd 10.8 ms, no gap over 200 ms |
+| sound | 643 AAC frames, **13.707 s** |
+
+So "11 seconds" was never a claim about the frames. Chrome writes a **fragmented** MP4 as it
+records: the header is emitted before a single frame exists and nothing ever goes back to fill the
+durations in. Every player is left to estimate, and they estimate differently — hence a 15.06 s file
+opening as an 11 s one and stopping there.
+
+**And the sound was 1.348 s short — all of it at the front.** Walking the fragments is what settles
+that, because a late start and a lost tail look identical in the totals:
+
+| fragment | picture | sound |
+|---|---|---|
+| 1 | 0 → 3.340 | 0 → **2.004** |
+| 2 | 3.346 → 6.708 | 2.005 → 5.373 |
+| 3 | 6.714 → 10.077 | 5.376 → 8.723 |
+| 4 | 10.079 → 13.437 | 8.725 → 12.093 |
+| 5 | 13.441 → 15.073 | 12.096 → 13.716 |
+
+The whole deficit is in fragment 1; from fragment 2 on both tracks advance by the same amount. The
+sound started 1.348 s after the picture, the muxer stamped both tracks from zero regardless, and the
+result is sound that runs *ahead* of the picture by a constant 1.35 s for the entire file and stops
+early. That is exactly "delayed, lagging, and done after the first few seconds".
+
+It is a race, not a constant: the same walk over `august-2026-pnl.mp4` from 2026-08-24 shows a first
+fragment holding one frame of each and the two tracks within 20 ms of each other for the rest of the
+file. Nothing in the audio path changed between those two builds. It is timing, so it is not
+something a reading of the code would have found.
+
+**Both faults are fixed after recording, in the container.** `src/lib/mp4.ts` —
+`repairFragmentedMp4` — writes the measured durations into `mvhd`, `tkhd` and `mdhd`, and adds the
+shortfall to every audio `tfdt` so the sound sits back under the picture it belongs to. No box
+changes size, so it is a handful of in-place stores rather than a remux, and anything that does not
+parse exactly as expected is handed back untouched. `VideoExportResult.duration` is now measured
+from the finished file rather than assumed from the window, so the toast states what the file holds.
+
+Two guards on the shift, both in the file: below 0.05 s the tracks are as aligned as a real-time
+recorder gets, and above 10 s the file is broken in some way this code has not seen and inventing
+ten seconds of silence would make it worse. `src/lib/mp4.test.ts` builds fragmented MP4s by hand and
+covers both, plus the no-sound case, a WebM, and a truncated file.
+
+**The race is also narrowed at the source, so the repair usually has nothing to move.** Two changes
+in `renderCardVideo`:
+
+- The clip now runs for `PRIME_MS` (500 ms) and is then paused, seeked back and played again before
+  `recorder.start()`. `play()` resolves well before either decoder is delivering, and whatever is
+  not delivering when recording begins is simply missing from the front of that track.
+- `attachAudio` connects a `ConstantSourceNode` at 1e-5 into the stream destination. A destination
+  whose only input is an element that has not started decoding has nothing to hand anyone; a source
+  that is always running keeps the track live from the moment it exists. -100 dBFS is a third of a
+  bit at 16 bits.
+
+**Verified in a driven Chrome**, real `renderCardVideo`, over a real 12 s clip with real sound —
+`dev/audio-check.html`, which is the instrument for this the way `dev/cadence-check.html` is the one
+for cadence (that one records with `muteAudio: true` and has never had an opinion about sound):
+
+| | before, 15 s export | after, 12 s export | after, 20 s export |
+|---|---|---|---|
+| file states its length | no (`mvhd` 0) | **yes — 12.048 s** | **yes — 19.969 s** |
+| `<video>` reports | guesswork | 12.126 s | 20.002 s |
+| picture | 15.055 s from 0 | 12.048 s from 0 | 19.969 s from 0 |
+| sound | 13.707 s from 0 — **1.348 s adrift** | 11.978 s from 0.070 s | 19.953 s from 0 |
+| lead the recorder lost | 1.348 s | 0.070 s | **0.016 s** |
+
+The 20 s run is the interesting one twice over: it is past the old 15 s ceiling, so it also confirms
+the cap change end to end, and the recorder lost 16 ms — under the repair's 0.05 s floor, so nothing
+was moved at all and the tracks came out aligned on their own. The 70 ms on the 12 s run was still
+moved, and the two tracks then ended within 1 ms of each other. Against 1.348 s before, either is a
+different order of problem.
+
+Frame cadence was re-measured with `dev/cadence-check.html` after the change and is unaffected:
+29.85 fps, sd 4.24 ms, 91.1 % on cadence, against a control of 28.94 fps and sd 13.82 ms.
+
+`dev/audio-check.html` needs a clip with sound at `dev/sample-clip.mp4`. That path is gitignored on
+purpose — someone else's clip is not this project's to redistribute — so drop any MP4 there before
+running it.
+
+### The clip window went from 15 s to 30 s
+
+`MAX_CLIP_SECONDS` in `src/lib/images.ts` is now 30. The Length slider, the upload hint and the
+"clip is too long" message all read that constant, so they moved with it; `MAX_SOURCE_SECONDS` is
+still 120.
+
+The part worth knowing is the migration. 15 was both the ceiling *and* the default, so a card with
+`clipLength: 15` saved against the old build does not mean "fifteen seconds, chosen" — it means "all
+of it", written down while the ceiling was there. `hydrateState` carries exactly that value up to
+the new ceiling and leaves every other value alone, so a 23 s clip plays its full 23 s without
+anyone touching the slider, and someone who deliberately picked 6 s still gets 6 s. `resolveClip`
+still trims to what the clip actually holds, so a shorter clip is unaffected either way.
+
+A 30 s export takes 30 s of real time and needs the window in front for all of it. The pause/resume
+machinery from the first pass covers a window that goes away; `MAX_HIDDEN_SECONDS` is unchanged.
+
 ## The scroll trap in the editor shell
 
 Fixed 2026-08-25 after a report that the page stopped scrolling partway down when the window was
@@ -961,11 +1081,13 @@ costs nothing.
 5. **Video export is untested on Safari and Firefox.** Firefox has no MP4 recording, so it will take
    the WebM branch; Safari's MP4 branch is plausible but unverified. `videoSupport()` degrades to
    "PNG only" if neither works, which is the failure mode to confirm first.
-6. **The exported file's length is right.** Measured from the container, a 3.0 s window produces
-   2.971 s of frame durations and a 2.992 s track. The earlier "runs slightly long" note had the
-   sign wrong — it runs a hair *short*, by the recorder's start/stop latency. Nothing to fix; if it
-   ever matters, trim on the encoder side rather than shortening the window, or the clip ends early
-   on screen.
+6. **~~The exported file's length is right.~~ Half of this was wrong, and was fixed 2026-09-10.**
+   The *frames* were right all along — a 3.0 s window produces 2.971 s of frame durations, a hair
+   short by the recorder's start/stop latency, and that part still stands. What was never checked is
+   that the file **did not state its length at all**: `mvhd` was zero, so every player estimated, and
+   one of them called a 15.06 s export 11 s. `repairFragmentedMp4` writes the measured duration in.
+   Reading a container for frame cadence is not the same as reading it for duration; this note is
+   the reminder that it was measured one way and assumed the other.
 7. **~~The video export fix in `e3c48ee` has not been watched back.~~ Confirmed 2026-08-24 — it does
    not judder.** Measured with `dev/cadence-check.html` (see below), reading frame durations out of
    the MP4 container rather than trusting playback:
@@ -1108,6 +1230,12 @@ costs nothing.
   finished export, from the command line — the same container reader as `cadence-check.html`,
   without the browser. This is how the pause-on-hidden fix was measured; reach for it before
   believing anything about a file from watching it play.
+- **`dev/audio-check.html`** is the sound half of the same idea, added 2026-09-10: it exports a card
+  over a real clip with `muteAudio: false` and reports what the finished file says about itself —
+  the durations in the container, where each track starts, and what a `<video>` element makes of it.
+  `cadence-check.html` records with `muteAudio: true`, so it never had an opinion about any of this,
+  which is how a 1.35 s sound offset survived two passes of "verified in the browser". It needs a
+  clip with sound at `dev/sample-clip.mp4`; that path is gitignored, so drop one there first.
 - **`dev/app-probe.mjs "<expression>" [--gesture] [--nowait]`** evaluates an expression in the
   driven Chrome over CDP (port 9223). `--gesture` sets `userGesture: true`, which is what lets the
   real buttons be pressed the way a person presses them — `navigator.share`, autoplay and the
@@ -1154,6 +1282,8 @@ src/
     render.ts            THE paint entry point, preview + export
     share.ts             PNG download / clipboard / Web Share
     video.ts             trim window + MediaRecorder export             (tested)
+    mp4.ts               rewrites the durations and the sound offset
+                         MediaRecorder gets wrong                       (tested)
     selftest.ts          preview-vs-export pixel diff (dev only)
     canvas/
       spec.ts            measured geometry — change layout here, not in draw.ts
@@ -1166,6 +1296,8 @@ src/
     ...                  preview, controls, media picker, inputs
 dev/
   cadence-check.html     browser harness: does the exported file judder?  (dev only)
+  audio-check.html       browser harness: is the sound in step, and does
+                         the file state its own length?                  (dev only)
   layout-shot.html       renders the card and scans ink bands to measure gaps (dev only)
   colour-shot.html       measures the picture slots and the colour rules  (dev only)
   controls.html/.tsx     the editor panel and a live card, with no account gate

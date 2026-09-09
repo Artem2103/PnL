@@ -33,7 +33,7 @@ describe('resolveClip', () => {
     expect(resolveClip(8, 0, MAX_CLIP_SECONDS)).toEqual({ start: 0, length: 8 });
   });
 
-  it('never exceeds the 15 second cap', () => {
+  it('never exceeds the clip cap', () => {
     expect(resolveClip(90, 0, 60).length).toBe(MAX_CLIP_SECONDS);
   });
 

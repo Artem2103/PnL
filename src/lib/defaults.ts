@@ -82,18 +82,31 @@ function merge<T extends object>(base: T, saved: unknown): T {
   return out;
 }
 
+/**
+ * The ceiling the Length slider used to stop at. It was also the default, so a
+ * saved 15 does not mean "fifteen seconds, chosen" — it means "all of it",
+ * written down while the ceiling was there. Those cards are carried up to the
+ * new ceiling; `resolveClip` still trims to whatever the clip actually holds,
+ * so a shorter clip is unaffected either way.
+ */
+const PREVIOUS_MAX_CLIP_SECONDS = 15;
+
 /** Merges a persisted blob over the defaults so new fields never break old saves. */
 export function hydrateState(raw: unknown): CardState {
   const base = createDefaultState();
   if (!raw || typeof raw !== 'object') return base;
   const saved = raw as Partial<CardState>;
+  const artwork = merge(base.artwork, saved.artwork);
   return {
     mode: saved.mode === 'trade' || saved.mode === 'period' ? saved.mode : base.mode,
     trade: merge(base.trade, saved.trade),
     period: merge(base.period, saved.period),
     brand: merge(base.brand, saved.brand),
     display: merge(base.display, saved.display),
-    artwork: merge(base.artwork, saved.artwork),
+    artwork:
+      artwork.clipLength === PREVIOUS_MAX_CLIP_SECONDS
+        ? { ...artwork, clipLength: MAX_CLIP_SECONDS }
+        : artwork,
     avatarId: saved.avatarId ?? base.avatarId,
     logoId: saved.logoId ?? base.logoId,
   };

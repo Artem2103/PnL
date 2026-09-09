@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Export audio sync check</title>
+    <style>
+      body { background: #0b0d12; color: #eaedff; font: 13px/1.6 ui-monospace, monospace; padding: 24px; }
+      h1 { font-size: 16px; margin: 0 0 4px; }
+      p.sub { color: #8b93ad; margin: 0 0 16px; }
+      .ok { color: #2fe3ac; } .bad { color: #ff6b6b; } .dim { color: #8b93ad; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Dev-only. Answers the question `cadence-check.html` deliberately does not
+      ask: it records with `muteAudio: true`, so it has never had an opinion
+      about sound.
+
+      Two faults were measured in the exports of 2026-09-10, both in the
+      container rather than in the frames:
+
+        * `mvhd`, `tkhd` and `mdhd` all carry a duration of zero, so players
+          guess the file's length — one called a 15.06 s export 11 s.
+        * the sound track starts late and is stamped from zero anyway, so it
+          runs ahead of the picture for the whole file and stops early. The
+          shortfall was 1.35 s on a 15 s export, all of it in the first
+          fragment.
+
+      This exports a card over a real clip through the real `renderCardVideo`
+      and reports what the finished file says about itself: what the recorder
+      handed over (`repair`), what the file now claims (`mvhd`), and what a
+      `<video>` element makes of it.
+
+      Run it in an isolated Chrome, for the same reason cadence-check says to:
+
+        chrome --user-data-dir=<a scratch dir> --no-first-run \
+               --disable-features=CalculateNativeWinOcclusion \
+               --disable-backgrounding-occluded-windows \
+               --disable-renderer-backgrounding \
+               --disable-background-timer-throttling \
+               --autoplay-policy=no-user-gesture-required \
+               http://localhost:5173/dev/audio-check.html
+
+      The result is printed below and left on `window.__AUDIO_CHECK` for
+      `dev/app-probe.mjs` to read.
+    -->
+    <h1>Export audio sync check</h1>
+    <p class="sub">Leave this window in front until it says FINISHED (about 30 seconds).</p>
+    <div id="log"></div>
+
+    <script type="module">
+      const logEl = document.getElementById('log');
+      const line = (m, cls) => {
+        const d = document.createElement('div');
+        if (cls) d.className = cls;
+        d.textContent = m;
+        logEl.appendChild(d);
+      };
+      const log = (m, extra) => line(m + (extra ? '  ' + JSON.stringify(extra) : ''));
+
+      /* ----------------------------------------------------------------
+       * Container reader. Same box walk as dev/mp4-cadence.mjs, but split
+       * by handler so the picture and the sound can be compared.
+       * -------------------------------------------------------------- */
+      function boxes(view, start, end) {
+        const out = [];
+        let p = start;
+        while (p + 8 <= end) {
+          let size = view.getUint32(p);
+          const type = String.fromCharCode(view.getUint8(p + 4), view.getUint8(p + 5), view.getUint8(p + 6), view.getUint8(p + 7));
+          let head = 8;
+          if (size === 1) { size = Number(view.getBigUint64(p + 8)); head = 16; }
+          else if (size === 0) { size = end - p; }
+          if (size < head || p + size > end) break;
+          out.push({ type, start: p, body: p + head, end: p + size });
+          p += size;
+        }
+        return out;
+      }
+      const find = (list, type) => list.find((b) => b.type === type);
+
+      function readFile(buf) {
+        const v = new DataView(buf);
+        const top = boxes(v, 0, buf.byteLength);
+        const moov = find(top, 'moov');
+        if (!moov) return { error: 'no moov (not an MP4?)' };
+        // Chrome writes these headers as version 0 or version 1 depending on
+        // the build, and reading a version 1 box at version 0 offsets gives
+        // every track the id 0 and a timescale of nothing — which looks like a
+        // file with one track in it. Both layouts, then.
+        const wide = (box) => v.getUint8(box.body) === 1;
+        const read = (box, at) => (wide(box) ? Number(v.getBigUint64(box.body + at)) : v.getUint32(box.body + at));
+
+        const inMoov = boxes(v, moov.body, moov.end);
+        const mvhd = find(inMoov, 'mvhd');
+        const movieTimescale = v.getUint32(mvhd.body + (wide(mvhd) ? 20 : 12));
+        const movieDuration = read(mvhd, wide(mvhd) ? 24 : 16);
+
+        const tracks = {};
+        for (const trak of inMoov.filter((b) => b.type === 'trak')) {
+          const tk = boxes(v, trak.body, trak.end);
+          const tkhd = find(tk, 'tkhd');
+          const id = v.getUint32(tkhd.body + (wide(tkhd) ? 20 : 12));
+          const tkhdDuration = read(tkhd, wide(tkhd) ? 28 : 20);
+          const mdia = find(tk, 'mdia');
+          const md = boxes(v, mdia.body, mdia.end);
+          const hdlr = find(md, 'hdlr');
+          const handler = String.fromCharCode(v.getUint8(hdlr.body + 8), v.getUint8(hdlr.body + 9), v.getUint8(hdlr.body + 10), v.getUint8(hdlr.body + 11));
+          const mdhd = find(md, 'mdhd');
+          tracks[id] = {
+            handler,
+            timescale: v.getUint32(mdhd.body + (wide(mdhd) ? 20 : 12)),
+            mdhdDuration: read(mdhd, wide(mdhd) ? 24 : 16),
+            tkhdDuration,
+            samples: 0,
+            firstDecodeTime: null,
+          };
+        }
+
+        const trexDefault = {};
+        const mvex = find(inMoov, 'mvex');
+        if (mvex) for (const trex of boxes(v, mvex.body, mvex.end).filter((b) => b.type === 'trex')) {
+          trexDefault[v.getUint32(trex.body + 4)] = v.getUint32(trex.body + 12);
+        }
+
+        for (const moof of top.filter((b) => b.type === 'moof')) {
+          for (const traf of boxes(v, moof.body, moof.end).filter((b) => b.type === 'traf')) {
+            const tf = boxes(v, traf.body, traf.end);
+            const tfhd = find(tf, 'tfhd');
+            const flags = v.getUint32(tfhd.body) & 0xffffff;
+            const id = v.getUint32(tfhd.body + 4);
+            const track = tracks[id];
+            if (!track) continue;
+            let p = tfhd.body + 8;
+            if (flags & 0x01) p += 8;
+            if (flags & 0x02) p += 4;
+            let def = trexDefault[id] || 0;
+            if (flags & 0x08) { def = v.getUint32(p); p += 4; }
+            const tfdt = find(tf, 'tfdt');
+            if (tfdt && track.firstDecodeTime === null) {
+              track.firstDecodeTime = v.getUint8(tfdt.body) === 1 ? Number(v.getBigUint64(tfdt.body + 4)) : v.getUint32(tfdt.body + 4);
+            }
+            for (const trun of tf.filter((b) => b.type === 'trun')) {
+              const tflags = v.getUint32(trun.body) & 0xffffff;
+              const count = v.getUint32(trun.body + 4);
+              let q = trun.body + 8;
+              if (tflags & 0x000001) q += 4;
+              if (tflags & 0x000004) q += 4;
+              for (let i = 0; i < count; i++) {
+                let d = def;
+                if (tflags & 0x000100) { d = v.getUint32(q); q += 4; }
+                if (tflags & 0x000200) q += 4;
+                if (tflags & 0x000400) q += 4;
+                if (tflags & 0x000800) q += 4;
+                track.samples += d;
+              }
+            }
+          }
+        }
+
+        const out = { movieSeconds: +(movieDuration / movieTimescale).toFixed(3) };
+        for (const track of Object.values(tracks)) {
+          const key = track.handler === 'vide' ? 'video' : track.handler === 'soun' ? 'audio' : track.handler;
+          out[key] = {
+            seconds: +(track.samples / track.timescale).toFixed(3),
+            startsAt: +((track.firstDecodeTime || 0) / track.timescale).toFixed(3),
+            mdhdSeconds: +(track.mdhdDuration / track.timescale).toFixed(3),
+          };
+        }
+        return out;
+      }
+
+      /**
+       * The source clip. A real file rather than something MediaRecorder made:
+       * the fault being chased is in MediaRecorder's output, so a source built
+       * with it would carry the same fault in and confuse the reading. Drop any
+       * MP4 that has sound at `dev/sample-clip.mp4` — it is not in the repo,
+       * because a clip of someone else's is not this project's to redistribute.
+       */
+      async function fetchSourceClip() {
+        const res = await fetch('/dev/sample-clip.mp4');
+        if (!res.ok) {
+          throw new Error(
+            'no dev/sample-clip.mp4 — copy any MP4 that has an audio track there and reload',
+          );
+        }
+        return await res.blob();
+      }
+
+      /** What a player makes of the file, which is the complaint being chased. */
+      async function asPlayed(blob) {
+        const url = URL.createObjectURL(blob);
+        const v = document.createElement('video');
+        v.src = url; v.muted = true; v.preload = 'auto';
+        try {
+          await new Promise((res, rej) => {
+            v.onloadedmetadata = () => res();
+            v.onerror = () => rej(new Error('file failed to decode'));
+            setTimeout(() => rej(new Error('timed out loading file')), 15000);
+          });
+          return { reportedDuration: +Number(v.duration).toFixed(3) };
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      }
+
+      (async () => {
+        const out = { visibilityAtStart: document.visibilityState };
+        try {
+          await document.fonts.ready;
+          const [images, defaults, videoMod] = await Promise.all([
+            import('/src/lib/images.ts'),
+            import('/src/lib/defaults.ts'),
+            import('/src/lib/video.ts'),
+          ]);
+          out.support = videoMod.videoSupport();
+          out.maxClipSeconds = images.MAX_CLIP_SECONDS;
+          log('modules loaded', { mime: out.support.mimeType, maxClipSeconds: out.maxClipSeconds });
+
+          const srcBlob = await fetchSourceClip();
+          const file = new File([srcBlob], 'audio-check.mp4', { type: 'video/mp4' });
+          const rec = await images.addLocalMedia(file, 'artwork', 'local');
+          log('source clip', { bytes: srcBlob.size, seconds: +Number(rec.duration).toFixed(3) });
+
+          // The whole clip, which is the case the report was about: the export
+          // came back shorter than the source and out of step with it.
+          const CLIP_LENGTH = Math.min(images.MAX_CLIP_SECONDS, Math.floor(rec.duration));
+
+          const base = defaults.createDefaultState();
+          const state = {
+            ...base,
+            artwork: { ...base.artwork, imageId: rec.id, clipStart: 0, clipLength: CLIP_LENGTH, muteAudio: false },
+          };
+
+          const t0 = performance.now();
+          const result = await videoMod.renderCardVideo(state, { scale: 2 });
+          out.exportWallSeconds = +((performance.now() - t0) / 1000).toFixed(2);
+          out.asked = CLIP_LENGTH;
+          out.repair = result.repair;
+          out.file = readFile(await result.blob.arrayBuffer());
+          out.played = await asPlayed(result.blob);
+          out.reportedDuration = result.duration;
+
+          log('what the recorder handed over', result.repair);
+          log('what the finished file says', out.file);
+          log('what a <video> makes of it', out.played);
+
+          // The two things a person notices, stated as pass or fail.
+          const lengthOk = Math.abs(out.played.reportedDuration - out.asked) < 0.7;
+          const syncOk = Math.abs(out.file.video.seconds - (out.file.audio.startsAt + out.file.audio.seconds)) < 0.15;
+          out.lengthOk = lengthOk;
+          out.syncOk = syncOk;
+          line('LENGTH  ' + (lengthOk ? 'ok' : 'WRONG') + ' — player says ' + out.played.reportedDuration + ' s, asked for ' + out.asked + ' s', lengthOk ? 'ok' : 'bad');
+          line('SYNC    ' + (syncOk ? 'ok' : 'WRONG') + ' — sound covers ' + out.file.audio.startsAt + '…' + (+(out.file.audio.startsAt + out.file.audio.seconds).toFixed(3)) + ' s of ' + out.file.video.seconds + ' s of picture', syncOk ? 'ok' : 'bad');
+          line('lead the recorder lost before repair: ' + result.repair.audioLeadSeconds + ' s', result.repair.audioLeadSeconds > 0.2 ? 'dim' : 'ok');
+
+          await images.deleteRecord(rec.id);
+          out.ok = lengthOk && syncOk;
+        } catch (e) {
+          out.ok = false;
+          out.error = String((e && e.stack) || e);
+          line('ERROR ' + out.error, 'bad');
+        }
+        out.visibilityAtEnd = document.visibilityState;
+        window.__AUDIO_CHECK = out;
+        line(out.ok ? 'FINISHED — all good.' : 'FINISHED WITH PROBLEMS.', out.ok ? 'ok' : 'bad');
+      })();
+    </script>
+  </body>
+</html>

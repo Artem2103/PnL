@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { MAX_CLIP_SECONDS } from './images';
 import {
   STORAGE_KEY,
   clearLocalCard,
   createDefaultState,
+  hydrateState,
   loadLocalCard,
   saveLocalCard,
   takeOrphanCard,
@@ -120,5 +122,18 @@ describe('takeOrphanCard', () => {
     });
     expect(takeOrphanCard()).toBeNull();
     expect(loadLocalCard('user-a').cardId).toBe('card-a');
+  });
+});
+
+describe('hydrateState and the clip length', () => {
+  it('carries a card saved at the old ceiling up to the new one', () => {
+    // 15 was both the cap and the default, so it never meant "fifteen
+    // seconds, chosen" — it meant "as much of this clip as you can have".
+    const state = hydrateState({ artwork: { clipLength: 15 } });
+    expect(state.artwork.clipLength).toBe(MAX_CLIP_SECONDS);
+  });
+
+  it('leaves a length someone actually picked alone', () => {
+    expect(hydrateState({ artwork: { clipLength: 6 } }).artwork.clipLength).toBe(6);
   });
 });

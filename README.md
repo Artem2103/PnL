@@ -246,7 +246,7 @@ covered tab, and the check says so in its `note` rather than reporting a false f
 
 `renderCardVideo` opens its own `<video>` for the clip (the preview keeps its own, so recording
 never disturbs what is on screen), seeks to the trim point, and records the canvas in real time —
-a 15 s clip takes 15 s. Points worth knowing:
+a 30 s clip takes 30 s. Points worth knowing:
 
 - **MP4 is preferred, WebM is the fallback.** MP4 records on Chrome 126+ and Safari and posts
   everywhere without transcoding; the rest get WebM. `pickMimeType` holds the preference order.
@@ -260,6 +260,15 @@ a 15 s clip takes 15 s. Points worth knowing:
   an error instead of a minutes-long file.
 - **2× is the ceiling for video** (1680 × 1140). 3× costs far more encoding time than the pixels are
   worth; the export bar shows the resolution it will actually use.
+- **The clip runs for half a second before the recorder starts.** `play()` resolves well before
+  either decoder is delivering, and whatever is not delivering when recording begins is missing from
+  the front of that track — for the sound that is the alignment of the whole file, because both
+  tracks are stamped from zero regardless. The throwaway run, and a source that keeps the audio
+  graph live, take that race away.
+- **The file is repaired before it is handed over.** `MediaRecorder` writes a fragmented MP4 whose
+  `mvhd` says it is zero seconds long, and leaves a late sound track stamped as if it had started on
+  time. `repairFragmentedMp4` writes the measured durations in and slides the sound back under the
+  picture; see `src/lib/mp4.ts`. `dev/audio-check.html` is the instrument that measures both.
 
 ## Media and privacy
 
@@ -351,5 +360,5 @@ src/
 - Video export needs `MediaRecorder` and `canvas.captureStream`. Where they are missing the clip
   still previews and still exports as a PNG of the frame on screen; the app says so instead of
   offering a button that cannot work.
-- A clip is accepted up to 120 s and 80 MB, and the card plays at most 15 s of it. The limit is the
+- A clip is accepted up to 120 s and 80 MB, and the card plays at most 30 s of it. The limit is the
   format's, not the encoder's: these cards are meant to be posted.

@@ -42,8 +42,8 @@ export const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 export const MAX_VIDEO_BYTES = 80 * 1024 * 1024;
 
 /** The longest slice of a clip a card will ever use. */
-export const MAX_CLIP_SECONDS = 15;
-/** Longer sources are refused: the card only ever shows a 15 s window. */
+export const MAX_CLIP_SECONDS = 30;
+/** Longer sources are refused: the card only ever shows a 30 s window. */
 export const MAX_SOURCE_SECONDS = 120;
 
 const ROLE_LIMITS: Record<ImageRole, { max: number; maxEdge: number }> = {
