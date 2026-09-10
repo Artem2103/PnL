@@ -122,6 +122,28 @@
         if (mvex) for (const trex of boxes(v, mvex.body, mvex.end).filter((b) => b.type === 'trex')) {
           trexDefault[v.getUint32(trex.body + 4)] = v.getUint32(trex.body + 12);
         }
+        // A progressive file — what the WebCodecs recorder writes — keeps its
+        // sample durations in stts, and a late-starting track says so with an
+        // empty edit in elst rather than a decode time.
+        for (const trak of inMoov.filter((b) => b.type === 'trak')) {
+          const tk = boxes(v, trak.body, trak.end);
+          const tkhd = find(tk, 'tkhd');
+          const track = tracks[v.getUint32(tkhd.body + (wide(tkhd) ? 20 : 12))];
+          const mdia = find(tk, 'mdia');
+          const minf = find(boxes(v, mdia.body, mdia.end), 'minf');
+          const stbl = minf && find(boxes(v, minf.body, minf.end), 'stbl');
+          const stts = stbl && find(boxes(v, stbl.body, stbl.end), 'stts');
+          if (stts) {
+            const n = v.getUint32(stts.body + 4);
+            let q = stts.body + 8;
+            for (let i = 0; i < n; i++) { track.samples += v.getUint32(q) * v.getUint32(q + 4); q += 8; }
+          }
+          const edts = find(tk, 'edts');
+          const elst = edts && find(boxes(v, edts.body, edts.end), 'elst');
+          if (elst && v.getUint32(elst.body + 4) >= 1 && v.getInt32(elst.body + 12) === -1) {
+            track.firstDecodeTime = (v.getUint32(elst.body + 8) / movieTimescale) * track.timescale;
+          }
+        }
 
         for (const moof of top.filter((b) => b.type === 'moof')) {
           for (const traf of boxes(v, moof.body, moof.end).filter((b) => b.type === 'traf')) {

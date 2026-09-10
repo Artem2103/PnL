@@ -216,8 +216,9 @@ and touches nothing but the canvas it is handed.
 - The exporter (`lib/share.ts` → `renderCardBlob`) calls the same function on a **detached** canvas
   at 1×/2×/3×, then `toBlob('image/png')`.
 - The video exporter (`lib/video.ts` → `renderCardVideo`) calls the same function once per frame on
-  a detached canvas while the clip plays, with `MediaRecorder` encoding `captureStream()`. A video
-  frame is a PNG export that happened to be captured instead of encoded.
+  a detached canvas while the clip plays, and one of the two recorders in `lib/recorders.ts` encodes
+  the frames — WebCodecs where the browser has it, `MediaRecorder` otherwise. A video frame is a PNG
+  export that happened to be encoded instead of saved.
 
 Scale is applied once, via a transform in `renderToCanvas`; nothing downstream knows the difference.
 Because no DOM node is ever rasterised, editor UI cannot leak into the PNG. Fonts are awaited before
@@ -260,15 +261,18 @@ a 30 s clip takes 30 s. Points worth knowing:
   an error instead of a minutes-long file.
 - **2× is the ceiling for video** (1680 × 1140). 3× costs far more encoding time than the pixels are
   worth; the export bar shows the resolution it will actually use.
-- **The clip runs for half a second before the recorder starts.** `play()` resolves well before
-  either decoder is delivering, and whatever is not delivering when recording begins is missing from
-  the front of that track — for the sound that is the alignment of the whole file, because both
-  tracks are stamped from zero regardless. The throwaway run, and a source that keeps the audio
-  graph live, take that race away.
-- **The file is repaired before it is handed over.** `MediaRecorder` writes a fragmented MP4 whose
-  `mvhd` says it is zero seconds long, and leaves a late sound track stamped as if it had started on
-  time. `repairFragmentedMp4` writes the measured durations in and slides the sound back under the
-  picture; see `src/lib/mp4.ts`. `dev/audio-check.html` is the instrument that measures both.
+- **The encoder is brought up before the clip plays, and the take starts on a key frame.** An
+  encoder coming up starves the clip's decoder for a quarter of a second, and
+  `requestVideoFrameCallback` on the export's detached element freezes it a second later, so the
+  recorder pre-rolls on the still first frame, nothing waits on `requestVideoFrameCallback`, and
+  the first frame of the take is forced to be a key frame. With WebCodecs the pre-roll frames are
+  simply not written; see `src/lib/recorders.ts` for why that recorder is preferred and what the
+  `MediaRecorder` fallback cannot do.
+- **The WebCodecs file is written whole, with real durations** (`src/lib/mp4write.ts`): H.264 High
+  at the card's bitrate, AAC at 192 kbit/s, a key frame every two seconds. The `MediaRecorder`
+  fallback still writes a fragmented MP4 whose `mvhd` says zero seconds and whose sound may be
+  stamped early; `repairFragmentedMp4` (`src/lib/mp4.ts`) puts both right for it. `dev/start-check.html`
+  measures the first second of an export frame by frame; `dev/audio-check.html` measures the sound.
 
 ## Media and privacy
 
@@ -330,7 +334,10 @@ src/
     defaults.ts          card defaults, hydration, per-account cache     (tested)
     render.ts            the single paint entry point, preview + export
     share.ts             PNG download / clipboard / Web Share
-    video.ts             clip trim window + MediaRecorder export        (tested)
+    video.ts             clip trim window + the export loop             (tested)
+    recorders.ts         WebCodecs and MediaRecorder encoders           (tested)
+    mp4write.ts          progressive MP4 writer for WebCodecs output    (tested)
+    mp4.ts               container repair for MediaRecorder output      (tested)
     selftest.ts          preview-vs-export pixel diff (dev only)
     canvas/
       spec.ts            measured geometry
@@ -357,8 +364,8 @@ src/
   the colour that was picked — legible, but still a quiet row.
 - Browser canvases are capped at 8192px per edge; `clampScale` lowers the export scale rather than
   producing a blank image.
-- Video export needs `MediaRecorder` and `canvas.captureStream`. Where they are missing the clip
-  still previews and still exports as a PNG of the frame on screen; the app says so instead of
-  offering a button that cannot work.
+- Video export needs WebCodecs (`VideoEncoder`, `AudioEncoder`) or, failing that, `MediaRecorder`
+  and `canvas.captureStream`. Where neither exists the clip still previews and still exports as a
+  PNG of the frame on screen; the app says so instead of offering a button that cannot work.
 - A clip is accepted up to 120 s and 80 MB, and the card plays at most 30 s of it. The limit is the
   format's, not the encoder's: these cards are meant to be posted.

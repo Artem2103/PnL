@@ -1,0 +1,1221 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Export start check</title>
+    <style>
+      body { background: #0b0d12; color: #eaedff; font: 13px/1.6 ui-monospace, monospace; padding: 24px; }
+      h1 { font-size: 16px; margin: 0 0 4px; }
+      p.sub { color: #8b93ad; margin: 0 0 16px; }
+      .ok { color: #2fe3ac; } .bad { color: #ff6b6b; } .dim { color: #8b93ad; }
+      pre { white-space: pre-wrap; color: #c7cce6; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Dev-only. Answers the question the other two harnesses skip on purpose:
+      what happens in the FIRST second of an export?
+
+      `cadence-check.html` measures 2 s..5 s of its window because the recorder
+      "reliably stalls for about a second shortly after it starts", and
+      `audio-check.html` only reads totals. Both are blind to a hitch at 0.5 s.
+
+      This builds a source clip in which every frame carries its own frame
+      number as a 12-bit black/white code in the top-right corner (past the
+      scrim's last stop at 0.78 of the width, so the card leaves it alone),
+      exports a card over it through the real `renderCardVideo`, and then reads
+      the finished file three ways:
+
+        * container — every video sample duration and every audio sample, with
+          the fragment boundaries, straight out of moof/traf/trun;
+        * content — the file is seeked frame by frame and the code is read back,
+          so a held frame, a skipped frame or a jump shows up as the source frame
+          number not advancing by one;
+        * sound — the audio is decoded and its level is read in 10 ms windows,
+          so a late start or a gap in the sound is a run of silent windows.
+
+      The same content read is done on the source clip over the window the card
+      used, so the source's own irregularities can be told from the export's.
+      Note that the source is itself a MediaRecorder file and carries that
+      recorder's own start-up freeze in its first two seconds — which is why the
+      default window starts at 3 s. A clipStart under 2 s measures the source's
+      freeze, not the exporter's.
+
+      Before the export, a set of CONTROLS pulls the start apart on a bare
+      <video> and a canvas, each reading the frame code on every animation
+      frame while one thing happens: the shipping start sequence, a cold start,
+      a pause, a seek, a rest, a MediaRecorder starting, a WebCodecs encoder
+      starting, a pre-roll, and so on (see SEQUENCES). This is how the two
+      causes of the 2026-09-11 "lag at 0.5 s" were separated: one call to
+      requestVideoFrameCallback on the detached element freezes the clip 1.0–1.1
+      s later (`rvfc-only`, `rvfc-late`), and an encoder coming up freezes it
+      0.25–0.4 s after its first frame (`cold-audio-recorder`, `webcodecs-*`).
+      `?controls=a,b,c` picks controls by name, `?controls=0` skips them, and
+      `?export=0` stops after them.
+
+      Run it in an isolated Chrome, the way the other harnesses say to (flags in
+      HANDOFF.md, Environment notes). Results are printed, left on
+      window.__START_CHECK, and POSTed to http://127.0.0.1:5199 if a collector is
+      listening (/save?name= takes the source and export files, /result the
+      JSON).
+
+      Query flags: ?mute=1 records without sound; ?clipStart=N and ?clipLength=N
+      move the window; ?flat=1 rewrites the source as a progressive MP4 (the
+      shape a phone writes) through dev/flatten-mp4.js; ?src=/path.mp4 uses an
+      outside clip, identifying frames by a pixel hash instead of the code;
+      ?keep=1 leaves the source clip in the library.
+    -->
+    <h1>Export start check</h1>
+    <p class="sub">Leave this window in front until it says FINISHED (about 40 seconds).</p>
+    <div id="log"></div>
+
+    <script type="module">
+      const params = new URLSearchParams(location.search);
+      const logEl = document.getElementById('log');
+      const COLLECTOR = 'http://127.0.0.1:5199';
+      const post = (p, o) => fetch(COLLECTOR + p, { method: 'POST', body: JSON.stringify(o) }).catch(() => {});
+      const save = (name, blob) =>
+        fetch(COLLECTOR + '/save?name=' + encodeURIComponent(name), { method: 'POST', body: blob }).catch(() => {});
+      const line = (m, cls) => {
+        const d = document.createElement(cls === 'pre' ? 'pre' : 'div');
+        if (cls && cls !== 'pre') d.className = cls;
+        d.textContent = m;
+        logEl.appendChild(d);
+      };
+      const log = (m, extra) => {
+        line(m + (extra ? '  ' + JSON.stringify(extra) : ''));
+        post('/progress', { m, extra });
+      };
+
+      let hiddenEpisodes = 0;
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState !== 'visible') hiddenEpisodes += 1;
+      });
+
+      /* ----------------------------------------------------------------
+       * The frame code. 12 bits, MSB first, one block each, black = 0 and
+       * white = 1, in a strip the scrim never reaches. The source clip has
+       * the card's own aspect so `placeCover` maps it 1:1 and the strip
+       * lands where it was painted.
+       * -------------------------------------------------------------- */
+      const W = 1680, H = 1140, FPS = 30, BITS = 12;
+      const CODE = { x0: Math.round(W * 0.82), y0: Math.round(H * 0.18), bw: Math.floor((W * 0.16) / BITS), bh: Math.round(H * 0.06) };
+
+      function paintCode(ctx, index) {
+        for (let b = 0; b < BITS; b++) {
+          const bit = (index >> (BITS - 1 - b)) & 1;
+          ctx.fillStyle = bit ? '#ffffff' : '#000000';
+          ctx.fillRect(CODE.x0 + b * CODE.bw, CODE.y0, CODE.bw, CODE.bh);
+        }
+      }
+
+      /**
+       * With `?src=` the clip is an outside file that carries no code strip,
+       * so a frame is identified by a hash of a row of pixels in the same
+       * region instead. Equal hashes still find a held frame; the frame
+       * numbers, skips and jumps below are then meaningless and reported as 0.
+       */
+      const EXTERNAL = params.get('src');
+      function readCode(ctx, sx, sy) {
+        if (EXTERNAL) {
+          let hash = 0;
+          const y = Math.round((CODE.y0 + CODE.bh * 0.5) * sy);
+          const row = ctx.getImageData(Math.round(W * 0.80 * sx), y, Math.round(W * 0.18 * sx), 1).data;
+          for (let i = 0; i < row.length; i += 4) hash = (hash * 31 + (row[i] >> 2)) >>> 0;
+          return { value: hash, confidence: 255 };
+        }
+        // sx, sy scale from source coordinates to the canvas being read.
+        let value = 0, confidence = 255;
+        for (let b = 0; b < BITS; b++) {
+          const cx = Math.round((CODE.x0 + (b + 0.5) * CODE.bw) * sx);
+          const cy = Math.round((CODE.y0 + CODE.bh * 0.5) * sy);
+          const d = ctx.getImageData(cx, cy, 1, 1).data;
+          const luma = 0.299 * d[0] + 0.587 * d[1] + 0.114 * d[2];
+          confidence = Math.min(confidence, Math.abs(luma - 128));
+          value = (value << 1) | (luma > 128 ? 1 : 0);
+        }
+        return { value, confidence: Math.round(confidence) };
+      }
+
+      const pickMime = () =>
+        [
+          'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+          'video/mp4;codecs=avc1.42E01E',
+          'video/mp4',
+          'video/webm;codecs=vp9,opus',
+          'video/webm',
+        ].find((m) => MediaRecorder.isTypeSupported(m)) || null;
+
+      /**
+       * A 30 fps clip with a constant 440 Hz tone. Recorded for longer than
+       * the card uses, so the recorder's own start is outside the window.
+       */
+      async function makeSourceClip(seconds, withSound) {
+        const c = document.createElement('canvas');
+        c.width = W; c.height = H;
+        const ctx = c.getContext('2d');
+        const mime = pickMime();
+        if (!mime) throw new Error('no MediaRecorder mime available');
+        const stream = c.captureStream(FPS);
+        let audioContext = null;
+        if (withSound) {
+          audioContext = new AudioContext();
+          if (audioContext.state !== 'running') await audioContext.resume();
+          const osc = audioContext.createOscillator();
+          osc.frequency.value = 440;
+          const gain = audioContext.createGain();
+          gain.gain.value = 0.25;
+          const dest = audioContext.createMediaStreamDestination();
+          osc.connect(gain).connect(dest);
+          osc.start();
+          stream.addTrack(dest.stream.getAudioTracks()[0]);
+        }
+        const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 12_000_000 });
+        const chunks = [];
+        rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+        const stopped = new Promise((r) => { rec.onstop = r; });
+        const t0 = performance.now();
+        let raf = 0;
+        const paint = () => {
+          const el = (performance.now() - t0) / 1000;
+          const index = Math.floor(el * FPS);
+          const lum = 24 + (index % 10) * 14;
+          ctx.fillStyle = 'rgb(' + lum + ',' + lum + ',' + lum + ')';
+          ctx.fillRect(0, 0, W, H);
+          // Moving pieces, kept left of the code strip.
+          const x = ((el * 520) % (W * 0.78 + 160)) - 160;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(Math.min(x, W * 0.78 - 150), 0, 150, H);
+          ctx.fillStyle = '#ff5a3c';
+          ctx.fillRect(0, (el * 300) % H, W * 0.78, 26);
+          ctx.fillStyle = '#3c8cff';
+          ctx.font = 'bold 120px sans-serif';
+          ctx.fillText(String(index), 80, H - 80);
+          paintCode(ctx, index);
+          raf = requestAnimationFrame(paint);
+        };
+        paint();
+        // A cold profile spends its first second compiling shaders and warming
+        // the encoder; that jank must not land inside the source clip.
+        await new Promise((r) => setTimeout(r, 2500));
+        rec.start();
+        await new Promise((r) => setTimeout(r, seconds * 1000));
+        cancelAnimationFrame(raf);
+        rec.stop();
+        await stopped;
+        if (audioContext) await audioContext.close();
+        return new Blob(chunks, { type: mime.split(';')[0] });
+      }
+
+      /* ----------------------------------------------------------------
+       * Container walk, both tracks, every sample.
+       * -------------------------------------------------------------- */
+      function boxes(view, start, end) {
+        const out = [];
+        let p = start;
+        while (p + 8 <= end) {
+          let size = view.getUint32(p);
+          const type = String.fromCharCode(view.getUint8(p + 4), view.getUint8(p + 5), view.getUint8(p + 6), view.getUint8(p + 7));
+          let head = 8;
+          if (size === 1) { size = Number(view.getBigUint64(p + 8)); head = 16; }
+          else if (size === 0) { size = end - p; }
+          if (size < head || p + size > end) break;
+          out.push({ type, start: p, body: p + head, end: p + size });
+          p += size;
+        }
+        return out;
+      }
+      const find = (list, type) => list.find((b) => b.type === type);
+
+      function walk(buf) {
+        const v = new DataView(buf);
+        const top = boxes(v, 0, buf.byteLength);
+        const moov = find(top, 'moov');
+        if (!moov) return { error: 'no moov (not an MP4?)' };
+        const wide = (box) => v.getUint8(box.body) === 1;
+        const read = (box, at) => (wide(box) ? Number(v.getBigUint64(box.body + at)) : v.getUint32(box.body + at));
+        const inMoov = boxes(v, moov.body, moov.end);
+        const mvhd = find(inMoov, 'mvhd');
+        const movieTimescale = v.getUint32(mvhd.body + (wide(mvhd) ? 20 : 12));
+        const movieDuration = read(mvhd, wide(mvhd) ? 24 : 16);
+        const tracks = {};
+        for (const trak of inMoov.filter((b) => b.type === 'trak')) {
+          const tk = boxes(v, trak.body, trak.end);
+          const tkhd = find(tk, 'tkhd');
+          const id = v.getUint32(tkhd.body + (wide(tkhd) ? 20 : 12));
+          const mdia = find(tk, 'mdia');
+          const md = boxes(v, mdia.body, mdia.end);
+          const hdlr = find(md, 'hdlr');
+          const handler = String.fromCharCode(v.getUint8(hdlr.body + 8), v.getUint8(hdlr.body + 9), v.getUint8(hdlr.body + 10), v.getUint8(hdlr.body + 11));
+          const mdhd = find(md, 'mdhd');
+          tracks[id] = { handler, timescale: v.getUint32(mdhd.body + (wide(mdhd) ? 20 : 12)), durations: [], fragments: [] };
+        }
+        const trexDefault = {};
+        const mvex = find(inMoov, 'mvex');
+        if (mvex) for (const trex of boxes(v, mvex.body, mvex.end).filter((b) => b.type === 'trex')) {
+          trexDefault[v.getUint32(trex.body + 4)] = v.getUint32(trex.body + 12);
+        }
+        // A progressive file (what the WebCodecs recorder writes) keeps its
+        // sample tables in the moov: stts for durations, stss for key frames.
+        for (const trak of inMoov.filter((b) => b.type === 'trak')) {
+          const tk = boxes(v, trak.body, trak.end);
+          const tkhd = find(tk, 'tkhd');
+          const id = v.getUint32(tkhd.body + (wide(tkhd) ? 20 : 12));
+          const track = tracks[id];
+          const mdia = find(tk, 'mdia');
+          const minf = find(boxes(v, mdia.body, mdia.end), 'minf');
+          const stbl = minf && find(boxes(v, minf.body, minf.end), 'stbl');
+          const inStbl = stbl ? boxes(v, stbl.body, stbl.end) : [];
+          const stts = find(inStbl, 'stts');
+          if (stts) {
+            const n = v.getUint32(stts.body + 4);
+            let q = stts.body + 8;
+            for (let i = 0; i < n; i++) {
+              const count = v.getUint32(q), delta = v.getUint32(q + 4);
+              for (let k = 0; k < count; k++) track.durations.push(delta);
+              q += 8;
+            }
+          }
+          const stss = find(inStbl, 'stss');
+          if (stss) track.keyFrames = Array.from({ length: v.getUint32(stss.body + 4) }, (_, i) => v.getUint32(stss.body + 8 + i * 4));
+          const ctts = find(inStbl, 'ctts');
+          if (ctts) track.hasCtts = true;
+        }
+        let fragmentIndex = 0;
+        for (const moof of top.filter((b) => b.type === 'moof')) {
+          fragmentIndex += 1;
+          for (const traf of boxes(v, moof.body, moof.end).filter((b) => b.type === 'traf')) {
+            const tf = boxes(v, traf.body, traf.end);
+            const tfhd = find(tf, 'tfhd');
+            const flags = v.getUint32(tfhd.body) & 0xffffff;
+            const id = v.getUint32(tfhd.body + 4);
+            const track = tracks[id];
+            if (!track) continue;
+            let p = tfhd.body + 8;
+            if (flags & 0x01) p += 8;
+            if (flags & 0x02) p += 4;
+            let def = trexDefault[id] || 0;
+            if (flags & 0x08) { def = v.getUint32(p); p += 4; }
+            const tfdt = find(tf, 'tfdt');
+            const decodeTime = tfdt ? (v.getUint8(tfdt.body) === 1 ? Number(v.getBigUint64(tfdt.body + 4)) : v.getUint32(tfdt.body + 4)) : null;
+            let count = 0, sum = 0;
+            for (const trun of tf.filter((b) => b.type === 'trun')) {
+              const tflags = v.getUint32(trun.body) & 0xffffff;
+              const n = v.getUint32(trun.body + 4);
+              let q = trun.body + 8;
+              if (tflags & 0x000001) q += 4;
+              if (tflags & 0x000004) q += 4;
+              for (let i = 0; i < n; i++) {
+                let d = def;
+                if (tflags & 0x000100) { d = v.getUint32(q); q += 4; }
+                if (tflags & 0x000200) q += 4;
+                if (tflags & 0x000400) q += 4;
+                if (tflags & 0x000800) q += 4;
+                track.durations.push(d);
+                count += 1; sum += d;
+              }
+            }
+            track.fragments.push({
+              fragment: fragmentIndex,
+              decodeTime: decodeTime === null ? null : +(decodeTime / track.timescale).toFixed(3),
+              samples: count,
+              seconds: +(sum / track.timescale).toFixed(3),
+            });
+          }
+        }
+        const out = { movieSeconds: +(movieDuration / movieTimescale).toFixed(3), shape: fragmentIndex ? 'fragmented' : 'progressive' };
+        for (const track of Object.values(tracks)) {
+          const key = track.handler === 'vide' ? 'video' : track.handler === 'soun' ? 'audio' : track.handler;
+          const ms = track.durations.map((d) => (d / track.timescale) * 1000);
+          const total = ms.reduce((a, b) => a + b, 0);
+          out[key] = {
+            timescale: track.timescale,
+            samples: ms.length,
+            seconds: +(total / 1000).toFixed(3),
+            startsAt: track.fragments.length ? track.fragments[0].decodeTime : 0,
+            fragments: track.fragments,
+            keyFrames: track.keyFrames || null,
+            hasCtts: Boolean(track.hasCtts),
+            // The first three seconds, sample by sample, in ms.
+            firstMs: ms.slice(0, key === 'video' ? 90 : 150).map((d) => +d.toFixed(1)),
+            over60ms: ms.map((d, i) => ({ i, ms: +d.toFixed(1), at: +(ms.slice(0, i).reduce((a, b) => a + b, 0) / 1000).toFixed(3) })).filter((x) => x.ms > 60),
+          };
+        }
+        return out;
+      }
+
+      /* ----------------------------------------------------------------
+       * Content read: seek the file frame by frame and read the code back.
+       * Seeking is exact and cannot drop a frame the way playback can.
+       * -------------------------------------------------------------- */
+      async function frameCodes(blob, fromSec, count) {
+        const url = URL.createObjectURL(blob);
+        const v = document.createElement('video');
+        v.src = url; v.muted = true; v.preload = 'auto'; v.playsInline = true;
+        try {
+          await new Promise((res, rej) => {
+            v.onloadeddata = () => res();
+            v.onerror = () => rej(new Error('file failed to decode'));
+            setTimeout(() => rej(new Error('timed out loading file')), 15000);
+          });
+          const probe = document.createElement('canvas');
+          probe.width = v.videoWidth; probe.height = v.videoHeight;
+          const pctx = probe.getContext('2d', { willReadFrequently: true });
+          const sx = v.videoWidth / W, sy = v.videoHeight / H;
+          const out = [];
+          for (let k = 0; k < count; k++) {
+            const target = fromSec + (k + 0.5) / FPS;
+            const seeked = new Promise((res) => {
+              const done = () => { v.removeEventListener('seeked', done); res(); };
+              v.addEventListener('seeked', done);
+              setTimeout(done, 2000);
+            });
+            v.currentTime = target;
+            await seeked;
+            pctx.drawImage(v, 0, 0);
+            const code = readCode(pctx, sx, sy);
+            out.push({ t: +target.toFixed(3), code: code.value, conf: code.confidence });
+          }
+          return { width: v.videoWidth, height: v.videoHeight, duration: +Number(v.duration).toFixed(3), frames: out };
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      }
+
+      /** Where the source frame number fails to advance by one per output frame. */
+      function describe(frames) {
+        const codes = frames.map((f) => f.code);
+        const deltas = codes.slice(1).map((c, i) => (EXTERNAL ? (c === codes[i] ? 0 : 1) : c - codes[i]));
+        const holds = [];   // runs of the same code, length >= 3 frames
+        const jumps = [];   // steps of 3 or more source frames
+        let runStart = 0;
+        for (let i = 1; i <= codes.length; i++) {
+          if (i === codes.length || codes[i] !== codes[runStart]) {
+            const len = i - runStart;
+            if (len >= 3) holds.push({ at: frames[runStart].t, frames: len, code: codes[runStart] });
+            runStart = i;
+          }
+        }
+        deltas.forEach((d, i) => { if (Math.abs(d) >= 3) jumps.push({ at: frames[i + 1].t, from: codes[i], to: codes[i + 1] }); });
+        const dupPairs = deltas.filter((d) => d === 0).length;
+        const skips = deltas.filter((d) => d === 2).length;
+        const lowConfidence = frames.filter((f) => f.conf < 40).length;
+        return {
+          frames: codes.length,
+          first: codes[0],
+          last: codes[codes.length - 1],
+          expectedAdvance: codes.length - 1,
+          actualAdvance: codes[codes.length - 1] - codes[0],
+          duplicatePairs: dupPairs,
+          skipsOfOne: skips,
+          holds,
+          jumps,
+          lowConfidence,
+          deltas: deltas.slice(0, 90),
+        };
+      }
+
+      /* ----------------------------------------------------------------
+       * Controls that pull the export apart. Each opens its own <video> on
+       * the source, plays it, and reads the frame code off a canvas on every
+       * animation frame while something happens:
+       *
+       *   none  — the exporter's prime/seek-back/play sequence, no recorder;
+       *   cold  — steady playback, then a MediaRecorder starts on the canvas
+       *           (with the element's sound routed in, as the exporter does);
+       *   warm  — the same, but a throwaway recorder ran and stopped first.
+       *
+       * A held code over more than 3 animation frames (a 30 fps clip on a
+       * 60 Hz display shows each frame twice) is the picture stalling.
+       * -------------------------------------------------------------- */
+      function holdsIn(samples, threshold) {
+        const holds = [];
+        let runStart = 0;
+        for (let i = 1; i <= samples.length; i++) {
+          if (i === samples.length || samples[i].code !== samples[runStart].code) {
+            const len = i - runStart;
+            if (len > threshold) holds.push({ at: samples[runStart].t, ms: +(samples[i - 1].t - samples[runStart].t).toFixed(0), code: samples[runStart].code });
+            runStart = i;
+          }
+        }
+        return holds;
+      }
+
+      /**
+       * Start sequences under test. Each is handed the element, the window
+       * start and a few helpers, and must leave the element playing at the
+       * window start; `mark()` sets the moment the trace is measured from.
+       */
+      const SEQUENCES = {
+        // What ships: half a second played, paused, seeked back, played.
+        'prime-seekback': async (v, S, h) => {
+          await v.play(); await h.nextFrame(); await h.wait(500);
+          v.pause(); await h.seek(S);
+          h.mark(); await v.play();
+        },
+        // No prime at all: one cold start from the seek.
+        cold: async (v, S, h) => {
+          h.mark(); await v.play();
+        },
+        // Cold start with the element's sound routed through WebAudio into a
+        // stream destination, as `attachAudio` does — attached just before play.
+        'cold-audio': async (v, S, h) => {
+          await h.attachAudio();
+          h.mark(); await v.play();
+        },
+        // The same, with a second between attaching the sound and playing.
+        'cold-audio-rest': async (v, S, h) => {
+          await h.attachAudio(); await h.wait(1000);
+          h.mark(); await v.play();
+        },
+        // Attach the sound while paused, right after the load, and only seek
+        // to the window afterwards — the order the exporter could also use.
+        'cold-audio-then-seek': async (v, S, h) => {
+          await h.attachAudio(); await h.wait(300); await h.seek(S); await h.wait(300);
+          h.mark(); await v.play();
+        },
+        // As shipping, but at rest after the seek back before playing.
+        'rest-200': async (v, S, h) => {
+          await v.play(); await h.nextFrame(); await h.wait(500);
+          v.pause(); await h.seek(S); await h.wait(200);
+          h.mark(); await v.play();
+        },
+        'rest-400': async (v, S, h) => {
+          await v.play(); await h.nextFrame(); await h.wait(500);
+          v.pause(); await h.seek(S); await h.wait(400);
+          h.mark(); await v.play();
+        },
+        'rest-700': async (v, S, h) => {
+          await v.play(); await h.nextFrame(); await h.wait(500);
+          v.pause(); await h.seek(S); await h.wait(700);
+          h.mark(); await v.play();
+        },
+        'rest-1000': async (v, S, h) => {
+          await v.play(); await h.nextFrame(); await h.wait(500);
+          v.pause(); await h.seek(S); await h.wait(1000);
+          h.mark(); await v.play();
+        },
+        // As shipping, but the seek back is done while still playing and the
+        // element is only paused once a frame past the seek has been shown.
+        'seek-playing-then-rest': async (v, S, h) => {
+          await v.play(); await h.nextFrame(); await h.wait(500);
+          await h.seek(S); await h.nextFrame(); v.pause(); await h.wait(700);
+          h.mark(); await v.play();
+        },
+        // The exporter's actual start: cold, sound attached, and a recorder
+        // started on the canvas once the first decoded frame has arrived.
+        'cold-audio-recorder': async (v, S, h) => {
+          await h.attachAudio();
+          h.mark(); await v.play(); await h.nextFrame();
+          h.startRecorder();
+          await h.wait(2000); await h.stopRecorders();
+        },
+        // The same, recorder started 1.5 s in — if the freeze follows it, the
+        // recorder is what starts it.
+        'cold-audio-recorder-late': async (v, S, h) => {
+          await h.attachAudio();
+          h.mark(); await v.play(); await h.wait(1500);
+          h.startRecorder();
+          await h.wait(2000); await h.stopRecorders();
+        },
+        // Recorder pre-rolled and paused, playback left alone for 1.6 s, then
+        // the recorder resumed: places the second beat relative to play or resume.
+        'preroll-late-resume': async (v, S, h) => {
+          await h.attachAudio();
+          h.startRecorder(); await h.wait(300); h.pauseRecorders();
+          h.mark(); await v.play(); await h.wait(1600);
+          h.resumeRecorders();
+          await h.wait(2000); await h.stopRecorders();
+        },
+        // Through the fragile first second at a crawl: the recorder pre-rolled
+        // and paused, the clip played at 1/16 speed for 1.6 s (0.1 s of media),
+        // then rate 1 and the recorder resumed. Measured from the rate change.
+        'slow-start-0625': async (v, S, h) => {
+          await h.attachAudio();
+          h.startRecorder(); await h.wait(300); h.pauseRecorders();
+          v.playbackRate = 0.0625;
+          await v.play(); await h.wait(1600);
+          h.mark(); v.playbackRate = 1; await h.nextFrame();
+          h.resumeRecorders();
+          await h.wait(2000); await h.stopRecorders();
+        },
+        'slow-start-025': async (v, S, h) => {
+          await h.attachAudio();
+          h.startRecorder(); await h.wait(300); h.pauseRecorders();
+          v.playbackRate = 0.25;
+          await v.play(); await h.wait(1600);
+          h.mark(); v.playbackRate = 1; await h.nextFrame();
+          h.resumeRecorders();
+          await h.wait(2000); await h.stopRecorders();
+        },
+        // No WebAudio, element muted, recorder video-only: does audibility matter?
+        'rec-noaudio-muted': async (v, S, h) => {
+          h.mark(); await v.play(); await h.nextFrame();
+          h.startRecorder({ audio: false });
+          await h.wait(2000); await h.stopRecorders();
+        },
+        // requestVideoFrameCallback alone, once, right after play — no recorder.
+        'rvfc-only': async (v, S, h) => {
+          await h.attachAudio();
+          h.mark(); await v.play(); await h.nextFrame();
+          await h.wait(2000);
+        },
+        // The same call made 2 s into playback: does the freeze follow it?
+        'rvfc-late': async (v, S, h) => {
+          await h.attachAudio();
+          h.mark(); await v.play(); await h.wait(2000); await h.nextFrame();
+          await h.wait(2000);
+        },
+        // The exporter's start without requestVideoFrameCallback: wait for
+        // currentTime to move instead, then start the recorder.
+        'norvfc-recorder': async (v, S, h) => {
+          await h.attachAudio();
+          h.mark(); await v.play(); await h.nextTime();
+          h.startRecorder();
+          await h.wait(2000); await h.stopRecorders();
+        },
+        // Recorder pre-rolled on the still frame, paused, play, resumed once
+        // currentTime moves — the candidate fix in full.
+        'preroll-norvfc': async (v, S, h) => {
+          await h.attachAudio();
+          h.startRecorder(); await h.wait(300); h.pauseRecorders();
+          h.mark(); await v.play(); await h.nextTime();
+          h.resumeRecorders();
+          await h.wait(2000); await h.stopRecorders();
+        },
+        // The exporter's start as shipped after this: the recorder started on the
+        // still frame for two frames' worth, paused, left for half a second, then
+        // play and resume once currentTime moves.
+        'preroll-50-norvfc': async (v, S, h) => {
+          await h.attachAudio();
+          h.startRecorder(); await h.wait(50); h.pauseRecorders(); await h.wait(500);
+          h.mark(); await v.play(); await h.nextTime();
+          h.resumeRecorders();
+          await h.wait(2000); await h.stopRecorders();
+        },
+        // As preroll-50-norvfc, but nothing is drawn to the canvas during the
+        // half-second rest — as the exporter had it.
+        'preroll-50-idle': async (v, S, h) => {
+          await h.attachAudio();
+          h.startRecorder(); await h.wait(50); h.pauseRecorders();
+          h.pausePaint(true); await h.wait(500); h.pausePaint(false);
+          h.mark(); await v.play(); await h.nextTime();
+          h.resumeRecorders();
+          await h.wait(2000); await h.stopRecorders();
+        },
+        // The same on a GPU-backed canvas, as the exporter's is.
+        'preroll-50-gpu': async (v, S, h) => {
+          await h.attachAudio();
+          h.startRecorder(); await h.wait(50); h.pauseRecorders(); await h.wait(500);
+          h.mark(); await v.play(); await h.nextTime();
+          h.resumeRecorders();
+          await h.wait(2000); await h.stopRecorders();
+        },
+        // The same with the canvas track told to sample now, as the exporter does.
+        'preroll-50-reqframe': async (v, S, h) => {
+          await h.attachAudio();
+          h.startRecorder(); h.requestFrames(true); await h.wait(50); h.requestFrames(false); h.pauseRecorders(); await h.wait(500);
+          h.mark(); await v.play(); await h.nextTime();
+          h.resumeRecorders(); h.requestFrame();
+          await h.wait(2000); await h.stopRecorders();
+        },
+        // Both at once.
+        'preroll-50-gpu-reqframe': async (v, S, h) => {
+          await h.attachAudio();
+          h.startRecorder(); h.requestFrames(true); await h.wait(50); h.requestFrames(false); h.pauseRecorders(); await h.wait(500);
+          h.mark(); await v.play(); await h.nextTime();
+          h.resumeRecorders(); h.requestFrame();
+          await h.wait(2000); await h.stopRecorders();
+        },
+        // A throwaway recorder on the still frame, stopped, then the real one at
+        // play with no requestVideoFrameCallback anywhere: nothing of the
+        // warm-up lands in the take's file.
+        'warm-norvfc': async (v, S, h) => {
+          await h.attachAudio();
+          h.startRecorder(); await h.wait(500); await h.stopRecorders();
+          h.mark(); await v.play(); await h.nextTime();
+          h.startRecorder();
+          await h.wait(2000); await h.stopRecorders();
+        },
+        // WebCodecs instead of MediaRecorder: frames taken from the canvas on
+        // every animation frame and pushed through a VideoEncoder. Does encoding
+        // as such disturb the clip, or is it MediaRecorder?
+        'webcodecs-h264': async (v, S, h) => {
+          await h.attachAudio();
+          h.mark(); await v.play(); await h.nextFrame();
+          await h.startWebCodecs({ codec: 'avc1.42E028', hardwareAcceleration: 'no-preference' });
+          await h.wait(2000); await h.stopWebCodecs();
+        },
+        'webcodecs-h264-sw': async (v, S, h) => {
+          await h.attachAudio();
+          h.mark(); await v.play(); await h.nextFrame();
+          await h.startWebCodecs({ codec: 'avc1.42E028', hardwareAcceleration: 'prefer-software' });
+          await h.wait(2000); await h.stopWebCodecs();
+        },
+        'webcodecs-h264-hw': async (v, S, h) => {
+          await h.attachAudio();
+          h.mark(); await v.play(); await h.nextTime();
+          await h.startWebCodecs({ codec: 'avc1.42E028', hardwareAcceleration: 'prefer-hardware' });
+          await h.wait(2000); await h.stopWebCodecs();
+        },
+        // WebCodecs with the encoder brought up on the still frame first: 300 ms
+        // of frames nobody keeps, then play, then a forced key frame on the
+        // first frame of the take.
+        'webcodecs-preroll': async (v, S, h) => {
+          await h.attachAudio();
+          await h.startWebCodecs({ codec: 'avc1.42E028', hardwareAcceleration: 'no-preference' });
+          await h.wait(300);
+          h.mark(); await v.play(); await h.nextTime();
+          h.forceKeyFrame();
+          await h.wait(2000); await h.stopWebCodecs();
+        },
+        // The same with the exporter's choices, one at a time: High profile,
+        // a GPU-backed canvas, negative pre-roll timestamps, variable bitrate.
+        'webcodecs-preroll-high': async (v, S, h) => {
+          await h.attachAudio();
+          await h.startWebCodecs({ codec: 'avc1.640028', hardwareAcceleration: 'no-preference' });
+          await h.wait(300);
+          h.mark(); await v.play(); await h.nextTime();
+          h.forceKeyFrame();
+          await h.wait(2000); await h.stopWebCodecs();
+        },
+        'webcodecs-preroll-gpu': async (v, S, h) => {
+          await h.attachAudio();
+          await h.startWebCodecs({ codec: 'avc1.42E028', hardwareAcceleration: 'no-preference' });
+          await h.wait(300);
+          h.mark(); await v.play(); await h.nextTime();
+          h.forceKeyFrame();
+          await h.wait(2000); await h.stopWebCodecs();
+        },
+        'webcodecs-preroll-neg': async (v, S, h) => {
+          await h.attachAudio();
+          h.negativePreroll();
+          await h.startWebCodecs({ codec: 'avc1.42E028', hardwareAcceleration: 'no-preference' });
+          await h.wait(300);
+          h.mark(); await v.play(); await h.nextTime();
+          h.forceKeyFrame();
+          await h.wait(2000); await h.stopWebCodecs();
+        },
+        'webcodecs-preroll-vbr': async (v, S, h) => {
+          await h.attachAudio();
+          await h.startWebCodecs({ codec: 'avc1.42E028', hardwareAcceleration: 'no-preference', bitrateMode: 'variable' });
+          await h.wait(300);
+          h.mark(); await v.play(); await h.nextTime();
+          h.forceKeyFrame();
+          await h.wait(2000); await h.stopWebCodecs();
+        },
+        'webcodecs-preroll-high-gpu-neg-vbr': async (v, S, h) => {
+          await h.attachAudio();
+          h.negativePreroll();
+          await h.startWebCodecs({ codec: 'avc1.640028', hardwareAcceleration: 'no-preference', bitrateMode: 'variable' });
+          await h.wait(300);
+          h.mark(); await v.play(); await h.nextTime();
+          h.forceKeyFrame();
+          await h.wait(2000); await h.stopWebCodecs();
+        },
+        // The element in the document (tiny, but composited) instead of detached.
+        'rec-attached': async (v, S, h) => {
+          v.style.cssText = 'position:fixed;left:0;top:0;width:64px;height:44px;opacity:0.99;';
+          document.body.appendChild(v);
+          await h.attachAudio();
+          h.mark(); await v.play(); await h.nextFrame();
+          h.startRecorder();
+          await h.wait(2000); await h.stopRecorders();
+          v.remove();
+        },
+        // Recorder fed a quarter-size copy of the canvas: is the beat about load?
+        'rec-lowres': async (v, S, h) => {
+          await h.attachAudio();
+          h.mark(); await v.play(); await h.nextFrame();
+          h.startRecorder({ lowres: true });
+          await h.wait(2000); await h.stopRecorders();
+        },
+        // Variations on the recorder itself, each started ~100 ms after play.
+        'rec-video-only': async (v, S, h) => {
+          await h.attachAudio();
+          h.mark(); await v.play(); await h.nextFrame();
+          h.startRecorder({ audio: false });
+          await h.wait(2000); await h.stopRecorders();
+        },
+        'rec-webm-vp9': async (v, S, h) => {
+          await h.attachAudio();
+          h.mark(); await v.play(); await h.nextFrame();
+          h.startRecorder({ mime: 'video/webm;codecs=vp9,opus' });
+          await h.wait(2000); await h.stopRecorders();
+        },
+        'rec-webm-vp8': async (v, S, h) => {
+          await h.attachAudio();
+          h.mark(); await v.play(); await h.nextFrame();
+          h.startRecorder({ mime: 'video/webm;codecs=vp8,opus' });
+          await h.wait(2000); await h.stopRecorders();
+        },
+        'rec-noslice': async (v, S, h) => {
+          await h.attachAudio();
+          h.mark(); await v.play(); await h.nextFrame();
+          h.startRecorder({ timeslice: 0 });
+          await h.wait(2000); await h.stopRecorders();
+        },
+        'cold-audio-recorder-600': async (v, S, h) => {
+          await h.attachAudio();
+          h.mark(); await v.play(); await h.wait(600);
+          h.startRecorder();
+          await h.wait(2000); await h.stopRecorders();
+        },
+        'cold-audio-recorder-1000': async (v, S, h) => {
+          await h.attachAudio();
+          h.mark(); await v.play(); await h.wait(1000);
+          h.startRecorder();
+          await h.wait(2000); await h.stopRecorders();
+        },
+        // The warm-up-and-rest start with a recorder, as the exporter would run
+        // it: does starting the recorder early in playback stall on its own?
+        'rest-700-recorder': async (v, S, h) => {
+          await h.attachAudio();
+          await v.play(); await h.nextFrame(); await h.wait(500);
+          v.pause(); await h.seek(S); await h.wait(700);
+          h.mark(); await v.play(); await h.nextFrame();
+          h.startRecorder();
+          await h.wait(2000); await h.stopRecorders();
+        },
+        // The recorder is started on the still first frame *before* play, so
+        // both encoders come up while nothing is being decoded; it is paused
+        // for the play() and resumed once a decoded frame is on the canvas.
+        'preroll-300': async (v, S, h) => {
+          await h.attachAudio();
+          h.startRecorder(); await h.wait(300); h.pauseRecorders();
+          h.mark(); await v.play(); await h.nextFrame();
+          h.resumeRecorders();
+          await h.wait(2000); await h.stopRecorders();
+        },
+        'preroll-1000': async (v, S, h) => {
+          await h.attachAudio();
+          h.startRecorder(); await h.wait(1000); h.pauseRecorders();
+          h.mark(); await v.play(); await h.nextFrame();
+          h.resumeRecorders();
+          await h.wait(2000); await h.stopRecorders();
+        },
+        // A throwaway recorder runs and is stopped before the take, so both
+        // encoders have been through their start-up once.
+        'cold-audio-warm-recorder': async (v, S, h) => {
+          await h.attachAudio();
+          h.startRecorder(); await h.wait(800); await h.stopRecorders(); await h.wait(200);
+          h.mark(); await v.play(); await h.nextFrame();
+          h.startRecorder();
+          await h.wait(2000); await h.stopRecorders();
+        },
+        // Pause with no seek at all, then play on: the shape of the hidden-window
+        // resume seam. Measured from the second play.
+        'pause-only': async (v, S, h) => {
+          await v.play(); await h.nextFrame(); await h.wait(500);
+          v.pause(); await h.wait(100);
+          h.mark(); await v.play();
+        },
+        'pause-rest-700': async (v, S, h) => {
+          await v.play(); await h.nextFrame(); await h.wait(500);
+          v.pause(); await h.wait(700);
+          h.mark(); await v.play();
+        },
+        // Run in from a second earlier and never seek back; the window start
+        // is passed while already playing. Only possible when S >= 1.
+        'run-in': async (v, S, h) => {
+          await h.seek(Math.max(0, S - 1));
+          await v.play();
+          await new Promise((r) => { const poll = () => (v.currentTime >= S ? r() : requestAnimationFrame(poll)); poll(); });
+          h.mark();
+        },
+      };
+
+      async function control(kind, srcBlob, fromSec) {
+        const url = URL.createObjectURL(srcBlob);
+        const v = document.createElement('video');
+        v.src = url; v.muted = true; v.preload = 'auto'; v.playsInline = true;
+        const probe = document.createElement('canvas');
+        probe.width = W; probe.height = H;
+        // The exporter's canvas is GPU-backed; `-gpu` variants match that,
+        // everything else reads back cheaply from a CPU canvas.
+        const pctx = probe.getContext('2d', kind.includes('-gpu') ? {} : { willReadFrequently: true });
+        const samples = [];
+        let origin = performance.now(), raf = 0, marked = false;
+        // What the element itself says while this happens: a `waiting` is the
+        // pipeline reporting it has run dry.
+        const events = [];
+        for (const name of ['waiting', 'stalled', 'playing', 'canplay', 'canplaythrough', 'seeking', 'seeked', 'pause', 'play', 'timeupdate']) {
+          v.addEventListener(name, () => events.push({ at: performance.now(), name: name + '/rs' + v.readyState + '/t' + v.currentTime.toFixed(2) }));
+        }
+        // A quarter-size copy, painted alongside, for the low-resolution recorder.
+        const small = document.createElement('canvas');
+        small.width = W / 4; small.height = H / 4;
+        const sctx = small.getContext('2d');
+        let feedSmall = false;
+        let lastTrack = null;
+        let requestEveryPaint = false;
+        // WebCodecs path: one VideoFrame per animation frame while `codec` is set.
+        let codec = null;
+        let forceKey = false;
+        let negPreroll = false;
+        const codecStats = { chunks: 0, bytes: 0, frames: 0, keyFrames: 0, maxQueue: 0, errors: [], support: null };
+        let lastCodecStamp = -1;
+        let paintPaused = false;
+        const read = () => {
+          if (paintPaused) { raf = requestAnimationFrame(read); return; }
+          pctx.drawImage(v, 0, 0, W, H);
+          if (requestEveryPaint && lastTrack && typeof lastTrack.requestFrame === 'function') lastTrack.requestFrame();
+          if (feedSmall) sctx.drawImage(probe, 0, 0, small.width, small.height);
+          if (codec && codec.state === 'configured') {
+            // Hold the encoder to 30 fps: skip a frame that lands inside the last one's slot.
+            const stamp = Math.round((performance.now() - origin) * 1000) - (negPreroll ? 3_000_000 : 0);
+            if (lastCodecStamp < 0 || stamp - lastCodecStamp >= 1e6 / FPS - 2000) {
+              lastCodecStamp = stamp;
+              const frame = new VideoFrame(probe, { timestamp: stamp });
+              try {
+                codec.encode(frame, { keyFrame: codecStats.frames === 0 || forceKey });
+                if (forceKey) { codecStats.keyForcedAt = +(performance.now() - origin).toFixed(0); forceKey = false; }
+                codecStats.frames += 1;
+                codecStats.maxQueue = Math.max(codecStats.maxQueue, codec.encodeQueueSize);
+              } catch (e) { codecStats.errors.push(String(e)); }
+              frame.close();
+            }
+          }
+          samples.push({ t: performance.now() - origin, code: readCode(pctx, 1, 1).value, media: +v.currentTime.toFixed(3) });
+          raf = requestAnimationFrame(read);
+        };
+        const ranges = () => Array.from({ length: v.buffered.length }, (_, i) => v.buffered.start(i).toFixed(2) + '-' + v.buffered.end(i).toFixed(2)).join(',');
+        let bufferedAtMark = '';
+        let audioContext = null, audioSource = null;
+        const recorders = [];
+        const recorderStarts = [];
+        const recorderData = []; // "ms since that recorder started:bytes" per dataavailable
+        const helpers = {
+          seek: (t) => new Promise((res) => { v.onseeked = () => { v.onseeked = null; res(); }; v.currentTime = t; }),
+          wait: (ms) => new Promise((r) => setTimeout(r, ms)),
+          nextFrame: () => new Promise((r) => v.requestVideoFrameCallback(() => r())),
+          // The same wait without requestVideoFrameCallback: currentTime moving.
+          nextTime: () => new Promise((r) => { const at = v.currentTime; const poll = () => (v.currentTime > at ? r() : setTimeout(poll, 8)); poll(); }),
+          // The exporter's recorder: the painted canvas at 30 fps, the sound
+          // from a stream destination, the same mime and bitrate.
+          pausePaint: (on) => { paintPaused = on; },
+          forceKeyFrame: () => { forceKey = true; },
+          negativePreroll: () => { negPreroll = true; },
+          requestFrame: () => { if (lastTrack && typeof lastTrack.requestFrame === 'function') lastTrack.requestFrame(); },
+          requestFrames: (on) => { requestEveryPaint = on; },
+          startRecorder: (opts = {}) => {
+            if (opts.lowres) feedSmall = true;
+            const stream = (opts.lowres ? small : probe).captureStream(FPS);
+            lastTrack = stream.getVideoTracks()[0];
+            if (audioContext && audioSource && opts.audio !== false) {
+              const dest = audioContext.createMediaStreamDestination();
+              audioSource.connect(dest);
+              stream.addTrack(dest.stream.getAudioTracks()[0]);
+            }
+            const rec = new MediaRecorder(stream, { mimeType: opts.mime || pickMime(), videoBitsPerSecond: Math.round(W * H * FPS * 0.14) });
+            const started = performance.now();
+            rec.ondataavailable = (e) => { recorderData.push(+(performance.now() - started).toFixed(0) + ':' + (e.data ? e.data.size : 0)); };
+            if (opts.timeslice === 0) rec.start(); else rec.start(opts.timeslice || 250);
+            recorders.push(rec);
+            recorderStarts.push(+(performance.now() - origin).toFixed(0));
+          },
+          startWebCodecs: async (cfg) => {
+            const config = {
+              codec: cfg.codec,
+              width: W,
+              height: H,
+              bitrate: Math.round(W * H * FPS * 0.14),
+              framerate: FPS,
+              latencyMode: cfg.latencyMode || 'realtime',
+              hardwareAcceleration: cfg.hardwareAcceleration || 'no-preference',
+              avc: cfg.codec.startsWith('avc1') ? { format: 'avc' } : undefined,
+            };
+            if (cfg.bitrateMode) config.bitrateMode = cfg.bitrateMode;
+            try {
+              const sup = await VideoEncoder.isConfigSupported(config);
+              codecStats.support = { supported: sup.supported, hw: sup.config && sup.config.hardwareAcceleration };
+            } catch (e) { codecStats.support = { error: String(e) }; }
+            codec = new VideoEncoder({
+              output: (chunk) => { codecStats.chunks += 1; codecStats.bytes += chunk.byteLength; if (chunk.type === 'key') codecStats.keyFrames += 1; },
+              error: (e) => codecStats.errors.push(String(e)),
+            });
+            codec.configure(config);
+            codecStats.startedAt = +(performance.now() - origin).toFixed(0);
+          },
+          stopWebCodecs: async () => {
+            if (!codec) return;
+            const enc = codec;
+            codec = null;
+            // Bounded: a hardware encoder handed negative timestamps never
+            // answered its flush, and one hung control must not hang the run.
+            const budget = new Promise((r) => setTimeout(() => r('timeout'), 3000));
+            try {
+              const outcome = await Promise.race([enc.flush().then(() => 'flushed'), budget]);
+              if (outcome === 'timeout') codecStats.errors.push('flush: timed out after 3 s (queue ' + enc.encodeQueueSize + ')');
+            } catch (e) { codecStats.errors.push('flush: ' + String(e)); }
+            try { enc.close(); } catch { /* closed */ }
+          },
+          pauseRecorders: () => { for (const rec of recorders) if (rec.state === 'recording') rec.pause(); },
+          resumeRecorders: () => { for (const rec of recorders) if (rec.state === 'paused') rec.resume(); },
+          stopRecorders: async () => {
+            for (const rec of recorders) {
+              if (rec.state === 'inactive') continue;
+              const stopped = new Promise((r) => { rec.onstop = r; });
+              rec.stop();
+              await stopped;
+            }
+          },
+          // Mirrors `attachAudio` in src/lib/video.ts: running context first,
+          // element routed only into a stream destination, a -100 dBFS
+          // constant source keeping the destination live.
+          attachAudio: async () => {
+            audioContext = new AudioContext();
+            await audioContext.resume();
+            const source = audioContext.createMediaElementSource(v);
+            audioSource = source;
+            const dest = audioContext.createMediaStreamDestination();
+            source.connect(dest);
+            const keepAlive = audioContext.createConstantSource();
+            const floor = audioContext.createGain();
+            floor.gain.value = 1e-5;
+            keepAlive.connect(floor).connect(dest);
+            keepAlive.start();
+            v.muted = false;
+            v.volume = 1;
+          },
+        };
+        // `mark` rebases: samples before it get negative times.
+        helpers.mark = () => {
+          const now = performance.now();
+          for (const s of samples) s.t = s.t - (now - origin);
+          origin = now;
+          marked = true;
+          negPreroll = false;
+          lastCodecStamp = -1;
+          bufferedAtMark = ranges();
+        };
+        let dropped = null;
+        try {
+          await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error('control clip failed')); setTimeout(() => rej(new Error('control clip timed out')), 10000); });
+          await helpers.seek(fromSec);
+          raf = requestAnimationFrame(read);
+          await SEQUENCES[kind](v, fromSec, helpers);
+          await helpers.wait(1500);
+          dropped = typeof v.getVideoPlaybackQuality === 'function' ? v.getVideoPlaybackQuality().droppedVideoFrames : null;
+        } finally {
+          cancelAnimationFrame(raf);
+          v.pause();
+          for (const rec of recorders) if (rec.state !== 'inactive') rec.stop();
+          if (codec) { try { codec.close(); } catch { /* closed */ } codec = null; }
+          if (audioContext) await audioContext.close().catch(() => {});
+          v.removeAttribute('src'); v.load();
+          URL.revokeObjectURL(url);
+        }
+        const after = samples.filter((s) => s.t >= 0).map((s) => ({ ...s, t: +s.t.toFixed(0) }));
+        const before = samples.filter((s) => s.t < 0).map((s) => ({ ...s, t: +s.t.toFixed(0) }));
+        const codes = after.map((s) => s.code);
+        const changes = (list) => list.filter((s, i) => i === 0 || s.code !== list[i - 1].code).map((s) => s.t + ':' + s.code).join(' ');
+        return {
+          kind,
+          marked,
+          dropped,
+          bufferedAtMark,
+          recorderStarts,
+          recorderData: recorderData.join(' '),
+          webcodecs: codecStats.frames || codecStats.support ? codecStats : undefined,
+          samples: after.length,
+          firstMedia: after.length ? after[0].media : null,
+          advance: codes.length ? codes[codes.length - 1] - codes[0] : 0,
+          holds: holdsIn(after, 3),
+          holdsBefore: holdsIn(before, 3),
+          trace: changes(after),
+          traceBefore: changes(before),
+          events: events.filter((e) => !e.name.startsWith('timeupdate') || e.at - origin >= 0).map((e) => (e.at - origin).toFixed(0) + ':' + e.name).join(' '),
+        };
+      }
+
+      /* ----------------------------------------------------------------
+       * Sound: decode and read the level in 10 ms windows.
+       * -------------------------------------------------------------- */
+      async function soundProfile(buf, seconds) {
+        try {
+          const ac = new OfflineAudioContext(1, 48000, 48000);
+          const decoded = await ac.decodeAudioData(buf.slice(0));
+          const data = decoded.getChannelData(0);
+          const win = Math.round(decoded.sampleRate / 100);
+          const n = Math.min(Math.floor(data.length / win), Math.round(seconds * 100));
+          const db = [];
+          for (let i = 0; i < n; i++) {
+            let sum = 0;
+            for (let j = i * win; j < (i + 1) * win; j++) sum += data[j] * data[j];
+            const rms = Math.sqrt(sum / win);
+            db.push(+(20 * Math.log10(rms + 1e-9)).toFixed(1));
+          }
+          const loud = (x) => x > -40;
+          const onset = db.findIndex(loud);
+          const gaps = [];
+          let gapStart = -1;
+          for (let i = Math.max(onset, 0); i < db.length; i++) {
+            if (!loud(db[i]) && gapStart < 0) gapStart = i;
+            if (loud(db[i]) && gapStart >= 0) { gaps.push({ at: gapStart / 100, ms: (i - gapStart) * 10 }); gapStart = -1; }
+          }
+          if (gapStart >= 0) gaps.push({ at: gapStart / 100, ms: (db.length - gapStart) * 10, toEnd: true });
+          return {
+            decodedSeconds: +decoded.duration.toFixed(3),
+            sampleRate: decoded.sampleRate,
+            onsetSeconds: onset < 0 ? null : onset / 100,
+            gaps,
+            firstSecondDb: db.slice(0, 100),
+          };
+        } catch (e) {
+          return { error: String(e) };
+        }
+      }
+
+      (async () => {
+        const out = { visibilityAtStart: document.visibilityState, params: Object.fromEntries(params) };
+        let rec = null, images = null;
+        try {
+          log('visibility', { state: document.visibilityState, focus: document.hasFocus() });
+          await document.fonts.ready;
+          const mods = await Promise.all([
+            import('/src/lib/images.ts'),
+            import('/src/lib/defaults.ts'),
+            import('/src/lib/video.ts'),
+            import('/src/lib/mp4.ts'),
+          ]);
+          images = mods[0];
+          const [, defaults, videoMod, mp4] = mods;
+          out.support = videoMod.videoSupport();
+          log('modules loaded', out.support);
+
+          const withSound = params.get('mute') !== '1';
+          const CLIP_START = Number(params.get('clipStart') ?? 3);
+          const CLIP_LENGTH = Number(params.get('clipLength') ?? 6);
+
+          let srcBlob;
+          if (EXTERNAL) {
+            // An outside file, read as it is: the point of `?src=` is to see the
+            // same start on a clip MediaRecorder did not write.
+            const res = await fetch(EXTERNAL);
+            if (!res.ok) throw new Error('could not fetch ' + EXTERNAL);
+            srcBlob = await res.blob();
+          } else {
+            // The source is itself a MediaRecorder file, so it gets the same
+            // container repair a real export gets — a phone's clip states its
+            // length, and this one should too.
+            const rawSource = await makeSourceClip(CLIP_START + CLIP_LENGTH + 3, withSound);
+            const repaired = mp4.repairFragmentedMp4(await rawSource.arrayBuffer());
+            out.sourceRepair = repaired.repair;
+            if (params.get('flat') === '1') {
+              // The same samples as a progressive MP4, the shape a phone writes.
+              const { flattenFragmentedMp4 } = await import('/dev/flatten-mp4.js');
+              srcBlob = new Blob([flattenFragmentedMp4(repaired.buffer)], { type: 'video/mp4' });
+              out.sourceShape = 'flat';
+            } else {
+              srcBlob = new Blob([repaired.buffer], { type: 'video/mp4' });
+              out.sourceShape = 'fragmented';
+            }
+            void save('start-source.mp4', srcBlob);
+          }
+          const file = new File([srcBlob], 'start-check.mp4', { type: 'video/mp4' });
+          rec = await images.addLocalMedia(file, 'artwork', 'local');
+          log('source clip', { bytes: srcBlob.size, seconds: +Number(rec.duration).toFixed(3), repair: out.sourceRepair, external: EXTERNAL || null });
+
+          out.sourceContent = describe((await frameCodes(srcBlob, CLIP_START, 90)).frames);
+          log('source, window the card uses (3 s), content read', {
+            first: out.sourceContent.first, advance: out.sourceContent.actualAdvance + '/' + out.sourceContent.expectedAdvance,
+            duplicatePairs: out.sourceContent.duplicatePairs, holds: out.sourceContent.holds, jumps: out.sourceContent.jumps,
+          });
+
+          if (params.get('controls') !== '0') {
+            out.controls = {};
+            const wanted = params.get('controls');
+            const kinds = wanted && wanted !== 'all' ? wanted.split(',') : Object.keys(SEQUENCES);
+            for (const kind of kinds.filter((k) => SEQUENCES[k])) {
+              out.controls[kind] = await control(kind, srcBlob, CLIP_START);
+              log('control ' + kind, { ...out.controls[kind], trace: undefined, traceBefore: undefined });
+              line('control ' + kind + ' trace (ms:code at each change): ' + out.controls[kind].trace, 'pre');
+              if (out.controls[kind].traceBefore) line('   before the mark: ' + out.controls[kind].traceBefore, 'pre');
+            }
+          }
+
+          const base = defaults.createDefaultState();
+          const state = {
+            ...base,
+            artwork: { ...base.artwork, imageId: rec.id, clipStart: CLIP_START, clipLength: CLIP_LENGTH, muteAudio: !withSound },
+          };
+          if (params.get('export') === '0') {
+            out.ok = true;
+            out.skippedExport = true;
+            throw Object.assign(new Error('controls only'), { controlsOnly: true });
+          }
+
+          // A person clicks Download from an idle page. The reads above just
+          // seeked a clip ninety times; let that settle so it is not measured.
+          await new Promise((r) => setTimeout(r, 1500));
+
+          const progress = [];
+          const t0 = performance.now();
+          const result = await videoMod.renderCardVideo(state, {
+            scale: 2,
+            onProgress: (f) => progress.push([+((performance.now() - t0) / 1000).toFixed(2), +f.toFixed(3)]),
+          });
+          out.exportWallSeconds = +((performance.now() - t0) / 1000).toFixed(2);
+          out.repair = result.repair;
+          out.recorder = result.recorder;
+          out.framesSkipped = result.framesSkipped;
+          out.reportedDuration = result.duration;
+          void save('start-export.mp4', result.blob);
+          log('exported', { wallSeconds: out.exportWallSeconds, bytes: result.blob.size, recorder: result.recorder, framesSkipped: result.framesSkipped, duration: result.duration, repair: result.repair });
+
+          const buf = await result.blob.arrayBuffer();
+          out.container = walk(buf);
+          log('container: video', { samples: out.container.video.samples, seconds: out.container.video.seconds, fragments: out.container.video.fragments, over60ms: out.container.video.over60ms });
+          if (out.container.audio) log('container: audio', { samples: out.container.audio.samples, seconds: out.container.audio.seconds, startsAt: out.container.audio.startsAt, fragments: out.container.audio.fragments });
+          line('video sample durations, first 3 s (ms): ' + out.container.video.firstMs.join(' '), 'pre');
+
+          const exportRead = await frameCodes(result.blob, 0, Math.round(CLIP_LENGTH * FPS));
+          out.exportContent = describe(exportRead.frames);
+          out.exportContent.expectedFirst = out.sourceContent.first;
+          out.exportFrames = exportRead.frames.slice(0, 90);
+          log('export, content read', {
+            size: exportRead.width + 'x' + exportRead.height, playerDuration: exportRead.duration,
+            first: out.exportContent.first, sourceWindowStartedAt: out.sourceContent.first,
+            advance: out.exportContent.actualAdvance + '/' + out.exportContent.expectedAdvance,
+            duplicatePairs: out.exportContent.duplicatePairs, skipsOfOne: out.exportContent.skipsOfOne,
+            holds: out.exportContent.holds, jumps: out.exportContent.jumps, lowConfidence: out.exportContent.lowConfidence,
+          });
+          line('export source-frame steps, first 3 s: ' + out.exportContent.deltas.join(' '), 'pre');
+          line('export codes, first 3 s: ' + exportRead.frames.slice(0, 90).map((f) => f.code).join(' '), 'pre');
+
+          if (withSound) {
+            out.sound = await soundProfile(buf, 3);
+            log('export sound, first 3 s', { onset: out.sound.onsetSeconds, gaps: out.sound.gaps, decodedSeconds: out.sound.decodedSeconds, error: out.sound.error });
+            if (out.sound.firstSecondDb) line('sound level, first second, dBFS per 10 ms: ' + out.sound.firstSecondDb.join(' '), 'pre');
+          }
+          out.progress = progress;
+
+          const holdsEarly = out.exportContent.holds.filter((h) => h.at < 2);
+          const jumpsEarly = out.exportContent.jumps.filter((j) => j.at < 2);
+          out.ok = holdsEarly.length === 0 && jumpsEarly.length === 0 && out.container.video.over60ms.filter((x) => x.at < 2).length === 0;
+          line(
+            (out.ok ? 'START ok' : 'START HAS A HITCH') +
+              ' — holds in first 2 s: ' + JSON.stringify(holdsEarly) +
+              ', jumps: ' + JSON.stringify(jumpsEarly) +
+              ', long samples: ' + JSON.stringify(out.container.video.over60ms.filter((x) => x.at < 2)),
+            out.ok ? 'ok' : 'bad',
+          );
+        } catch (e) {
+          if (!(e && e.controlsOnly)) {
+            out.ok = false;
+            out.error = String((e && e.stack) || e);
+            line('ERROR ' + out.error, 'bad');
+          }
+        } finally {
+          if (rec && images && params.get('keep') !== '1') await images.deleteRecord(rec.id).catch(() => {});
+        }
+        out.hiddenEpisodes = hiddenEpisodes;
+        out.visibilityAtEnd = document.visibilityState;
+        window.__START_CHECK = out;
+        post('/result', out);
+        line(out.ok ? 'FINISHED — start is clean.' : 'FINISHED — see above.', out.ok ? 'ok' : 'bad');
+      })();
+    </script>
+  </body>
+</html>

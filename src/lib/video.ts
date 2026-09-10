@@ -10,14 +10,23 @@
  * Recording happens in real time — the browser has no way to encode a canvas
  * faster than playback — so a 30 s clip takes 30 s to export.
  *
- * What `MediaRecorder` hands back is not quite a finished file, and the last
- * step here is `repairFragmentedMp4`: see `lib/mp4.ts` for the two container
- * faults it fixes and why they are fixed there rather than avoided here.
+ * The frames are encoded by one of the two recorders in `lib/recorders.ts`:
+ * WebCodecs wherever it exists, which writes the file itself
+ * (`lib/mp4write.ts`), and `MediaRecorder` otherwise, whose output is then
+ * put right by `repairFragmentedMp4` (`lib/mp4.ts`). Why there are two, and
+ * why the first is preferred, is at the top of `lib/recorders.ts`.
  */
 
 import type { CardState, RenderAssets } from '../types';
 import { MAX_CLIP_SECONDS, openVideoForExport } from './images';
-import { repairFragmentedMp4, type RecordingRepair } from './mp4';
+import type { RecordingRepair } from './mp4';
+import {
+  MediaStreamRecorder,
+  WebCodecsRecorder,
+  planWebCodecs,
+  type AudioGraph,
+  type CardRecorder,
+} from './recorders';
 import { prepareAssets, renderToCanvas } from './render';
 import { slugify } from './format';
 
@@ -74,8 +83,27 @@ export interface VideoSupport {
   extension: 'mp4' | 'webm' | null;
 }
 
+/** Whether the WebCodecs recorder can exist here at all; the codecs are checked at export time. */
+export function webCodecsAvailable(): boolean {
+  return (
+    typeof VideoEncoder === 'function' &&
+    typeof VideoFrame === 'function' &&
+    typeof AudioEncoder === 'function' &&
+    typeof HTMLCanvasElement !== 'undefined'
+  );
+}
+
 export function videoSupport(): VideoSupport {
-  if (typeof MediaRecorder === 'undefined' || typeof HTMLCanvasElement === 'undefined') {
+  if (typeof HTMLCanvasElement === 'undefined') {
+    return { supported: false, mimeType: null, extension: null };
+  }
+  // WebCodecs writes MP4 itself (`lib/mp4write.ts`), so it does not need
+  // MediaRecorder to know the type. See `lib/recorders.ts` for why it is
+  // preferred wherever it exists.
+  if (webCodecsAvailable()) {
+    return { supported: true, mimeType: 'video/mp4', extension: 'mp4' };
+  }
+  if (typeof MediaRecorder === 'undefined') {
     return { supported: false, mimeType: null, extension: null };
   }
   if (typeof HTMLCanvasElement.prototype.captureStream !== 'function') {
@@ -90,6 +118,19 @@ export function videoSupport(): VideoSupport {
   });
   if (!picked) return { supported: false, mimeType: null, extension: null };
   return { supported: true, mimeType: picked.mimeType, extension: picked.extension };
+}
+
+/** The MediaRecorder type to fall back to, if any, when WebCodecs cannot be used. */
+function mediaRecorderSupport(): Candidate | null {
+  if (typeof MediaRecorder === 'undefined') return null;
+  if (typeof HTMLCanvasElement.prototype.captureStream !== 'function') return null;
+  return pickMimeType((type) => {
+    try {
+      return MediaRecorder.isTypeSupported(type);
+    } catch {
+      return false;
+    }
+  });
 }
 
 export interface ClipWindow {
@@ -131,8 +172,12 @@ export interface VideoExportResult {
   height: number;
   /** Measured from the finished file, not from the window that was asked for. */
   duration: number;
-  /** What the container repair found and changed. */
+  /** What the container repair found and changed; nothing, on the WebCodecs path. */
   repair: RecordingRepair;
+  /** Which encoder path made the file. */
+  recorder: 'webcodecs' | 'mediarecorder';
+  /** Frames the encoder was too busy to take; zero on a machine that keeps up. */
+  framesSkipped: number;
 }
 
 export class VideoExportError extends Error {}
@@ -158,13 +203,6 @@ export function blockedByVisibility(visibility: string): string | null {
  */
 export const MAX_HIDDEN_SECONDS = 60;
 
-/**
- * How long the clip runs before the recorder starts, to bring both decoders
- * up. Long enough for the audio pipeline, which is the slow one; short enough
- * that nobody reads it as the export having stalled.
- */
-const PRIME_MS = 500;
-
 function waitForEvent(target: EventTarget, name: string, timeoutMs: number): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -180,12 +218,22 @@ function waitForEvent(target: EventTarget, name: string, timeoutMs: number): Pro
   });
 }
 
-const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
 /**
- * The next decoded frame, or a short wait if none arrives. Chrome's
- * `requestVideoFrameCallback` reports exactly that; where it is missing, a
- * moving `currentTime` says the same thing a little more coarsely.
+ * The next decoded frame, read as `currentTime` moving, or a short wait if
+ * it never does.
+ *
+ * **Not `requestVideoFrameCallback`.** On this element — opened for the export
+ * and never attached to the document — one call to it freezes the clip for
+ * about a quarter of a second, 1.0–1.1 s later: picture and sound both stop
+ * while the clock runs on, and the frames come back with a jump. It does not
+ * matter whether the element is recording, paused in between or seeked; the
+ * freeze follows the call. This function used it, once, right after the
+ * warm-up play in an earlier version, which put the freeze 0.4 s into every
+ * exported file (`dev/start-check.html`, controls `rvfc-only` and
+ * `rvfc-late`, is where that was pinned down). A moving `currentTime` says
+ * "a frame has arrived" a few milliseconds more coarsely and has no such
+ * side effect. The preview loop, on an element that *is* in the document,
+ * still uses `requestVideoFrameCallback` and has not shown this.
  *
  * Never hangs: every caller has a deadline of its own behind it, and a missed
  * frame here only costs the moment it was there to save.
@@ -206,10 +254,7 @@ function nextDecodedFrame(video: HTMLVideoElement): Promise<void> {
     guard = setTimeout(once, 1200) as unknown as number;
     poll = setInterval(() => {
       if (video.currentTime > at) once();
-    }, 16) as unknown as number;
-    if (typeof video.requestVideoFrameCallback === 'function') {
-      video.requestVideoFrameCallback(() => once());
-    }
+    }, 8) as unknown as number;
   });
 }
 
@@ -225,6 +270,8 @@ async function seekTo(video: HTMLVideoElement, time: number): Promise<void> {
 }
 
 interface AudioRoute {
+  /** The nodes, for a recorder that wants to tap the sound directly. */
+  graph: AudioGraph;
   /** Brings the context back after a hidden page suspended it. */
   resume: () => Promise<void>;
   detach: () => void;
@@ -292,6 +339,7 @@ async function attachAudio(
     video.muted = false;
     video.volume = 1;
     return {
+      graph: { context, source, destination },
       resume: async () => {
         if (context.state === 'suspended') await context.resume().catch(() => undefined);
       },
@@ -325,6 +373,7 @@ function bitrateFor(width: number, height: number): number {
   const budget = Math.round(width * height * VIDEO_FPS * BITS_PER_PIXEL);
   return Math.min(MAX_BITRATE, Math.max(MIN_BITRATE, budget));
 }
+
 
 /**
  * Records the card over its background clip and returns the encoded file.
@@ -371,42 +420,30 @@ export async function renderCardVideo(
   const canvas = document.createElement('canvas');
   let audio: AudioRoute | null = null;
   let stream: MediaStream | null = null;
-  let recorder: MediaRecorder | null = null;
+  let recorder: CardRecorder | null = null;
 
   try {
     await seekTo(video, clip.start);
-    // First paint sizes the canvas and gives the stream a complete frame to
+    // First paint sizes the canvas and gives the recorder a complete frame to
     // start from, so no empty frame can lead the file.
     renderToCanvas(canvas, state, assets, scale);
 
+    // The MediaRecorder path records this stream; the WebCodecs path only
+    // needs the audio destination it carries. It is made either way, so the
+    // sound is wired up identically whichever recorder is chosen.
     stream = canvas.captureStream(VIDEO_FPS);
-    // A canvas track can be told to sample *now* rather than at its own next
-    // instant. Only used at the seam after a pause, where waiting for the
-    // sampler costs a frame of dead time in the file.
-    const canvasTrack = stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack | undefined;
-    const frameRequest =
-      canvasTrack && typeof canvasTrack.requestFrame === 'function'
-        ? () => canvasTrack.requestFrame()
-        : null;
     if (!state.artwork.muteAudio) audio = await attachAudio(video, stream);
 
-    const active = new MediaRecorder(stream, {
-      mimeType: support.mimeType,
-      videoBitsPerSecond: bitrateFor(canvas.width, canvas.height),
-    });
-    recorder = active;
-
-    const chunks: Blob[] = [];
-    active.ondataavailable = (event) => {
-      if (event.data && event.data.size > 0) chunks.push(event.data);
+    const bitrate = bitrateFor(canvas.width, canvas.height);
+    const withMediaRecorder = (): CardRecorder => {
+      const fallback = mediaRecorderSupport();
+      if (!fallback) {
+        throw new VideoExportError('This browser cannot record video. Try Chrome, Edge or Safari.');
+      }
+      return new MediaStreamRecorder(stream!, fallback.mimeType, fallback.extension, bitrate);
     };
-    const stopped = new Promise<void>((resolve, reject) => {
-      active.onstop = () => resolve();
-      active.onerror = () => reject(new VideoExportError('The recorder failed mid-export.'));
-    });
-    // Marks the rejection handled if the export is cancelled before the await
-    // below is reached; awaiting it still surfaces the failure.
-    stopped.catch(() => undefined);
+    const plan = await planWebCodecs(canvas.width, canvas.height, VIDEO_FPS, bitrate, audio?.graph ?? null);
+    recorder = plan ? new WebCodecsRecorder(canvas, VIDEO_FPS, plan, audio?.graph ?? null) : withMediaRecorder();
 
     const play = async () => {
       try {
@@ -421,28 +458,46 @@ export async function renderCardVideo(
     };
 
     /**
-     * A throwaway run at the clip before anything is recorded.
+     * Pre-roll on the still frame, then one play, straight into the take.
      *
-     * `play()` resolves well before either decoder is delivering, and whatever
-     * is not delivering when the recorder starts is simply absent from the
-     * front of that track. For the picture that costs a held frame; for the
-     * sound it costs the alignment of the entire file, because both tracks are
-     * stamped from zero regardless and the sound then runs ahead of the
-     * picture by however late it was. Half a second thrown away here takes the
-     * race away — and `repairFragmentedMp4` still catches whatever is left.
+     * An earlier version ran the clip for half a second first, paused it and
+     * seeked back to the start, to have both decoders delivering before the
+     * recorder started. Every file it made froze for a quarter of a second
+     * about 0.4 s in. Two things were behind that, and neither was the
+     * warm-up play as such:
+     *
+     * - `requestVideoFrameCallback`, which the warm-up used to wait for its
+     *   first frame, freezes this detached element 1.0–1.1 s after the call —
+     *   see `nextDecodedFrame`, which no longer uses it.
+     * - an encoder coming up freezes the clip's decoder for 100–250 ms, a
+     *   quarter of a second after it is handed its first frame — so the
+     *   recorder is brought up here, on the still frame, while the clip is
+     *   still paused and there is nothing to disturb. See `lib/recorders.ts`
+     *   for what each recorder can do with the frames that costs.
+     *
+     * With both moved out of the way, a first play from a fresh seek records
+     * clean from its first frame, so there is no longer a warm-up play, and
+     * nothing here pauses or seeks the element between `play()` and the end
+     * of the take.
+     *
+     * `play()` resolves before the decoder is delivering, and the take begins
+     * only once a decoded frame has actually arrived and been painted. The
+     * sound is live from the moment the graph exists (see `attachAudio`).
      */
-    await play();
-    await nextDecodedFrame(video);
-    await wait(PRIME_MS);
-    video.pause();
-    await seekTo(video, clip.start);
-    renderToCanvas(canvas, state, assets, scale);
+    if (!(await recorder.preroll())) {
+      // The WebCodecs encoder took frames and gave nothing back. There is
+      // still time to record the take the old way.
+      recorder.abort();
+      recorder = withMediaRecorder();
+      await recorder.preroll();
+    }
+    const active = recorder;
 
     await play();
-    // Started after playback so the file does not open on a held frame while
-    // the decoder spins up. Tracks added later would not be recorded, which is
-    // why the audio is wired in above.
-    active.start(250);
+    await nextDecodedFrame(video);
+    renderToCanvas(canvas, state, assets, scale);
+    active.begin();
+    active.frame();
 
     const end = clip.start + clip.length;
     // Recording is real time, so a clip that stalls would otherwise sit here
@@ -534,10 +589,8 @@ export async function renderCardVideo(
         tailAt += away;
 
         await audio?.resume();
-        if (active.state === 'paused') active.resume();
-        // `captureStream` would otherwise wait for its own next sampling
-        // instant, which is up to a frame of dead time at the join.
-        frameRequest?.();
+        active.resume();
+        active.frame();
         hiddenSince = 0;
         phase = 'recording';
       }
@@ -550,7 +603,7 @@ export async function renderCardVideo(
           hiddenSince = performance.now();
           // Recorder first: any frame painted between here and the video
           // stopping would be encoded as part of the pause.
-          if (active.state === 'recording') active.pause();
+          active.pause();
           video.pause();
           return;
         }
@@ -585,6 +638,7 @@ export async function renderCardVideo(
         if (now - painted >= paintGap - 1) {
           painted = now;
           renderToCanvas(canvas, state, assets, scale);
+          active.frame();
           const elapsed = Math.max(0, video.currentTime - clip.start);
           // Reporting every paint would re-render React 60 times a second for
           // a progress bar that moves 2%.
@@ -618,31 +672,30 @@ export async function renderCardVideo(
     });
 
     video.pause();
-    active.stop();
-    await stopped;
+    let file;
+    try {
+      file = await active.finish();
+    } catch (error) {
+      throw new VideoExportError(
+        error instanceof Error ? error.message : 'The recorder failed to finish the file.',
+      );
+    }
+    recorder = null;
     options.onProgress?.(1);
 
-    const recorded = new Blob(chunks, { type: support.mimeType });
-    if (recorded.size === 0) throw new VideoExportError('The recorder produced an empty file.');
-
-    // What comes out of `MediaRecorder` says it is zero seconds long and, when
-    // the sound started late, plays out of step for its whole length. Neither
-    // is worth avoiding by recording differently; both are a few fields in the
-    // container. See `lib/mp4.ts`.
-    const { buffer, repair } = repairFragmentedMp4(await recorded.arrayBuffer());
-    const blob = repair.patched ? new Blob([buffer], { type: support.mimeType }) : recorded;
-
     return {
-      blob,
-      mimeType: support.mimeType,
-      extension: support.extension,
+      blob: file.blob,
+      mimeType: file.mimeType,
+      extension: file.extension,
       width: canvas.width,
       height: canvas.height,
-      duration: repair.patched ? repair.durationSeconds : clip.length,
-      repair,
+      duration: file.duration || clip.length,
+      repair: file.repair,
+      recorder: file.recorder,
+      framesSkipped: file.framesSkipped,
     };
   } finally {
-    if (recorder && recorder.state !== 'inactive') recorder.stop();
+    recorder?.abort();
     audio?.detach();
     stream?.getTracks().forEach((track) => track.stop());
     release();

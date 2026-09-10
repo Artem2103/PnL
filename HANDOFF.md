@@ -21,6 +21,56 @@ the fourth.
 
 ---
 
+## Start here (2026-09-11, second pass)
+
+**The freeze half a second into every exported video is fixed, on `main`.** Reported as *"at
+around 0.5 s of the beginning of the video there is a lag, no matter the background video"*. Read
+*The lag at 0.5 s, reported 2026-09-11* under **Background placement and video** — it is long,
+because the cause turned out to be two causes, neither of them where the code was looking, and the
+fix is a different recorder.
+
+The short version:
+
+- **What it was.** Two things froze the clip's decoder during the first second of every take, and
+  the exporter had been built so that both landed inside the file. One call to
+  `requestVideoFrameCallback` on the export's detached `<video>` freezes it for ~250 ms about 1.05 s
+  later — the old warm-up play made exactly one such call, so the freeze fell 0.4 s into every file.
+  And an encoder coming up (MediaRecorder's or WebCodecs', hardware) starves the same decoder for
+  100–250 ms a quarter of a second after it is handed its first frame. The pause-and-seek-back
+  warm-up, which the handoff below still describes as the fix for the sound offset, was not itself
+  the cause; it was only where the first freeze was scheduled from.
+- **What changed.** `src/lib/video.ts` no longer waits on `requestVideoFrameCallback` anywhere
+  (`nextDecodedFrame` polls `currentTime`), no longer warms up by playing, pausing and seeking back,
+  and no longer talks to `MediaRecorder` directly. It drives a `CardRecorder` from the new
+  `src/lib/recorders.ts`: **`WebCodecsRecorder`** where the browser has `VideoEncoder` and
+  `AudioEncoder` (Chrome, Edge — this machine), which pre-rolls the encoder on the still first frame
+  before the clip plays, throws those frames away, forces a key frame on the first frame of the
+  take, and writes a progressive MP4 itself through the new `src/lib/mp4write.ts` (H.264 High,
+  AAC 192 kbit/s, key frame every 2 s, real durations, no repair needed); and **`MediaStreamRecorder`**
+  as the fallback, which is the old MediaRecorder path with `repairFragmentedMp4` after it.
+- **What was measured.** A new instrument, `dev/start-check.html`, exports a card over a clip whose
+  every frame carries its own number in a pixel code, then reads the finished file frame by frame.
+  Before: the picture held for 5–13 frames at 0.15–0.6 s and jumped to catch up, with 50–310 ms of
+  silence in the sound at the same moment, in every one of ten runs. After: 179 of 179 source
+  frames in order, no hold over two frames, sound from the first 10 ms with no gap, in four runs
+  over both a fragmented and a progressive source; `dev/mp4-cadence.mjs` reads the file at 30.17
+  fps with 2.5 ms jitter and no gap over one frame, against 5.5 ms before. The hidden-window pause
+  was exercised too (window minimised for 3 s mid-take): all 359 frames of a 12 s clip in order,
+  file 11.93 s.
+
+Touches `src/lib/video.ts`, `src/lib/recorders.ts` (new), `src/lib/mp4write.ts` (new),
+`src/lib/recorders.test.ts` and `src/lib/mp4write.test.ts` (new), `README.md`, `dev/start-check.html`
+(new), `dev/flatten-mp4.js` (new), `dev/audio-check.html` (reads progressive files now). Typecheck,
+build and all 172 unit tests pass. **The MediaRecorder fallback has not been run end to end in this
+pass** — it is the previous code behind an interface, and every browser this was tested on took the
+WebCodecs path; see open item 17.
+
+On the other two asks — fps, quality, audio: the WebCodecs path records High profile instead of
+Baseline at the same bitrate, sound at 192 kbit/s AAC instead of MediaRecorder's default, and frame
+timing that is exact to the slot rather than sampled. Frame rate stays at 30: the clips people
+upload are 30 fps, the card itself does not move, and 60 would double encode load for duplicated
+frames. It is one constant (`VIDEO_FPS`) if a 60 fps source ever warrants it.
+
 ## Start here (2026-09-11)
 
 **The red avatar badge from `reference/frame.png` is implemented, on `main` and deployed** as
@@ -163,7 +213,7 @@ trip has been exercised in a real browser; that one exception is open item 9.
 ```bash
 npm install
 npm run dev
-npm test          # 144 tests, all passing
+npm test          # 172 tests, all passing
 npm run typecheck
 npm run build     # clean
 ```
@@ -172,8 +222,9 @@ The app renders one card format (840 × 570) matching the Axiom reference cards,
 1×/2×/3×, exports MP4/WebM when the background is a clip, and can store everything either in the
 browser alone or in a Supabase account.
 
-`npm test` is 144 as of 2026-08-25 — the colour pass added `color.test.ts` and `themes.test.ts`,
-and two more cases to `draw.test.ts`.
+`npm test` is 172 as of 2026-09-11 — the colour pass added `color.test.ts` and `themes.test.ts`
+(144), the export passes added `mp4.test.ts` (160), and the recorder split added `mp4write.test.ts`
+and `recorders.test.ts` (172).
 
 **With no `.env.local`, `npm install && npm run dev` is the whole setup** and the studio opens with
 no sign-in. That is local mode; see **Authentication**. Wiring up an account adds two steps that
@@ -1050,6 +1101,134 @@ Frame cadence was re-measured with `dev/cadence-check.html` after the change and
 purpose — someone else's clip is not this project's to redistribute — so drop any MP4 there before
 running it.
 
+### The lag at 0.5 s, reported 2026-09-11
+
+*"At around 0.5 s of the beginning of the video there is a lag, no matter the background video."*
+It was real, it was in every file, and nothing in the two sections above would have found it: the
+cadence harness deliberately measures 2–5 s of its window, and the sound harness reads totals.
+Sample durations in the container were fine. What froze was the **content** — the canvas kept being
+repainted and the recorder kept sampling it, but the frame the `<video>` handed `drawImage` did not
+change for a quarter of a second, and then jumped.
+
+**The instrument, first, because everything below came out of it.** `dev/start-check.html` records
+a synthetic clip whose every frame carries its own frame number as a 12-bit black-and-white code in
+the top-right corner (past the scrim's last stop, so the card leaves it alone), exports a card over
+it through the real `renderCardVideo`, and then reads the finished file three ways: the container
+(every sample duration, both tracks), the picture (the file is *seeked* frame by frame and the code
+read back — seeking cannot drop a frame the way playback can), and the sound (decoded, and its level
+read in 10 ms windows). A held frame is the code not advancing; a jump is it advancing by more than
+one; a hole in the sound is a run of silent windows. The same read is done on the source over the
+window the card used, so the source's own defects can be told from the exporter's — and the
+synthetic source *has* defects: MediaRecorder's own start-up freeze sits in its first two seconds,
+which is why the default window starts at 3 s and why a `clipStart` under 2 s in that harness
+measures the source, not the exporter.
+
+**What the shipping export looked like**, ten runs, both a fragmented and a progressive
+(`?flat=1`, through `dev/flatten-mp4.js`) source:
+
+| | |
+|---|---|
+| picture | code held for 5–13 frames beginning at 0.15–0.4 s, then jumps of 3–5 to catch up; a second hold of 3–8 frames at ~1.0 s |
+| sound | 50–310 ms of digital silence (not the −100 dBFS keep-alive floor: zeros) starting at 0.23–0.32 s, i.e. under the picture hold |
+| container | clean — no sample over 60 ms in the first second |
+| Chrome's own media log (CDP `Media` domain) | nothing: no buffering change, no decoder change, no underflow |
+
+Both picture and sound stopping while the clock ran on — frames then dropped to catch up — with the
+pipeline logging nothing, means the pipeline was being held from outside. The rest was finding by
+what.
+
+**Pulling the start apart.** The harness runs a set of *controls* before the export: a bare
+`<video>` on the same clip and a canvas, the code read on every animation frame, while one thing is
+done to it. Twenty-odd of these, one variable at a time, gave the following, and the interesting
+part is that the first answer was wrong:
+
+1. The shipping sequence (play 0.5 s, pause, seek back, play) held for ~230 ms at 0.37 s after the
+   second play, every run. A cold start (one seek, one play) never did. A rest of ≥ 400 ms paused
+   after the seek-back made it clean; 200 ms did not. *So: the seek-back.* Except that a pause with
+   no seek at all stalled too, and so did a seek while playing, and so did a rate change — and a
+   rest hid all of them. Something was being scheduled, not caused.
+2. Lining up every stalled run against the one call they shared: **`requestVideoFrameCallback`.**
+   Every sequence that stalled had called it ~1.05 s before the stall; every clean one had not,
+   including the rests (the stall fell inside them). `rvfc-only` — one call right after play, nothing
+   else, no recorder — freezes the clip 263 ms at 1.07 s. `rvfc-late` — the same call 2 s into
+   playback — freezes it at 3.12 s. The freeze follows the call. This is on a detached element; the
+   preview, whose element is in the document, uses it per frame and has never shown this. The old
+   warm-up used it once, right after its first play; the seek-back put the take's zero 0.65 s later;
+   1.05 − 0.65 ≈ 0.4 s into every file.
+3. With that removed a second, smaller beat remained: 100–250 ms, 0.25–0.4 s after a recorder
+   starts. MediaRecorder or WebCodecs, MP4 or WebM, with or without audio, full size or quarter
+   size — but *not* with a software H.264 encoder, and not if the recorder starts once the clip has
+   been playing for 0.6 s or more. It is the hardware encoder coming up in the GPU process and
+   starving the hardware decoder next to it. A throwaway recorder beforehand does not remove it
+   (the real one still pays ~120 ms). Starting the recorder on the still frame *before* the clip
+   plays, paused, and resuming at the take, removes it entirely (`preroll-*`: clean, zero dropped
+   frames, seven runs) — for MediaRecorder at the cost of the pre-roll frames being in the file,
+   a third of a second of still at the front, and with a further trap: pause it before its encoder
+   is up and the pause leaks (frames drawn during it are encoded, the timeline shifts, the whole
+   take stutters). WebCodecs has no such cost: pre-roll chunks are simply not written, and the
+   first frame of the take is asked to be a key frame.
+
+**So the fix is a different recorder**, and `renderCardVideo` now drives an interface,
+`CardRecorder` in `src/lib/recorders.ts`, with two implementations:
+
+- **`WebCodecsRecorder`** — `VideoEncoder` (H.264 High at level 4.0, falling to Main or Baseline
+  if the machine's encoder will not, `latencyMode: 'realtime'`, variable bitrate at the same budget
+  as before) and `AudioEncoder` (AAC-LC, 192 kbit/s) fed from an `AudioWorklet` tap spliced into the
+  same `attachAudio` graph (element → source → tap → stream destination). `preroll()` encodes the
+  still canvas at 30 fps until the encoder has produced output (or 1.5 s, in which case it answers
+  false and the exporter falls back before the take). `begin()` marks the take's zero; `frame()` is
+  called after every paint and takes at most one frame per 1/30 s slot, stamped on the slot grid;
+  pre-roll frames sit below the take's zero and their chunks are dropped. `pause`/`resume` shift
+  both clocks by the time away and force a key frame at the join. `finish()` flushes (bounded to
+  5 s) and hands the chunks to `writeMp4`.
+- **`MediaStreamRecorder`** — the old path: `MediaRecorder` on `captureStream`, started at the take,
+  `repairFragmentedMp4` after. It cannot pre-roll without polluting the file, so it still pays the
+  encoder's start-up freeze; it is what a browser without WebCodecs gets.
+
+`src/lib/mp4write.ts` writes the WebCodecs output as a **progressive MP4** — `ftyp`, one `moov` with
+full tables, one `mdat` with the tracks interleaved sample by sample: `avc1` + the encoder's `avcC`,
+`mp4a` + an `esds` around its AudioSpecificConfig, `stts` from the slot timestamps (a held frame
+keeps its real length), `stss` from the key frames, `ctts` version 1 only if the encoder ever
+reordered (it does not, in realtime mode), and an `elst` empty edit for whichever track starts
+after the other. Durations are real, so nothing is repaired and `VideoExportResult.duration` is the
+file's. Unit-tested by parsing what it writes back (`mp4write.test.ts`).
+
+**Two WebCodecs traps met on the way, both fatal to the export and both now avoided:**
+
+- **Negative timestamps hang the hardware encoder.** The first pre-roll used timestamps below zero
+  so the take could start at zero; the encoder produced five frames, queued thirteen, and its
+  `flush()` never resolved — the export sat forever. Pre-roll frames are now at 0, 33 ms, 66 ms …
+  and the take begins one empty slot after them; the muxer takes the take's first timestamp as
+  the movie's zero.
+- **`latencyMode: 'quality'` does the same.** Same symptom, same hang. `realtime` is what the
+  canvas is anyway, and it is what was measured clean.
+
+Both are also guarded: `preroll()` refuses an encoder that has produced nothing after 1.5 s, and
+`finish()` gives up waiting on a flush after 5 s and writes what it has.
+
+**Verified**, driven Chrome 152 on this machine, isolated profile, fresh profile per run:
+
+| | before (shipping) | after (WebCodecs) |
+|---|---|---|
+| source frames in order, first 3 s | held 5–13 frames at 0.15–0.6 s, jumps of 3–5 | **179/179, no hold over 2 frames** (4 runs, both source shapes) |
+| sound, first 3 s | 50–310 ms of zeros at ~0.25 s | **onset ≤ 10 ms, no gaps** |
+| `dev/mp4-cadence.mjs` on the file | 29.85 fps, 5.5 ms jitter | **30.17 fps, 2.5 ms jitter, longest gap 33.3 ms** |
+| file | fragmented, `mvhd` 0 until repaired | progressive, 5.995 s stated, key frames at 1, 61, 121 |
+| window minimised 3 s mid-take, 12 s clip | not re-measured | 359/359 frames in order, 11.93 s; one 5-frame hold at the join |
+| wall time, 6 s clip | 7.1 s | 6.85 s |
+
+The one residual is at the hidden-window join: after the window comes back the decoder takes a few
+frames to flow again, and the recorder resumes on the first moving `currentTime`, so the join shows a
+~170 ms hold and a catch-up jump. The old path had the same, measured only by cadence. Waiting longer
+before resuming would trade the hold for a skip in the footage; neither is better, and it only
+happens when someone hides the window during an export. Left as is, noted in open item 17.
+
+**What this changes for the other sections above.** *The sound and the length* still describes the
+MediaRecorder path faithfully and that path is still there as the fallback, but on any browser with
+WebCodecs none of it runs: there is no fragmented file, nothing to repair, and the "prime" it
+describes as narrowing the race no longer exists. The two traps in *Four traps that cost time here*
+about the audio context and about painting faster than the sampler still apply to both paths.
+
 ### The clip window went from 15 s to 30 s
 
 `MAX_CLIP_SECONDS` in `src/lib/images.ts` is now 30. The Length slider, the upload hint and the
@@ -1246,6 +1425,21 @@ costs nothing.
 
 ---
 
+17. **The video export has two recorders and only one has been run since the split (2026-09-11).**
+    `WebCodecsRecorder` is what every browser tested here takes and is what *The lag at 0.5 s*
+    measures. `MediaStreamRecorder` is the old MediaRecorder path moved behind the `CardRecorder`
+    interface unchanged — start at the take, repair the container after — and has not been driven
+    end to end since; a browser without `VideoEncoder`/`AudioEncoder` (older Safari, Firefox before
+    130) is where it would run, and where it would still show the encoder's start-up freeze at
+    ~0.3 s, because MediaRecorder cannot pre-roll without writing the pre-roll into the file.
+    Three smaller notes under the same heading: the hidden-window join still costs a ~170 ms hold
+    and a catch-up jump while the decoder gets going again (measured; see the end of that section);
+    the preview loop still uses `requestVideoFrameCallback` on its in-document element, which has
+    never shown the detached-element freeze but has not been looked at with the same instrument;
+    and `dev/start-check.html` cannot measure a `clipStart` under 2 s without measuring the
+    synthetic source's own start-up freeze — a source written through `mp4write.ts` from WebCodecs
+    would fix that, and would be the first use of the writer outside the exporter.
+
 ## Environment notes
 
 - **`reference/` is gitignored.** The five source screenshots stay local — they are someone else's
@@ -1341,6 +1535,38 @@ costs nothing.
 
 ---
 
+- **`dev/start-check.html` is the instrument for anything at the start of an export**, added
+  2026-09-11, and the only one that reads the *picture* rather than timestamps. Its source clip has
+  a frame number in every frame; the export is seeked frame by frame and the numbers read back. It
+  also runs *controls* — one thing done to a bare `<video>` at a time, listed in `SEQUENCES` —
+  which is how `requestVideoFrameCallback` was found to freeze a detached element a second later
+  and a hardware encoder's start to freeze the decoder next to it. Reach for the controls before
+  changing anything in the start sequence: `?controls=cold,rvfc-only,preroll-50-norvfc&export=0`
+  answers in forty seconds what a reading of Chrome's source would not. Two things it needs: the
+  isolated Chrome (below) and, because `addLocalMedia` caps the library at 12 clips, a fresh
+  profile per run — a run that was killed mid-way leaves its clip behind, and the thirteenth run
+  fails with "You can keep 12 artwork files". The scratch launcher used here deleted
+  `--user-data-dir` before every launch.
+- **Do not edit a source file while a harness run is in progress.** Vite reloads the page on any
+  change to something it imports, the run restarts from the top, and the numbers that come back are
+  from the new code with the old page's state. This is the HMR trap from `cadence-check` again, but
+  it bit harder this time because `video.ts` was being edited between runs.
+- **Chrome's own media log is reachable over CDP** (`Media.enable`, then `Media.playerEventsAdded`,
+  `playerPropertiesChanged`, `playerMessagesLogged`) — the same data as `chrome://media-internals`,
+  per player, with decoder names and buffering-state changes. It was the thing that showed the
+  pipeline logging *nothing* during the freeze, which pointed outside it. Note the events arrive
+  batched, so their timestamps are the batch's, not the event's.
+- **Console output of the driven page is reachable the same way** (`Runtime.enable` + `Log.enable`
+  replay what is buffered; `Runtime.consoleAPICalled` streams what follows). A `console.debug` at
+  each phase of the export, read this way, is how the WebCodecs `flush()` hang was placed in under a
+  minute; the debug lines were removed once it was.
+- **WebCodecs on this machine (Chrome 152, hardware H.264):** `avc1.640028`, `avc1.4D0028` and
+  `avc1.42E028` all report supported at 1680 × 1140 and 30 fps, so does 60 fps at Baseline; AAC-LC
+  and Opus both encode; `MediaStreamTrackProcessor` exists but the recorder uses an `AudioWorklet`
+  tap instead, which every browser with WebCodecs also has. Two configurations *report* supported
+  and then hang: negative frame timestamps, and `latencyMode: 'quality'`. Both are described under
+  *The lag at 0.5 s*; do not reintroduce either.
+
 ## Where things live
 
 ```
@@ -1358,9 +1584,12 @@ src/
     auth.tsx             session context + friendlier error strings
     render.ts            THE paint entry point, preview + export
     share.ts             PNG download / clipboard / Web Share
-    video.ts             trim window + MediaRecorder export             (tested)
+    video.ts             trim window + the export loop, driving a recorder (tested)
+    recorders.ts         WebCodecsRecorder (preferred) and MediaStreamRecorder
+                         behind one CardRecorder interface              (tested)
+    mp4write.ts          progressive MP4 writer for the WebCodecs output (tested)
     mp4.ts               rewrites the durations and the sound offset
-                         MediaRecorder gets wrong                       (tested)
+                         MediaRecorder gets wrong (fallback path only)  (tested)
     selftest.ts          preview-vs-export pixel diff (dev only)
     canvas/
       spec.ts            measured geometry — change layout here, not in draw.ts
@@ -1372,6 +1601,11 @@ src/
     AuthScreen.tsx       registration + login form
     ...                  preview, controls, media picker, inputs
 dev/
+  start-check.html       browser harness: what happens in the FIRST second of an
+                         export — frame-numbered source, file read frame by frame,
+                         plus the controls that separated the two causes  (dev only)
+  flatten-mp4.js         rewrites a fragmented MP4 as a progressive one, so the
+                         harness can test the shape a phone writes        (dev only)
   cadence-check.html     browser harness: does the exported file judder?  (dev only)
   audio-check.html       browser harness: is the sound in step, and does
                          the file state its own length?                  (dev only)
