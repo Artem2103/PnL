@@ -23,8 +23,11 @@ the fourth.
 
 ## Start here (2026-09-11, second pass)
 
-**The freeze half a second into every exported video is fixed, on `main`.** Reported as *"at
-around 0.5 s of the beginning of the video there is a lag, no matter the background video"*. Read
+**The freeze half a second into every exported video is fixed, on `main` and deployed** as
+`5e843d1`; <https://nexocards.vercel.app> rebuilt within 30 s of the push and the live bundle
+(`assets/index-BlLsLbV6.js`) holds `registerProcessor('pnl-tap'`, `isomiso2avc1mp41` and
+`avc1.640028`, none of which existed before. Reported as *"at around 0.5 s of the beginning of the
+video there is a lag, no matter the background video"*. Read
 *The lag at 0.5 s, reported 2026-09-11* under **Background placement and video** — it is long,
 because the cause turned out to be two causes, neither of them where the code was looking, and the
 fix is a different recorder.
