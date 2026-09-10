@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Frame shot</title>
+    <style>
+      body { background: #0b0d12; color: #eaedff; font: 13px/1.6 ui-monospace, monospace; padding: 20px; }
+      canvas { image-rendering: pixelated; border: 1px solid #222; margin-right: 12px; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Dev-only. Paints the avatar badge alone, at the scale and offset of
+      `reference/frame.png` (outer square 87.4 with its top-left at 11.74,32.67
+      on a 107x123 ground), so the render can be differenced against the
+      reference instead of eyeballed beside it.
+
+      It draws on the reference's own blue rather than a card ground, because
+      every edge on the reference is an antialiased blend with that blue and a
+      diff taken over any other colour would report the blend as an error.
+
+      Same running convention as the other instruments here: an isolated
+      Chrome, results POSTed to 127.0.0.1:5199 if something is listening,
+      otherwise read the page. The base64 PNG is also written into the DOM so
+      it can be pulled out without a listener.
+    -->
+    <div id="log"></div>
+    <div>
+      <canvas id="shot" width="107" height="123"></canvas>
+      <canvas id="big" width="856" height="984"></canvas>
+    </div>
+    <textarea id="png" style="width:100%;height:80px"></textarea>
+    <script type="module">
+      import { SPEC, AVATAR_FRAME } from '/src/lib/canvas/spec.ts';
+      import { conicGradient, linearGradient, roundRectPath } from '/src/lib/canvas/primitives.ts';
+
+      const logEl = document.getElementById('log');
+      const line = (m) => { const d = document.createElement('div'); d.textContent = m; logEl.appendChild(d); };
+      const post = (p, o) =>
+        fetch('http://127.0.0.1:5199' + p, { method: 'POST', body: JSON.stringify(o) }).catch(() => {});
+
+      // The reference's own geometry, so the diff lines up without a resample.
+      const OUT = 87.4, OX = 11.74, OY = 32.67;
+
+      const c = document.getElementById('shot');
+      const ctx = c.getContext('2d');
+      // Flat mid-blue off the reference's own background, away from its stars.
+      ctx.fillStyle = '#32547A';
+      ctx.fillRect(0, 0, c.width, c.height);
+
+      // Mirrors drawAvatarBadge/drawAvatarPip in draw.ts. Kept as a copy on
+      // purpose: this instrument has to be able to paint the badge with no
+      // card, no state and no avatar around it.
+      const f = SPEC.avatarFrame;
+      const p = f.pip;
+      const stroke = OUT * f.stroke;
+      const cx = OX + OUT / 2;
+
+      const bottom = OY - OUT * p.baseRise;
+      const top = bottom - OUT * p.baseHeight;
+      const bottomHalf = OUT * p.baseBottomHalfWidth;
+      const topHalf = OUT * p.baseTopHalfWidth;
+      const st = OUT * p.baseStroke;
+      const slope = (bottomHalf - topHalf) / (bottom - top);
+      const lean = Math.hypot(1, slope);
+      const trapezoid = (yTop, yBottom, halfTop, halfBottom) => {
+        ctx.beginPath();
+        ctx.moveTo(cx - halfTop, yTop);
+        ctx.lineTo(cx + halfTop, yTop);
+        ctx.lineTo(cx + halfBottom, yBottom);
+        ctx.lineTo(cx - halfBottom, yBottom);
+        ctx.closePath();
+        ctx.fill();
+      };
+      ctx.fillStyle = AVATAR_FRAME.pipLight;
+      trapezoid(top, bottom, topHalf, bottomHalf);
+      ctx.fillStyle = linearGradient(ctx, cx - bottomHalf, bottom, cx + bottomHalf, bottom, AVATAR_FRAME.pipFillStops);
+      trapezoid(top + st, bottom - st, topHalf - st * (lean - slope), bottomHalf - st * (lean + slope));
+
+      const tipBottom = OY - OUT * p.tipRise;
+      const tipHalf = OUT * p.tipHalfWidth;
+      ctx.beginPath();
+      ctx.moveTo(cx, tipBottom - OUT * p.tipHeight);
+      ctx.lineTo(cx + tipHalf, tipBottom);
+      ctx.lineTo(cx - tipHalf, tipBottom);
+      ctx.closePath();
+      ctx.fillStyle = AVATAR_FRAME.pipLight;
+      ctx.fill();
+
+      roundRectPath(ctx, OX + stroke / 2, OY + stroke / 2, OUT - stroke, OUT - stroke, OUT * f.radius - stroke / 2);
+      ctx.strokeStyle = conicGradient(ctx, 0, cx, OY + OUT / 2, AVATAR_FRAME.ringStops, OUT);
+      ctx.lineWidth = stroke;
+      ctx.stroke();
+
+      line('conic gradient: ' + (typeof ctx.createConicGradient === 'function' ? 'native' : 'FALLBACK'));
+      line(`outer ${OUT} stroke ${stroke.toFixed(2)} gap ${(OUT * f.gap).toFixed(2)} radius ${(OUT * f.radius).toFixed(2)}`);
+
+      const big = document.getElementById('big').getContext('2d');
+      big.imageSmoothingEnabled = false;
+      big.drawImage(c, 0, 0, 856, 984);
+
+      const url = c.toDataURL('image/png');
+      document.getElementById('png').value = url;
+      post('/frame-shot', { png: url });
+      line('rendered');
+    </script>
+  </body>
+</html>

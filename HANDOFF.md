@@ -21,6 +21,21 @@ the fourth.
 
 ---
 
+## Start here (2026-09-11)
+
+**The red avatar badge from `reference/frame.png` is implemented, on the branch `avatar-badge`.**
+It is the one thing in this file that is not on `main`, and it is not deployed. Read *The avatar
+badge, traced from a screenshot* under **How the layout was matched**. It touches
+`src/lib/canvas/spec.ts`, `src/lib/canvas/draw.ts` and `src/lib/canvas/primitives.ts` (a new
+`conicGradient`), plus `dev/frame-shot.html` (new). Typecheck, build and all 160 unit tests pass;
+the badge was differenced against the reference in a driven Chrome and the card's ink bands were
+re-scanned to prove the layout did not move.
+
+The one judgement call in it: the badge **fills** the 54px avatar slot instead of wrapping it, so
+the picture inside is 45.3 rather than 54. That keeps the avatar's left edge on the title's column
+and the 15px gap to the handle intact. If wrapping is wanted instead, `avatar.size` is the only
+number that has to change — every badge ratio is written over the frame's outer side.
+
 ## Start here (2026-09-10)
 
 **Two more export bugs were reported later the same day and are fixed, on `main` and deployed** as
@@ -50,8 +65,9 @@ What was wrong and what changed:
   three different code paths blamed the clip for it; and `navigator.share` on Windows can hang for
   ever, which left every export button disabled until a reload.
 
-Everything described in this file is **on `main` and deployed**. There is no work sitting on a
-branch. <https://nexocards.vercel.app> rebuilt on its own within a couple of minutes of each of the
+Everything described in this file **except the avatar badge** is on `main` and deployed. The badge
+sits on the branch `avatar-badge`, unmerged and unpushed, so it is neither on `main` nor live.
+<https://nexocards.vercel.app> rebuilt on its own within a couple of minutes of each of the
 day's two pushes: after the first the live bundle was `assets/index-sfzXDYKB.js` and held both new
 strings, "has to be in front to record" and "share sheet never opened"; after the second it is
 `assets/index-C6Q_ZLd8.js` and holds `tfdt`, `moof` and `mvhd` from the new container repair, with
@@ -458,6 +474,56 @@ Two techniques carry the fidelity:
 2. **Per-string tracking corrections.** Inter is not the reference typeface; it sets some strings
    wide and some narrow at matching cap height. Each block carries a small tracking value solved
    from the measured target width.
+
+### The avatar badge, traced from a screenshot (2026-09-11)
+
+`reference/frame.png` is a 107 × 123 screenshot of a red badge — a rounded ring with a two-piece pip
+above it — supplied as "the red frame that should be around the avatar", to be copied exactly. It is
+now `SPEC.avatarFrame` plus `AVATAR_FRAME` in `spec.ts`, painted by `drawAvatarBadge` in `draw.ts`.
+
+**It fills the existing 54px avatar slot rather than wrapping it.** The picture inside is 45.3.
+Wrapping 54px of picture in the frame would have pushed the avatar's left edge to x30.7, off the
+column it shares with the title and the accent block, and closed the 15px gap to the handle to 10.7
+— both numbers this file spends paragraphs defending. Every ratio is written over the frame's outer
+side, so if that call is ever reversed only `avatar.size` has to change. `layout-shot.html` confirms
+the bands did not move: the avatar is still 446–499, the footer still 19 blank rows below it, the
+bottom margin still 33. The pip lands at 430–444, in what used to be a 42-row gap.
+
+Three things about the tracing are worth keeping, because each one was got wrong first:
+
+1. **Measure by unmixing the red channel, not by thresholding.** The ground is blue at R≈45 and both
+   of the badge's reds sit at R≈210–235, so red separates ink from ground almost regardless of which
+   red it is. The first pass unmixed against a single assumed foreground, which reads every
+   light-red edge as 82% covered and shrinks the shape being measured — it put the pip half a pixel
+   short at both ends. The reference is soft-edged, so no single row is an edge; every number is a
+   coverage sum across the whole soft edge, which a symmetric blur leaves alone.
+
+2. **The ring's ramp follows the border path, not an axis across it.** Walked by arc length it runs
+   dark → vivid → dark → vivid → light → vivid → dark in one lap, which no two-point linear gradient
+   can produce — it fails on the second corner. It is stored as 32 samples converted to the angles a
+   conic gradient wants. Arc length and angle are not the same parametrisation, so the stops are
+   dense enough that the difference between them stops mattering; six stops at the measured turning
+   points left the top edge up to 13 levels dark, and 32 brings the worst error under 5.
+
+3. **Spec numbers are outer edges, so the base's outline is a second fill and not a stroke.** A
+   stroke is centred on its path, so stroking the measured trapezoid put half the outline outside it
+   and painted the shape 14% too big. Filling the measured trapezoid in the outline colour and an
+   inset one in the fill colour puts the outer edge where it was measured. Insetting a trapezoid is
+   not "subtract the width from each edge" either — the flanks lean, so the same perpendicular step
+   moves them further sideways; `drawAvatarPip` takes that off the flanks' own slope.
+
+The base's fill is also not flat: its right half carries a soft highlight peaking a little past
+halfway out. A flat vivid fill made the first render read as a sticker beside the reference.
+
+**How it was verified.** `dev/frame-shot.html` paints the badge alone at the reference's own scale
+and offset, on the reference's own blue — any other ground and the diff reports the reference's
+antialiased blends as errors. Against the reference the pip matches to 1% on area and 0.03px on
+centroid, and the ring's gradient to a maximum of 9 levels on any channel (mean 4.4). What is left
+is the reference's blur against a crisp vector render, which is not a defect to chase.
+
+The badge reads no card state, so `foregroundKey` did not need a case. It is a fixed red on every
+theme, which is what the reference shows; on the near-black ground the ring's dark quarter reads as
+a shadowed bevel rather than the shadow it was on the reference's blue.
 
 ### The trap that cost the most time
 
@@ -1306,6 +1372,8 @@ dev/
   audio-check.html       browser harness: is the sound in step, and does
                          the file state its own length?                  (dev only)
   layout-shot.html       renders the card and scans ink bands to measure gaps (dev only)
+  frame-shot.html        paints the avatar badge at the reference's own scale,
+                         to be differenced against reference/frame.png    (dev only)
   colour-shot.html       measures the picture slots and the colour rules  (dev only)
   controls.html/.tsx     the editor panel and a live card, with no account gate
 ```

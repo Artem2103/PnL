@@ -356,9 +356,37 @@ export function linearGradient(
   y0: number,
   x1: number,
   y1: number,
-  stops: GradientStop[],
+  stops: readonly GradientStop[],
 ): CanvasGradient {
   const gradient = ctx.createLinearGradient(x0, y0, x1, y1);
+  for (const stop of stops) gradient.addColorStop(stop.offset, stop.color);
+  return gradient;
+}
+
+/**
+ * A ramp that runs around a centre rather than across the shape.
+ *
+ * `createConicGradient` is the whole of it where it exists. Where it does not,
+ * the fallback is a linear ramp along the stop list, which is wrong — it has
+ * no way to turn a corner — but it keeps the colours and paints something in
+ * the right family rather than throwing on a card export.
+ */
+export function conicGradient(
+  ctx: Ctx2D,
+  startAngle: number,
+  x: number,
+  y: number,
+  stops: readonly GradientStop[],
+  fallbackSpan: number,
+): CanvasGradient {
+  const make = (
+    ctx as unknown as {
+      createConicGradient?: (angle: number, x: number, y: number) => CanvasGradient;
+    }
+  ).createConicGradient;
+  const gradient = make
+    ? make.call(ctx, startAngle, x, y)
+    : ctx.createLinearGradient(x - fallbackSpan / 2, y, x + fallbackSpan / 2, y);
   for (const stop of stops) gradient.addColorStop(stop.offset, stop.color);
   return gradient;
 }

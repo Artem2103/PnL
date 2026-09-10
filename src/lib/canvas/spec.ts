@@ -119,6 +119,71 @@ export const SPEC = {
     size: 54,
   },
 
+  /**
+   * The red badge frame around the avatar, traced off `reference/frame.png`.
+   *
+   * Every number is a fraction of the frame's outer side, so the whole badge
+   * scales with `avatar.size` and nothing here has to be re-solved if the slot
+   * ever moves.
+   *
+   * They were measured on the reference at its own scale, where the ring's
+   * outer square runs x11.74–99.03 and y32.67–120.20, so 87.3 × 87.5 — call it
+   * 87.4, the divisor every ratio below is written over. Edges came from
+   * unmixing each pixel's **red** channel against the background rather than
+   * thresholding it: the ground is blue at R≈45 and both reds sit at R≈210–235,
+   * so red separates ink from ground almost independently of which red it is.
+   * Trying the same with a single assumed foreground colour reads every
+   * light-red edge as 82% covered and shrinks the shape it is measuring — that
+   * is what first put the pip 0.5px short in both directions.
+   *
+   * The reference is a soft-edged screenshot, so no single row is a reliable
+   * edge; each number here is a coverage sum across the whole soft edge, which
+   * a symmetric blur leaves alone.
+   *
+   * The frame fills the existing 54px slot rather than growing outside it. The
+   * avatar's footprint is load-bearing — it sets the left edge shared with the
+   * title and the accent block, the 15px gap to the handle, and the 19 blank
+   * rows down to the footer, all of which were measured by hand and are
+   * documented above. Wrapping 54px of picture in a frame would have pushed
+   * the left edge out to x30.7 and closed the handle gap to 10.7. So the badge
+   * is 54 across and the picture inside it is 45.3 — which is what a frame
+   * does to a picture anyway, and leaves the card's composition untouched.
+   */
+  avatarFrame: {
+    /** Ring thickness. */
+    stroke: 3.22 / 87.4,
+    /** Clear space between the ring's inner edge and the picture. */
+    gap: 3.85 / 87.4,
+    /** Outer corner radius. */
+    radius: 8.0 / 87.4,
+    /** The picture's own corners are all but square on the reference. */
+    pictureRadius: 2.0 / 87.4,
+
+    /**
+     * The badge above the ring: a wedge cut into a tip and a base. The two
+     * flanks are close to parallel but not quite — the tip's widen by 1.174
+     * per row against the base's 1.092 — so they are measured separately
+     * rather than derived from one another.
+     *
+     * Distances are up from the ring's outer top edge, half-widths off the
+     * ring's centre line, and both are outer edges: the base's outline is
+     * inside these numbers, not added to them.
+     */
+    pip: {
+      /** Tip: apex at y5.13 on the reference, base at y17.93. */
+      tipRise: 14.74 / 87.4,
+      tipHeight: 12.8 / 87.4,
+      tipHalfWidth: 7.51 / 87.4,
+      /** Base: top at y21.24, bottom at y30.93. */
+      baseRise: 1.74 / 87.4,
+      baseHeight: 9.69 / 87.4,
+      baseBottomHalfWidth: 14.58 / 87.4,
+      baseTopHalfWidth: 9.29 / 87.4,
+      /** The lighter outline the base carries; the tip is that colour solid. */
+      baseStroke: 1.4 / 87.4,
+    },
+  },
+
   handle: {
     /**
      * Left edge of the ink, holding the reference's gap off the avatar: there
@@ -206,3 +271,90 @@ export const GROUND: { dark: Ramp; light: Ramp } = {
   dark: ['#010103', '#05080F', '#0C0E1B'],
   light: ['#FDFDFF', '#F2F4FA', '#E4E8F2'],
 };
+
+/**
+ * The avatar badge's reds, read straight off `reference/frame.png`.
+ *
+ * The ring is not a flat colour and not a plain linear ramp either. Walking
+ * the stroke's midline by arc length and reading it out, the colour runs
+ * dark -> vivid -> dark -> vivid -> light -> vivid -> dark over one lap: the
+ * ramp follows the border path rather than any axis across it, which is why
+ * fitting a two-point linear gradient to it fails on the second corner.
+ *
+ * `ringStops` is that walk at 32 evenly spaced positions, converted from arc
+ * length to the angle a conic gradient wants. The two are not the same
+ * parametrisation — a square's corners take more angle per pixel than its
+ * edges do — so the stops are dense enough that what happens between any two
+ * of them barely matters. Six stops at the measured turning points left the
+ * top edge up to 13 levels dark; at 32 the worst error is under 5.
+ *
+ * Each sample is the most saturated pixel within 1.6px of the walk, not the
+ * pixel the walk lands on. At the corners the midline of a stroked round rect
+ * and the arc this walk follows drift apart by about a pixel, and reading the
+ * drifted pixel picks up the ring's antialiased edge — which is a blend with
+ * the background, and reads as a dark stop that is not there.
+ *
+ * Offset 0 is due east, the middle of the right edge. Its colour is the only
+ * interpolated one: it falls between the last sample and the first.
+ */
+export const AVATAR_FRAME = {
+  ringStops: [
+    { offset: 0, color: '#82060C' },
+    { offset: 0.01846, color: '#75070C' },
+    { offset: 0.05477, color: '#5A090D' },
+    { offset: 0.08604, color: '#490B0D' },
+    { offset: 0.11139, color: '#650B0E' },
+    { offset: 0.13829, color: '#820C14' },
+    { offset: 0.16347, color: '#9D0910' },
+    { offset: 0.19454, color: '#B7070F' },
+    { offset: 0.23066, color: '#C9060F' },
+    { offset: 0.26886, color: '#CB1720' },
+    { offset: 0.30503, color: '#CC2B33' },
+    { offset: 0.33617, color: '#CF3F47' },
+    { offset: 0.36143, color: '#D1595E' },
+    { offset: 0.38780, color: '#D7585C' },
+    { offset: 0.41294, color: '#CD4047' },
+    { offset: 0.44400, color: '#CC2D35' },
+    { offset: 0.48016, color: '#CA1922' },
+    { offset: 0.51846, color: '#C9050F' },
+    { offset: 0.55477, color: '#B8050E' },
+    { offset: 0.58604, color: '#9F070F' },
+    { offset: 0.61139, color: '#86090F' },
+    { offset: 0.63829, color: '#610E15' },
+    { offset: 0.66347, color: '#490D11' },
+    { offset: 0.69454, color: '#5B0C11' },
+    { offset: 0.73066, color: '#750A10' },
+    { offset: 0.76886, color: '#8F080F' },
+    { offset: 0.80503, color: '#A9050E' },
+    { offset: 0.83617, color: '#C3030D' },
+    { offset: 0.86143, color: '#D20008' },
+    { offset: 0.88780, color: '#CE020A' },
+    { offset: 0.91294, color: '#C90108' },
+    { offset: 0.94400, color: '#AE0309' },
+    { offset: 0.98016, color: '#90050B' },
+    { offset: 1, color: '#82060C' },
+  ],
+  /** The pip's tip, solid, and the outline around its base. */
+  pipLight: '#EB4C52',
+  /**
+   * The pip base's fill, across its width.
+   *
+   * Not flat: averaging the base's interior rows column by column, the left
+   * half is a dead-even #D20008 and the right half carries a soft highlight
+   * that peaks a little past halfway out and falls back toward the flank. A
+   * flat vivid fill is what made the first render's base read as a sticker
+   * next to the reference's.
+   *
+   * Offsets run across the base's widest span — the bottom edge — so 0.5 is
+   * the centre line. The last stop holds rather than falling back to vivid:
+   * the reference's own last two measured columns are flat, and what happens
+   * past them is under the outline anyway.
+   */
+  pipFillStops: [
+    { offset: 0, color: '#D20008' },
+    { offset: 0.5, color: '#D20008' },
+    { offset: 0.706, color: '#DC373D' },
+    { offset: 0.843, color: '#D71E25' },
+    { offset: 1, color: '#D71E25' },
+  ],
+} as const;
