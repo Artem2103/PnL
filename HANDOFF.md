@@ -23,8 +23,8 @@ the fourth.
 
 ## Start here (2026-09-11)
 
-**The red avatar badge from `reference/frame.png` is implemented, on the branch `avatar-badge`.**
-It is the one thing in this file that is not on `main`, and it is not deployed. Read *The avatar
+**The red avatar badge from `reference/frame.png` is implemented, on `main` and deployed** as
+`7620351`. Read *The avatar
 badge, traced from a screenshot* under **How the layout was matched**. It touches
 `src/lib/canvas/spec.ts`, `src/lib/canvas/draw.ts` and `src/lib/canvas/primitives.ts` (a new
 `conicGradient`), plus `dev/frame-shot.html` (new). Typecheck, build and all 160 unit tests pass;
@@ -65,14 +65,18 @@ What was wrong and what changed:
   three different code paths blamed the clip for it; and `navigator.share` on Windows can hang for
   ever, which left every export button disabled until a reload.
 
-Everything described in this file **except the avatar badge** is on `main` and deployed. The badge
-sits on the branch `avatar-badge`, unmerged and unpushed, so it is neither on `main` nor live.
+Everything described in this file is **on `main` and deployed**. There is no work sitting on a
+branch — `avatar-badge` was merged fast-forward and can be deleted.
 <https://nexocards.vercel.app> rebuilt on its own within a couple of minutes of each of the
-day's two pushes: after the first the live bundle was `assets/index-sfzXDYKB.js` and held both new
-strings, "has to be in front to record" and "share sheet never opened"; after the second it is
-`assets/index-C6Q_ZLd8.js` and holds `tfdt`, `moof` and `mvhd` from the new container repair, with
-the clip cap inlined as 30 and the source cap as 120. That is what was actually checked, rather than
-trusting the dashboard.
+three pushes: after the first the live bundle was `assets/index-sfzXDYKB.js` and held both new
+strings, "has to be in front to record" and "share sheet never opened"; after the second it was
+`assets/index-C6Q_ZLd8.js` and held `tfdt`, `moof` and `mvhd` from the new container repair, with
+the clip cap inlined as 30 and the source cap as 120; after the badge it is
+`assets/index-DoPk1HDM.js` and holds the ring's stop table verbatim
+(`{offset:.3878,color:"#D7585C"}`) along with `baseBottomHalfWidth:14.58/87.4` and the two gradient
+cache keys. Note that hash is **not** the one a local `npm run build` produces — Vercel bakes
+different env into the bundle, so compare what the file contains, not what it is called. That is
+what was actually checked, rather than trusting the dashboard.
 
 One trap in checking it that way, found doing exactly this: **do not grep the bundle for a string
 built from a constant.** "the card plays 30 s of it" is a template literal, so the bundle holds
