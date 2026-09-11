@@ -23,8 +23,10 @@ the fourth.
 
 ## Start here (2026-09-12)
 
-**The card's geometry now matches the five `monthly-calendar-pnl` reference cards item for item**,
-measured from `reference/ourpnl.png` (a 3x export of the app's card) laid against them. The block,
+**The card's geometry now matches the five `monthly-calendar-pnl` reference cards item for item,
+on `main` and deployed** as `b859ce1`; <https://nexocards.vercel.app> rebuilt within a minute of
+the push and the live bundle (`assets/index-sBbAYwOV.js`) carries the new footer baseline
+`519.5`, which no earlier build had. Measured from `reference/ourpnl.png` (a 3x export of the app's card) laid against them. The block,
 the three stat rows and the hero value were already exact. Four things were not, and all four were
 the deliberate departures earlier passes had made. Each is now back on the reference's number:
 
