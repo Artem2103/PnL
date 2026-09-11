@@ -145,17 +145,12 @@ reference images** rather than eyeballed — bounding boxes of the glyph ink, th
 the avatar and the icons, read pixel by pixel. Font sizes were then derived from the measured ink
 heights.
 
-Two parts of the bottom-left corner are deliberately *not* the reference's:
-
-- The avatar sat at x=30.5 while the accent block and the title sit at x=35, so that corner was out
-  of column with the rest of the card. It is now a sharp-cornered square on x=35, sharing the
-  block's left edge, with the handle following at the same 15px gap it has in the reference. Its
-  **size** is the reference's own, 54 × 54.
-- The footer sat 8px under the avatar with a 48px dead band beneath it. It now sits 19 blank rows
-  below, half the 42 that separate the avatar from the last stat row, so the avatar/handle line and
-  the footer read as one identity block. Measured off painted ink rather than baselines, since
-  antialiasing puts a row's visible bottom about 2px below its baseline. The bottom margin comes out
-  at 33px against 35px on the left.
+Every position on the card is the reference's, including two that spent a while elsewhere: the
+avatar sat on the title's column (x35 rather than the reference's x30.5) from 2026-08-24, and the
+footer sat 14px lower than the reference's row from 2026-08-25, so that the avatar/handle line and
+the footer read as one block. Both went back to the reference's numbers on 2026-09-12, when the
+card was laid over the reference cards and the ask was that they match item for item. The old
+numbers are recorded in `spec.ts` beside the new ones.
 
 Two techniques do most of the work:
 
@@ -172,23 +167,22 @@ Result, reference vs. render, as ink bounding boxes:
 
 | element | reference | render |
 |---|---|---|
-| accent block | x 35–419, y 177–255 | x 35–419, y 177–255 |
-| hero `+$10.1K` | x 55–250, y 191–239 | x 55–248, y 191–239 |
-| title | x 35–284, y 127–164 | x 36–283, y 127–164 |
-| row label | x 55–204, y 382–400 | x 55–204, y 382–400 |
-| handle | x 100–315, y 458–494 | x 100–314, y 458–494 |
-| footer | x 59–328, y 506–519 | x 60–328, y 505–518 |
+| accent block | x 35–420, y 177–256 | x 35–420, y 177–256 |
+| hero `+$10.1K` | x 55–251, y 192–240 | x 55–249, y 191–240 |
+| title `August 2026` | x 35–285, caps y 128–158 | x 36–285, caps y 128–158 |
+| row label `End Balance` | x 55–205, y 382–401 | x 55–205, y 382–401 |
+| handle `@aquagoat` | x 100–316, lowercase y 465–489 | x 100–315, lowercase y 466–489 |
+| globe | x 36–51, y 507–522 | x 36–51, y 507–522 |
+| footer text | x 56–329, y 506–520 | x 57–330, y 506–520 |
+| avatar slot | x 30.5–85, y 446–500.6 | x 30.5–85, y 446–500.5 |
 
-Everything is within 1–2px; several are exact. The remaining difference is letterform shape — the
-reference face is not Inter and is not on Google Fonts.
-
-That table is the record of the original calibration, measured against the reference's own strings.
-Two of those elements have since been **moved** on purpose, as described above: the handle 4px right
-(x100 → x104, holding its gap off a wider avatar), and the footer 14px down (baseline y519 → y533,
-ink now y519–536). The widths and letterforms are unchanged — only the positions.
+Measured 2026-09-12 with `dev/align-shot.html`, which renders the card with the reference's own
+strings; everything is within a pixel and most of it is exact. The remaining difference is
+letterform shape: the reference face is not Inter and is not on Google Fonts, and it draws its
+`@` about two pixels higher over the baseline.
 
 **The pictures are the reference's own size.** The logo slot is 49 × 41 at (35, 34) and the avatar is
-54 × 54 — both re-measured on 2026-08-25 from half-coverage edges rather than a luminance threshold,
+54.5 × 54.5 at (30.5, 446) — both re-measured on 2026-08-25 from half-coverage edges rather than a luminance threshold,
 which is what the first pass used and which loses a pixel of the antialiased edge on each side. The
 logo was briefly grown to 66 × 54; at the reference size its optical centre lines up with the
 wordmark's again. One value deviates on purpose and is text rather than a picture: the wordmark is

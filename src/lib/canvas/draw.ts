@@ -496,10 +496,13 @@ function drawHandle(ctx: Ctx2D, input: DrawInput, ink: string): void {
 function drawGlobeIcon(ctx: Ctx2D, x: number, y: number, w: number, h: number, color: string): void {
   const cx = x + w / 2;
   const cy = y + h / 2;
-  const r = Math.min(w, h) / 2;
+  const lineWidth = 1.4;
+  // The box is the ink's extent, so the stroke sits inside it rather than
+  // straddling its edge: the reference globe is 15px across, stroke included.
+  const r = Math.min(w, h) / 2 - lineWidth / 2;
   ctx.save();
   ctx.strokeStyle = color;
-  ctx.lineWidth = 1.4;
+  ctx.lineWidth = lineWidth;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.moveTo(cx - r, cy);

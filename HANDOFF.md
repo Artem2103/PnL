@@ -21,6 +21,49 @@ the fourth.
 
 ---
 
+## Start here (2026-09-12)
+
+**The card's geometry now matches the five `monthly-calendar-pnl` reference cards item for item**,
+measured from `reference/ourpnl.png` (a 3x export of the app's card) laid against them. The block,
+the three stat rows and the hero value were already exact. Four things were not, and all four were
+the deliberate departures earlier passes had made. Each is now back on the reference's number:
+
+| element | was | now | reference |
+|---|---|---|---|
+| title | baseline 156, size 39.5 (ink y127-156) | baseline 158, size 40.5 (ink y128-158) | ink y128-158 |
+| avatar | x35, 54 x 54 | x30.5, 54.5 x 54.5 | x30.5-85, y446-500.6 |
+| handle | ink x104, baseline 486 | ink x100, baseline 488 | ink x100, lowercase on y488.5 |
+| footer | icon y521, baseline 533, ink x59, 18px | globe 15 x 15 at (36, 507), baseline 519.5, ink x56, 18.3px | globe x36-51 y507-522, ink x56, y506-520 |
+
+The globe's stroke also moved inside its box (`drawGlobeIcon`): it used to straddle the edge, so a
+15px box painted 16.4px of ink. Nothing else on the card moved. The wordmark and logo were left
+alone on request, since the references carry someone else's mark, and so was the avatar frame,
+which is ours.
+
+Verified with `dev/align-shot.html` (new): it renders the card with the references' own strings
+over the plain ground at 3x, and the script that measured the reference measured the render.
+Every ink box above lands within a pixel; the rows, block and hero value are unchanged and still
+exact. The remaining differences are letterform, not position: the reference face is not Inter,
+and its "@" sits two pixels higher over the baseline. Typecheck, build and all 172 unit tests pass.
+
+**One thing to know before trusting the other instruments.** `layout-shot.html` and
+`colour-shot.html` guarded against measuring in the fallback font with
+`document.fonts.check('400 40px Inter')`, but neither page links the Google Fonts stylesheet
+`index.html` does, and `fonts.check` answers *yes* for a family with no `@font-face` rule at all.
+So both were measuring the fallback stack, about ten percent narrower than Inter, and saying it
+was fine. Both now link the stylesheet and look for a loaded `Inter` face instead. Any width
+measured with them before 2026-09-12 was taken in the wrong font; the vertical bands were barely
+affected (the fallback's cap height is close), which is why the gap measurements in this file
+still hold.
+
+**Reverses two earlier requests, on request.** The avatar at x35 (2026-08-24) and the footer at
+521/533 (2026-08-25, "halve the gap") were both asked for at the time; the ask on 2026-09-12 was
+that the card match the references, and those were the differences. If the 5-row gap under the
+avatar reads as cramped again, both old numbers are recorded in `spec.ts` next to the new ones.
+
+Touches `src/lib/canvas/spec.ts`, `src/lib/canvas/draw.ts`, `dev/align-shot.html` (new),
+`dev/layout-shot.html`, `dev/colour-shot.html`, `README.md`.
+
 ## Start here (2026-09-11, second pass)
 
 **The freeze half a second into every exported video is fixed, on `main` and deployed** as
@@ -620,32 +663,28 @@ works where brightness thresholds fail, e.g. when artwork fills the card.
 | Accent block | x35 y177, 385 × 79, sharp corners, text ink inset 19 |
 | Rows | label x55, value x301, baselines 319 / 360 / 401 |
 | Logo | x35 y34, slot 49 × 41, contain |
-| Avatar | x35 y446, 54 × 54, **square, no corner radius** |
-| Handle | ink x104, baseline 486 |
-| Footer | icon x36 y521 23 × 15, ink x59, baseline 533 |
+| Title | ink x35, baseline 158, 40.5px, tracking 0.6 |
+| Avatar | x30.5 y446, 54.5 × 54.5, **square, no corner radius**, the red badge inside it |
+| Handle | ink x100, baseline 488 |
+| Footer | globe 15 × 15 at (36, 507), ink x56, baseline 519.5, 18.3px |
 | Colours | accent `#2FE3AC`, text `#EAEDFF` / `#05070B`, on-accent picked from the accent |
 
-Three values **deliberately differ** from the reference, all on request:
+One value **deliberately differs** from the reference, on request: **wordmark 34px** (reference
+42px), tracking scaled with the size. It is text rather than a picture; the logo and avatar were
+put *back* to the reference's sizes on 2026-08-25.
 
-- **wordmark 34px** (reference 42px); tracking scaled with the size. This is the only remaining
-  size deviation, and it is text rather than a picture — the logo and avatar were put *back* to the
-  reference's sizes on 2026-08-25.
-- avatar x35 (was 30.5) with square corners (was radius 12), so its left edge shares the accent
-  block's and the title's. Handle at 104, holding the reference's 15px gap off it.
-- footer at icon y521 / baseline 533, against the reference's 507/519. It has moved twice and the
-  history matters, because both earlier values were wrong in opposite directions. The reference's
-  507/519 left only 8 blank rows under the avatar and read as the footer being stuck to the handle
-  with a dead band underneath. That was corrected to 542/554, giving 42 blank rows — exactly the gap
-  above the avatar — which was arithmetically tidy but pushed the ink to y557 on a 570px card,
-  leaving a 12px bottom margin against 35px on the left. On request the gap was then **halved**,
-  moving the footer up 21px without touching the avatar, so the avatar/handle row and the footer
-  read as one identity block. That also fixed the margin: the bottom comes out at 33px, near enough
-  the 35px left margin to read as symmetric. All measured **off painted ink, not baselines**,
-  because that is what the eye reads — verified bands as of 2026-08-25: last row 381–403, avatar
-  446–**499**, footer 519–536, gaps 42 above the avatar and **19** below. The gap below was 21
-  until the avatar grew two pixels to its reference size; the footer deliberately stayed put, since
-  19 against 21 is not a difference the eye can find and the number that was requested was
-  "half", not "exactly 21".
+Two more used to, and their history matters because the same complaint may come back:
+
+- **avatar x35 (2026-08-24 to 2026-09-12)**, so its left edge shared the accent block's and the
+  title's, with the handle at x104 holding the reference's 15px gap. Back at the reference's x30.5
+  and x100 since 2026-09-12, when the ask became that the card match the references item for item.
+- **footer at icon y521 / baseline 533 (2026-08-25 to 2026-09-12)**, against the reference's
+  507/519. The reference's row was first read as the footer being stuck to the handle with a dead
+  band underneath, and was corrected to 542/554: 42 blank rows, exactly the gap above the avatar,
+  which pushed the ink to y557 on a 570px card and left a 12px bottom margin. On request the gap
+  was then halved to 521/533 (bottom margin 33px). On 2026-09-12 it went back to the reference's
+  row, same request as the avatar. Ink bands now: last row 381-403, avatar 446-500, footer 506-522;
+  42 blank rows above the avatar, 5 below it.
 
 To re-measure any of this, render with no background and scan for ink bands rather than trusting the
 spec numbers — antialiasing puts a row's visible bottom ~2px below its baseline, which is enough to
@@ -663,9 +702,14 @@ const c = render.renderToOffscreenCanvas(bare, await render.prepareAssets(bare),
 
 Two things will hand you wrong numbers here:
 
-- **Check `document.fonts.check('400 40px Inter')` before believing any width.** `ensureFonts()`
-  gives up after 2.5 s and paints in the fallback stack, which is wider than Inter. A measurement
-  taken in that window looks like a layout regression and is not one.
+- **Make sure Inter is actually loaded before believing any width.** `ensureFonts()` gives up
+  after 2.5 s and paints in the fallback stack, which is about ten percent narrower than Inter on
+  this machine. A measurement taken in that window looks like a layout regression and is not one.
+  And `document.fonts.check('400 40px Inter')` is **not** the way to make sure: a page that does
+  not link the Google Fonts stylesheet has no `@font-face` for Inter, and `fonts.check` answers
+  yes for any family it has no rule for. Link the stylesheet `index.html` uses and look for a
+  `FontFace` whose family is `Inter` with `status === 'loaded'`; `dev/align-shot.html` shows the
+  check. The measurements above were taken that way.
 - **The README's reference/render table was measured against the reference cards' own strings**,
   not against the default sample state. `@yourhandle` is ~35px wider than the handle those numbers
   describe, so measuring the default card and comparing to that table will look like a mismatch.
@@ -1613,6 +1657,8 @@ dev/
   audio-check.html       browser harness: is the sound in step, and does
                          the file state its own length?                  (dev only)
   layout-shot.html       renders the card and scans ink bands to measure gaps (dev only)
+  align-shot.html        renders the card with the reference cards' own strings, to
+                         be measured against reference/monthly-calendar-pnl.png (dev only)
   frame-shot.html        paints the avatar badge at the reference's own scale,
                          to be differenced against reference/frame.png    (dev only)
   colour-shot.html       measures the picture slots and the colour rules  (dev only)

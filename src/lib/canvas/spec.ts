@@ -57,14 +57,23 @@ export const SPEC = {
   title: {
     /** Left edge of the ink. */
     x: 35,
-    baseline: 156,
-    size: 39.5,
+    /**
+     * Re-measured 2026-09-12 against all five reference cards: the caps and
+     * the lining figures run y128–158, so the baseline is 158 and the cap
+     * height 30, not the 156 / 28.7 the first pass read (it had taken the
+     * x-height letters' bottom, which overshoots less). Two pixels, but it is
+     * the one row on the card whose position the eye checks against the
+     * accent block right under it: 19 blank rows there, not 21.
+     */
+    baseline: 158,
+    size: 40.5,
     weight: 400,
     /**
      * The reference face is a little wider than Inter at the same cap height;
-     * this brings "August 2026" back to its measured 250px of ink.
+     * this brings "August 2026" back to its measured 250px of ink. Re-solved
+     * for the 40.5px size (it was 1.08 at 39.5).
      */
-    tracking: 1.08,
+    tracking: 0.6,
     /** Ink may not pass this without shrinking. */
     maxWidth: 380,
   },
@@ -98,9 +107,11 @@ export const SPEC = {
   },
 
   /**
-   * Square, sharp-cornered, and sharing the accent block's left edge — the
-   * avatar/handle row and the block read as one column rather than two that
-   * nearly line up. The reference's x30.5 was four and a half pixels shy of it.
+   * Square, sharp-cornered, at the reference's own x30.5 — four and a half
+   * pixels left of the title and the accent block, which is where every one of
+   * the five reference cards puts it. It sat on x35 from 2026-08-24 to
+   * 2026-09-12 so the column would line up; put back on request, the ask being
+   * that the card match the references item for item.
    *
    * 54, not the 52 recorded on the first pass. Re-measured 2026-08-25 the same
    * way as the logo: the reference slot runs x30.5–85.0 and y446.2–500.6, so
@@ -114,9 +125,9 @@ export const SPEC = {
    * difference the eye can find.
    */
   avatar: {
-    x: 35,
+    x: 30.5,
     y: 446,
-    size: 54,
+    size: 54.5,
   },
 
   /**
@@ -187,15 +198,23 @@ export const SPEC = {
   handle: {
     /**
      * Left edge of the ink, holding the reference's gap off the avatar: there
-     * the slot ends at x85 and the ink starts at x100, so 15. The avatar now
-     * ends at 89, hence 104.
+     * the slot ends at x85 and the ink starts at x100, so 15. With the avatar
+     * back at the reference's x30.5 the two numbers are the reference's own.
      *
-     * It has read 100, then 103 (15 became "16" because the avatar was
-     * measured two pixels narrow), and now 104. The gap is the thing being
-     * held; the number follows from wherever the avatar's right edge lands.
+     * It has read 100, then 103, then 104 while the avatar sat at x35, and is
+     * 100 again. The gap is the thing being held; the number follows from
+     * wherever the avatar's right edge lands.
      */
-    x: 104,
-    baseline: 486,
+    x: 100,
+    /**
+     * 488, re-measured 2026-09-12: the reference's lowercase sits on y488.5
+     * (the "a" and "u" bottoms, overshoot included), and a handle is nearly
+     * all lowercase. The first pass held 486 because the "@" glyphs lined up
+     * there — but the reference face draws its "@" higher over the baseline
+     * than Inter does, so matching the "@" had put every letter two pixels
+     * high.
+     */
+    baseline: 488,
     size: 40,
     weight: 400,
     tracking: 0.24,
@@ -203,33 +222,44 @@ export const SPEC = {
   },
 
   /**
-   * Sits 19 blank rows under the avatar — it was set at 21, half the 42 it used
-   * to sit at, and the avatar growing two pixels to its reference size took the
-   * other two. The point of the number was that the avatar/handle row and the
-   * footer read as one identity block rather than two separate rows, and 19
-   * does that as well as 21 did. Requested; the avatar deliberately did not
-   * move, and neither did this.
+   * Where the reference puts it: ink from y506, six blank rows under the
+   * avatar's y500. It sat 14 rows lower than this from 2026-08-25 to
+   * 2026-09-12 (icon y521, baseline 533 — the "halve the gap" pass, which had
+   * been asked for), and was moved back on request when the ask became that
+   * the card match the references item for item. If the 8-row gap reads as
+   * cramped again, 521/533 is the number to go back to; nothing else depends
+   * on it.
    *
    * All of these are measured off the painted ink rather than the baselines,
    * since that is what the eye reads: antialiasing puts a row's visible bottom
-   * about 2px below its baseline. The avatar ends at y=499 and the footer ink
-   * starts at 519.
+   * about 2px below its baseline. The avatar ends at y=500 and the footer ink
+   * starts at 506.
    *
-   * History worth keeping, because two of these numbers have been wrong in
-   * opposite directions. The reference has 507/519, which left only 8 blank
-   * rows and read as the footer being stuck to the handle with a dead band
-   * underneath. That was over-corrected to 542/554, matching the 42-row gap
-   * above the avatar exactly — arithmetically tidy, but it pushed the ink to
-   * y=557 on a 570px card and left a 12px bottom margin against 35px on the
-   * left. Halving the gap fixes both complaints at once: the bottom margin
-   * comes out at 33px, near enough the left margin to read as symmetric.
+   * History worth keeping, because this number has been in three places. The
+   * reference's 507/519 was read first as the footer being stuck to the
+   * handle with a dead band underneath, and was over-corrected to 542/554,
+   * matching the 42-row gap above the avatar exactly — arithmetically tidy,
+   * but it pushed the ink to y=557 on a 570px card and left a 12px bottom
+   * margin against 35px on the left. Halving that gap gave 521/533, a 33px
+   * bottom margin, and stood until the ask changed to matching the reference
+   * outright.
    */
   footer: {
-    icon: { x: 36, y: 521, width: 23, height: 15 },
-    /** Left edge of the ink. */
-    x: 59,
-    baseline: 533,
-    size: 18,
+    /**
+     * The globe's ink: 15 × 15 at (36, 507) on every reference card, stroke
+     * included — `drawGlobeIcon` keeps the stroke inside this box.
+     */
+    icon: { x: 36, y: 507, width: 15, height: 15 },
+    /** Left edge of the ink: the reference's "a" starts at x56, 5 past the globe. */
+    x: 56,
+    /**
+     * Back on the reference's row (ink y506–520, so the baseline is 519.5)
+     * as of 2026-09-12. See the history below for the two other places this
+     * has been.
+     */
+    baseline: 519.5,
+    /** 18 set "axiom.trade" two pixels short of the reference's 100px of ink. */
+    size: 18.3,
     weight: 400,
     tracking: -0.15,
     /** Ink-to-ink space between the site string and the tagline. */

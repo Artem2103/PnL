@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Align shot</title>
+    <!-- The card's faces come from the same stylesheet index.html uses; without it
+         `document.fonts.check` answers yes for a system font and the shot is in
+         the fallback stack, ten percent narrower than the real thing. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body { background: #0b0d12; color: #eaedff; font: 13px/1.6 ui-monospace, monospace; padding: 20px; }
+      img { max-width: 100%; border: 1px solid #222; margin-top: 12px; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Dev-only. Renders the card with the reference cards' own strings
+      ("August 2026", "@aquagoat", "axiom.trade", "Save 10% off fees", the
+      same balances) over the plain themed ground, at 3x, and POSTs the PNG
+      to 127.0.0.1:5199. Downscaled to 840 x 570 it can be laid over
+      reference/monthly-calendar-pnl.png and measured with the same script,
+      which is how the 2026-09-12 alignment pass was checked. Run it the way
+      layout-shot.html is run: an isolated Chrome, a collector listening.
+    -->
+    <div id="log"></div>
+    <script type="module">
+      const logEl = document.getElementById('log');
+      const post = (p, o) =>
+        fetch('http://127.0.0.1:5199' + p, { method: 'POST', body: JSON.stringify(o) }).catch(() => {});
+      const line = (m) => { const d = document.createElement('div'); d.textContent = m; logEl.appendChild(d); };
+      (async () => {
+        try {
+          const [render, defaults] = await Promise.all([
+            import('/src/lib/render.ts'),
+            import('/src/lib/defaults.ts'),
+          ]);
+          await Promise.all(['300 24px Inter', '400 24px Inter', '800 64px Inter'].map((f) => document.fonts.load(f, 'August 2026')));
+          await document.fonts.ready;
+          if (![...document.fonts].some((f) => f.family.replace(/"/g, '') === 'Inter' && f.status === 'loaded')) {
+            throw new Error('Inter did not load — widths would be wrong');
+          }
+          const base = defaults.createDefaultState();
+          const state = {
+            ...base,
+            avatarId: null,
+            logoId: null,
+            period: { title: 'August 2026', startBalance: 10680, endBalance: 20800 },
+            brand: { ...base.brand, wordmark: 'AXIOM', handle: '@aquagoat', footerPrimary: 'axiom.trade', footerSecondary: 'Save 10% off fees' },
+            artwork: { ...base.artwork, imageId: null },
+          };
+          const assets = await render.prepareAssets(state);
+          const c = render.renderToOffscreenCanvas(state, assets, 3);
+          const png = c.toDataURL('image/png');
+          const el = document.createElement('img');
+          el.src = png; logEl.appendChild(el);
+          await post('/png', { png });
+          line('POSTED');
+        } catch (e) {
+          line('ERROR ' + ((e && e.stack) || e));
+          await post('/result', { error: String((e && e.stack) || e) });
+        }
+      })();
+    </script>
+  </body>
+</html>
