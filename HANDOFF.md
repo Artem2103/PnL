@@ -21,6 +21,63 @@ the fourth.
 
 ---
 
+## Start here (2026-09-12, second pass)
+
+**The avatar frame is now a choice, and the red badge takes any colour.** Seven frames in a picker
+under *Identity → Avatar frame*; the pin (the red badge from `reference/frame.png`, the default
+and what every existing card keeps) gets a colour picker beneath the grid, the other six do not.
+Requested as: make the red frame's colour changeable with the gradient working itself out from
+one base colour; copy the frame the reference cards wear; add some of your own; let people choose,
+with colour only on ours.
+
+| id | what it is | colour |
+|---|---|---|
+| `none` | the picture fills the slot, square, as before 2026-09-11 | — |
+| `pin` | the red badge, ring ramp and pip derived from one colour | **picker** |
+| `tag` | the reference cards' own frame: tan ring, loop on top, traced off the cards | fixed |
+| `gilt` | a bevelled gold ring | fixed |
+| `halo` | a crisp ring with a soft glow | the card's accent |
+| `stamp` | a perforated postage-stamp border | the card's ink |
+| `corners` | four viewfinder brackets | the card's ink |
+
+**How one colour becomes the whole badge.** `badgePalette` in `src/lib/frames.ts` describes every
+measured stop of the reference badge — 32 around the ring, 5 across the pip's base, the tip's light
+tone — as `base × keep + white × lift`, two numbers fitted by least squares against the reference
+red once at module load. A new base colour gets the same 38 pairs applied to it, so its ring darkens
+and lightens where the red one does. Two numbers rather than a plain mix toward black or white,
+because the reference's light tones lose red on the way up — a one-number mix missed the pip's tip
+by 26 levels; the pair lands within 14 on every stop, and the test in `frames.test.ts` holds that
+bound. A white base comes out as a greyscale badge, a gold one as a gold badge; both are on the
+sheet from `dev/frames-shot.html`.
+
+**The tag.** Traced 2026-09-12 off the four reference cards averaged together — the same frame on
+each, different artwork behind it, so the ground averages out. Ring 2.2px with a 1.55px gap of
+ground showing through (the dark line around the reference picture is not a stroke), corner radius
+6.8, picture corners 3.7; the loop is 16 wide, rises 20.7 above the ring, and is four nested
+rounded rectangles — light, dark, light, dark fill — whose inner three close 1.5px above the ring
+while the outer runs under it. The ring's colour is a 32-point walk like the badge's: tan almost
+all round, lighter on the right, dark at the bottom-right corner, and a flat rose patch over the
+bottom-left quarter that is on every card and so is the frame, not the artwork. All in
+`SPEC.avatarTag` and `AVATAR_TAG`.
+
+**Where things moved.** The badge code left `draw.ts` for `src/lib/canvas/avatarFrames.ts`, which
+holds all seven behind one `drawAvatarFrame(ctx, x, y, size, style) → PictureSlot`; `drawHandle`
+calls that and clips the picture into what comes back. The picker's tiles are painted by the same
+function (`src/components/FramePicker.tsx`), so a tile is the export. `display.frameId` and
+`display.frameColor` are new state; `hydrateState` fills them for old saves, `foregroundKey` reads
+both (two new cases in `draw.test.ts`). No frame grows outside the 54.5px slot sideways or below —
+the footprint sets the column and the handle gap — and only the pin and the tag rise above it, as
+on the references.
+
+Verified on a contact sheet of all seven plus four pin colours and two frames on the light card
+(`dev/frames-shot.html`, new), and in the driven editor: seven tiles, clicking one changes
+`frameId`, the colour picker appears for the pin only. Typecheck, build and all 180 unit tests
+pass. Touches `src/types.ts`, `src/lib/defaults.ts`, `src/lib/frames.ts` (new),
+`src/lib/frames.test.ts` (new), `src/lib/canvas/spec.ts`, `src/lib/canvas/avatarFrames.ts` (new),
+`src/lib/canvas/draw.ts`, `src/lib/canvas/draw.test.ts`, `src/components/FramePicker.tsx` (new),
+`src/components/ControlPanel.tsx`, `src/styles/global.css`, `dev/frames-shot.html` (new),
+`README.md`.
+
 ## Start here (2026-09-12)
 
 **The card's geometry now matches the five `monthly-calendar-pnl` reference cards item for item,
@@ -582,7 +639,9 @@ Two techniques carry the fidelity:
 
 `reference/frame.png` is a 107 × 123 screenshot of a red badge — a rounded ring with a two-piece pip
 above it — supplied as "the red frame that should be around the avatar", to be copied exactly. It is
-now `SPEC.avatarFrame` plus `AVATAR_FRAME` in `spec.ts`, painted by `drawAvatarBadge` in `draw.ts`.
+now `SPEC.avatarFrame` plus `AVATAR_FRAME` in `spec.ts`, painted by `drawPin` in
+`canvas/avatarFrames.ts` (it was `drawAvatarBadge` in `draw.ts` until the frames became a choice on
+2026-09-12; the colours now come through `badgePalette` rather than straight from `AVATAR_FRAME`).
 
 **It fills the existing 54px avatar slot rather than wrapping it.** The picture inside is 45.3.
 Wrapping 54px of picture in the frame would have pushed the avatar's left edge to x30.7, off the
@@ -1645,9 +1704,12 @@ src/
       placement.ts       cover fit, zoom, pan — shared by draw and drag  (tested)
       primitives.ts      ink-aligned text, tracking, cached metrics
       draw.ts            the card itself + foregroundKey                 (tested)
+      avatarFrames.ts    the seven avatar frames, one drawAvatarFrame entry
+    frames.ts            the frame list and badgePalette (one colour -> badge) (tested)
   components/
     AuthGate.tsx         session? studio : sign-in screen
     AuthScreen.tsx       registration + login form
+    FramePicker.tsx      the avatar-frame tiles, painted by drawAvatarFrame
     ...                  preview, controls, media picker, inputs
 dev/
   start-check.html       browser harness: what happens in the FIRST second of an
@@ -1663,6 +1725,8 @@ dev/
                          be measured against reference/monthly-calendar-pnl.png (dev only)
   frame-shot.html        paints the avatar badge at the reference's own scale,
                          to be differenced against reference/frame.png    (dev only)
+  frames-shot.html       every avatar frame, the pin in four colours, two on the
+                         light card, on one contact sheet                  (dev only)
   colour-shot.html       measures the picture slots and the colour rules  (dev only)
   controls.html/.tsx     the editor panel and a live card, with no account gate
 ```

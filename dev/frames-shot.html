@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Frames shot</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body { background: #0b0d12; color: #eaedff; font: 13px/1.6 ui-monospace, monospace; padding: 20px; }
+      img { max-width: 100%; border: 1px solid #222; margin-top: 12px; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Dev-only. Renders the avatar corner of the card once per frame in FRAMES,
+      plus the pin in a handful of colours, at 3x, and lays the crops out on one
+      sheet. POSTs the sheet to 127.0.0.1:5199. Run it the way layout-shot.html
+      is run: an isolated Chrome, a collector listening. Every crop is the real
+      renderer over the plain ground with a generated avatar, so what is on the
+      sheet is what an export paints.
+    -->
+    <div id="log"></div>
+    <script type="module">
+      const logEl = document.getElementById('log');
+      const post = (p, o) =>
+        fetch('http://127.0.0.1:5199' + p, { method: 'POST', body: JSON.stringify(o) }).catch(() => {});
+      const line = (m) => { const d = document.createElement('div'); d.textContent = m; logEl.appendChild(d); };
+
+      async function makeAvatar() {
+        const c = document.createElement('canvas');
+        c.width = 200; c.height = 200;
+        const x = c.getContext('2d');
+        const g = x.createLinearGradient(0, 0, 200, 200);
+        g.addColorStop(0, '#2fe3ac'); g.addColorStop(1, '#1b6ef3');
+        x.fillStyle = g; x.fillRect(0, 0, 200, 200);
+        x.fillStyle = 'rgba(255,255,255,.85)';
+        x.beginPath(); x.arc(100, 78, 34, 0, Math.PI * 2); x.fill();
+        x.beginPath(); x.arc(100, 200, 62, Math.PI, 0); x.fill();
+        return new Promise((r) => c.toBlob(r, 'image/png'));
+      }
+
+      (async () => {
+        try {
+          const [render, defaults, images, frames, spec] = await Promise.all([
+            import('/src/lib/render.ts'),
+            import('/src/lib/defaults.ts'),
+            import('/src/lib/images.ts'),
+            import('/src/lib/frames.ts'),
+            import('/src/lib/canvas/spec.ts'),
+          ]);
+          await Promise.all(['300 24px Inter', '400 24px Inter', '800 64px Inter'].map((f) => document.fonts.load(f, 'August 2026')));
+          await document.fonts.ready;
+          if (![...document.fonts].some((f) => f.family.replace(/"/g, '') === 'Inter' && f.status === 'loaded')) {
+            throw new Error('Inter did not load');
+          }
+          const USER = 'dev-harness';
+          for (const a of await images.listRecords('avatar', USER)) {
+            if (a.name && a.name.startsWith('shot-avatar')) await images.deleteRecord(a.id);
+          }
+          const av = await images.addLocalMedia(
+            new File([await makeAvatar()], 'shot-avatar.png', { type: 'image/png' }),
+            'avatar',
+            USER,
+          );
+
+          const S = 3;
+          const A = spec.SPEC.avatar;
+          // Crop: the slot plus room above for the pip/loop and the handle to the right.
+          const crop = { x: A.x - 8, y: A.y - 26, w: 150, h: 90 };
+          const cases = [
+            ...frames.FRAMES.map((f) => ({ label: f.name, frameId: f.id, frameColor: frames.DEFAULT_FRAME_COLOR, textTone: 'light' })),
+            { label: 'Pin blue', frameId: 'pin', frameColor: '#1E90FF', textTone: 'light' },
+            { label: 'Pin gold', frameId: 'pin', frameColor: '#FFC94D', textTone: 'light' },
+            { label: 'Pin mint', frameId: 'pin', frameColor: '#2FE3AC', textTone: 'light' },
+            { label: 'Pin white', frameId: 'pin', frameColor: '#FFFFFF', textTone: 'light' },
+            { label: 'Stamp, black text', frameId: 'stamp', frameColor: frames.DEFAULT_FRAME_COLOR, textTone: 'dark' },
+            { label: 'Halo, black text', frameId: 'halo', frameColor: frames.DEFAULT_FRAME_COLOR, textTone: 'dark' },
+          ];
+          const cols = 4;
+          const rows = Math.ceil(cases.length / cols);
+          const sheet = document.createElement('canvas');
+          sheet.width = cols * crop.w * S; sheet.height = rows * crop.h * S;
+          const sctx = sheet.getContext('2d');
+          const base = defaults.createDefaultState();
+          for (let i = 0; i < cases.length; i++) {
+            const c = cases[i];
+            const state = {
+              ...base,
+              avatarId: av.id,
+              logoId: null,
+              brand: { ...base.brand, handle: '@aquagoat' },
+              display: { ...base.display, frameId: c.frameId, frameColor: c.frameColor, textTone: c.textTone },
+              artwork: { ...base.artwork, imageId: null },
+            };
+            const assets = await render.prepareAssets(state);
+            const card = render.renderToOffscreenCanvas(state, assets, S);
+            const dx = (i % cols) * crop.w * S, dy = Math.floor(i / cols) * crop.h * S;
+            sctx.drawImage(card, crop.x * S, crop.y * S, crop.w * S, crop.h * S, dx, dy, crop.w * S, crop.h * S);
+            sctx.fillStyle = '#fff'; sctx.font = '20px Inter';
+            sctx.fillText(c.label, dx + 8, dy + 24);
+          }
+          await images.deleteRecord(av.id);
+          const png = sheet.toDataURL('image/png');
+          const el = document.createElement('img'); el.src = png; logEl.appendChild(el);
+          await post('/png', { png });
+          line('POSTED');
+        } catch (e) {
+          line('ERROR ' + ((e && e.stack) || e));
+          await post('/result', { error: String((e && e.stack) || e) });
+        }
+      })();
+    </script>
+  </body>
+</html>

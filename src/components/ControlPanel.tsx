@@ -8,7 +8,11 @@ import type {
   PeriodState,
   TradeState,
 } from '../types';
-import { CUSTOM_THEME_ID, THEMES } from '../lib/themes';
+import { CUSTOM_THEME_ID, THEMES, resolveTheme } from '../lib/themes';
+import { ensureContrast } from '../lib/color';
+import { frameById } from '../lib/frames';
+import { GROUND, PALETTE } from '../lib/canvas/spec';
+import { FramePicker } from './FramePicker';
 import { approximateLiquidationPrice, computeCard, signsDisagree } from '../lib/pnl';
 import { buildContent } from '../lib/content';
 import { formatPrice } from '../lib/format';
@@ -69,6 +73,15 @@ export function ControlPanel({
   // Leave at least a second of clip after the start point, or the window is empty.
   const maxStart = Math.max(0, (background?.duration ?? 0) - 1);
   const isCustom = display.themeId === CUSTOM_THEME_ID;
+  const frame = frameById(display.frameId);
+  // What the frame tiles paint with: the same accent and ink the card would
+  // use right now, so a halo in the picker is the halo on the card.
+  const theme = resolveTheme(display);
+  const tileInk = display.textTone === 'dark' ? PALETTE.textDark : PALETTE.text;
+  const tileAccent = ensureContrast(
+    result.isProfit ? theme.accent : theme.loss,
+    (display.textTone === 'dark' ? GROUND.light : GROUND.dark)[1],
+  );
 
   // Stable identity, so the memoised pickers sit out every unrelated re-render.
   const selectArtwork = useCallback(
@@ -451,6 +464,28 @@ export function ControlPanel({
             emptyLabel="None"
           />
         </Field>
+        <Field label="Avatar frame" hint="rises above the slot on some">
+          <FramePicker
+            value={display.frameId}
+            frameColor={display.frameColor}
+            accent={tileAccent}
+            ink={tileInk}
+            onChange={(frameId) => patchDisplay({ frameId })}
+          />
+        </Field>
+        {frame.colourable ? (
+          <div className="subsection">
+            <RgbPicker
+              label="Frame colour"
+              value={display.frameColor}
+              onChange={(frameColor) => patchDisplay({ frameColor })}
+            />
+            <p className="muted-note">
+              One colour sets the whole badge: the ring’s shading, the pip and its highlight are
+              worked out from it, the way the original red is.
+            </p>
+          </div>
+        ) : null}
         <Field label="Logo mark" hint="top left">
           <ImagePicker
             role="logo"

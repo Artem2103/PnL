@@ -195,6 +195,45 @@ export const SPEC = {
     },
   },
 
+  /**
+   * The frame the reference cards themselves wear: a tan ring with a loop on
+   * top, like the tab on a luggage tag. Traced 2026-09-12 off the four
+   * reference cards averaged together (same frame on each, different artwork
+   * behind it, so the ground averages out), in the same way as the badge above.
+   *
+   * Fractions of the slot's outer side, like `avatarFrame`. The ring is a
+   * stroke inside the slot; between it and the picture the ground shows
+   * through, which is the thin dark line around the picture on the reference,
+   * not a stroke of its own.
+   */
+  avatarTag: {
+    stroke: 2.2 / 54.5,
+    gap: 1.55 / 54.5,
+    radius: 6.8 / 54.5,
+    pictureRadius: 3.7 / 54.5,
+    /**
+     * The loop: a rounded rectangle centred over the ring, drawn as nested
+     * bands from the outside in — light, dark, light again, then the dark
+     * fill that reads as the hole. Its bottom runs under the ring.
+     */
+    loop: {
+      width: 16 / 54.5,
+      /** From the ring's outer top edge up to the loop's top. */
+      rise: 20.7 / 54.5,
+      radius: 5 / 54.5,
+      /** Band widths, outer to inner. */
+      outerBand: 1.5 / 54.5,
+      darkBand: 1 / 54.5,
+      innerBand: 1.5 / 54.5,
+      /**
+       * The outer band runs down under the ring; the bands inside it close
+       * this far above the ring's top, so the hole reads as a hole and not as
+       * a slot cut into the ring.
+       */
+      innerFoot: 1.5 / 54.5,
+    },
+  },
+
   handle: {
     /**
      * Left edge of the ink, holding the reference's gap off the avatar: there
@@ -387,4 +426,55 @@ export const AVATAR_FRAME = {
     { offset: 0.843, color: '#D71E25' },
     { offset: 1, color: '#D71E25' },
   ],
+} as const;
+
+/**
+ * The tag frame's colours, read off the reference cards the same way as the
+ * badge's: `ringStops` is a walk around the ring's midline at 32 points,
+ * converted to conic-gradient angles. Tan almost all the way round, lighter
+ * on the right and dark at the bottom-right corner, with a flat rose patch
+ * over the bottom-left quarter — that patch is on every reference card, so it
+ * is the frame and not the artwork behind it. The point under the loop was
+ * replaced by its neighbours' mean, since what is there is the loop.
+ */
+export const AVATAR_TAG = {
+  ringStops: [
+    { offset: 0, color: '#DFB682' },
+    { offset: 0.03720, color: '#D7AE7B' },
+    { offset: 0.07072, color: '#C59D6A' },
+    { offset: 0.09871, color: '#AD8654' },
+    { offset: 0.12495, color: '#D3AB77' },
+    { offset: 0.15115, color: '#DDB480' },
+    { offset: 0.17916, color: '#D1A875' },
+    { offset: 0.21273, color: '#C69E6B' },
+    { offset: 0.25000, color: '#BB9461' },
+    { offset: 0.28727, color: '#B18A57' },
+    { offset: 0.32084, color: '#D9817D' },
+    { offset: 0.34885, color: '#D9817D' },
+    { offset: 0.37505, color: '#D9817D' },
+    { offset: 0.40129, color: '#D9817D' },
+    { offset: 0.42928, color: '#D9817D' },
+    { offset: 0.46280, color: '#BE8564' },
+    { offset: 0.50000, color: '#BC9562' },
+    { offset: 0.53720, color: '#C79F6C' },
+    { offset: 0.57072, color: '#D2AA76' },
+    { offset: 0.59871, color: '#DDB480' },
+    { offset: 0.62495, color: '#D3AB77' },
+    { offset: 0.65115, color: '#A98350' },
+    { offset: 0.67916, color: '#C29A67' },
+    { offset: 0.71273, color: '#D7AE7B' },
+    { offset: 0.75000, color: '#C89E68' },
+    { offset: 0.78727, color: '#BD9561' },
+    { offset: 0.82084, color: '#C39963' },
+    { offset: 0.84885, color: '#C99E65' },
+    { offset: 0.87505, color: '#CEA167' },
+    { offset: 0.90129, color: '#C99E65' },
+    { offset: 0.92928, color: '#C39963' },
+    { offset: 0.96280, color: '#BE9561' },
+    { offset: 1, color: '#DFB682' },
+  ],
+  /** The loop's bands, outside in. */
+  loopLight: '#CBA574',
+  loopDark: '#735126',
+  loopMid: '#A78252',
 } as const;

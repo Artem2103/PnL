@@ -66,6 +66,13 @@ export interface DisplayState {
   showLogo: boolean;
   /** Compact "+$10.1K" instead of "+$10,148.00". */
   compactHero: boolean;
+  /** Which frame the avatar sits in: an id from `FRAMES`. */
+  frameId: string;
+  /**
+   * The base colour of the one frame that takes one (the pin badge). Kept
+   * even while another frame is chosen, so switching back does not lose it.
+   */
+  frameColor: string;
 }
 
 export interface ArtworkState {

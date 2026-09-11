@@ -63,6 +63,8 @@ describe('foregroundKey', () => {
       (s) => ({ ...s, display: { ...s.display, themeId: 'custom', customAccent: '#00FF88' } }),
     ],
     ['compact hero', (s) => ({ ...s, display: { ...s.display, compactHero: false } })],
+    ['avatar frame', (s) => ({ ...s, display: { ...s.display, frameId: 'tag' } })],
+    ['frame colour', (s) => ({ ...s, display: { ...s.display, frameColor: '#1E90FF' } })],
     ['show rows', (s) => ({ ...s, display: { ...s.display, showRows: false } })],
     ['show handle', (s) => ({ ...s, display: { ...s.display, showHandle: false } })],
     ['show footer', (s) => ({ ...s, display: { ...s.display, showFooter: false } })],

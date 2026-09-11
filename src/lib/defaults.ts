@@ -1,5 +1,6 @@
 import type { CardState } from '../types';
 import { MAX_CLIP_SECONDS } from './images';
+import { DEFAULT_FRAME_COLOR, DEFAULT_FRAME_ID } from './frames';
 import { DEFAULT_CUSTOM_ACCENT, DEFAULT_THEME_ID } from './themes';
 
 /**
@@ -50,6 +51,8 @@ export function createDefaultState(): CardState {
       showWordmark: true,
       showLogo: true,
       compactHero: true,
+      frameId: DEFAULT_FRAME_ID,
+      frameColor: DEFAULT_FRAME_COLOR,
     },
     artwork: {
       imageId: null,

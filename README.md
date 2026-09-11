@@ -135,6 +135,11 @@ Exported at 1×, 2× or 3× (up to 2520 × 1710).
   numbers, rows, accent and marks are painted on every frame by the same renderer that makes the
   PNG.
 - **Your own marks**: wordmark, handle, avatar, logo, and both footer strings are yours to set.
+- **Seven avatar frames.** The pin — a pip over a gradient ring — takes any colour, and the whole
+  badge is worked out from that one colour: the ring's shading, the pip and its highlight keep the
+  relationship the original red has. The tag is the frame the reference cards wear. Gilt is gold;
+  halo glows in the card's accent; stamp and corners are drawn in the text colour; none is none.
+  Only the pin has a colour of its own to set.
 - Download, copy to clipboard, or system share. `Ctrl`/`⌘` + `S` exports.
 - Settings persist across reloads — in `localStorage`, and in your account when you have one.
 

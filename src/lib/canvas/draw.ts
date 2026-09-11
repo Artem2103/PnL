@@ -3,15 +3,14 @@ import type { CardContent } from '../content';
 import type { PnlResult } from '../pnl';
 import { ensureContrast, readableOn, withAlpha } from '../color';
 import { resolveTheme, type Theme } from '../themes';
-import { AVATAR_FRAME, CARD, GROUND, PALETTE, SPEC } from './spec';
+import { CARD, GROUND, PALETTE, SPEC } from './spec';
+import { drawAvatarFrame } from './avatarFrames';
 import { placeCover } from './placement';
 import {
   FONT_DISPLAY,
   cachedGradient,
-  conicGradient,
   coverRect,
   drawText,
-  linearGradient,
   measureText,
   radialBloom,
   roundRectPath,
@@ -88,7 +87,7 @@ export function drawCardForeground(ctx: Ctx2D, input: DrawInput): void {
   drawTitle(ctx, input, ink);
   drawHeroBlock(ctx, input, accent);
   if (state.display.showRows) drawRows(ctx, input, accentInk, ink);
-  if (state.display.showHandle) drawHandle(ctx, input, ink);
+  if (state.display.showHandle) drawHandle(ctx, input, ink, accentInk);
   if (state.display.showFooter) drawFooter(ctx, input, ink);
   ctx.restore();
 }
@@ -115,6 +114,9 @@ export function foregroundKey(input: DrawInput): string {
     // branch that has to stay in step with `resolveTheme`.
     d.customAccent,
     d.textTone,
+    d.frameId,
+    // Same again: only the pin reads it, and the key stays honest either way.
+    d.frameColor,
     result.isProfit ? 1 : 0,
     d.showLogo ? 1 : 0,
     d.showWordmark ? 1 : 0,
@@ -335,135 +337,19 @@ function drawRows(ctx: Ctx2D, input: DrawInput, accent: string, ink: string): vo
 /* Handle and footer                                                   */
 /* ------------------------------------------------------------------ */
 
-interface PictureSlot {
-  x: number;
-  y: number;
-  size: number;
-  radius: number;
-}
-
-/**
- * The red badge from `reference/frame.png`: a pip above a gradient ring.
- *
- * Paints everything but the picture and hands back the hole it left, so the
- * caller can clip the avatar into it without the two sets of insets having to
- * agree by hand.
- *
- * Order matters once. The pip's base overlaps nothing, but it sits close
- * enough to the ring (2.4 reference pixels) that painting it first and the
- * ring second keeps the ring's own antialiased edge on top, which is what the
- * reference shows.
- */
-function drawAvatarBadge(ctx: Ctx2D, x: number, y: number, size: number): PictureSlot {
-  const f = SPEC.avatarFrame;
-  const stroke = size * f.stroke;
-  const inset = stroke + size * f.gap;
-  const cx = x + size / 2;
-
-  drawAvatarPip(ctx, cx, y, size);
-
-  // Stroked on the midline, so the ring's outer edge lands on the slot's edge
-  // and the gradient is sampled where the reference's was measured.
-  ctx.save();
-  roundRectPath(
-    ctx,
-    x + stroke / 2,
-    y + stroke / 2,
-    size - stroke,
-    size - stroke,
-    size * f.radius - stroke / 2,
-  );
-  ctx.strokeStyle = cachedGradient(ctx, `avatar-ring:${x}:${y}:${size}`, (target) =>
-    conicGradient(target, 0, cx, y + size / 2, AVATAR_FRAME.ringStops, size),
-  );
-  ctx.lineWidth = stroke;
-  ctx.stroke();
-  ctx.restore();
-
-  return {
-    x: x + inset,
-    y: y + inset,
-    size: size - inset * 2,
-    radius: size * f.pictureRadius,
-  };
-}
-
-/**
- * The two-piece pip above the ring. Both pieces are slices of one wedge — the
- * flanks are parallel on the reference to within a fortieth of a pixel per row
- * — but they are drawn as two shapes rather than one clipped wedge because
- * they are not painted the same: the tip is solid light red, the base is vivid
- * red inside a light-red outline.
- *
- * The base is two fills, not a fill and a stroke. Every number in the spec is
- * an outer edge, and a stroke is centred on its path, so stroking the measured
- * trapezoid puts half the outline outside the shape and paints it 14% too big.
- * Filling the measured shape in the outline colour and the inset shape in the
- * fill colour puts the outer edge exactly where it was measured.
- *
- * `y` is the ring's outer top edge; both pieces are measured up from it.
- */
-function drawAvatarPip(ctx: Ctx2D, cx: number, y: number, size: number): void {
-  const p = SPEC.avatarFrame.pip;
-
-  const bottom = y - size * p.baseRise;
-  const top = bottom - size * p.baseHeight;
-  const bottomHalf = size * p.baseBottomHalfWidth;
-  const topHalf = size * p.baseTopHalfWidth;
-
-  // Insetting a trapezoid is not the same as subtracting the outline width
-  // from each edge: the flanks lean, so the same perpendicular step moves them
-  // further sideways than it moves the flat top and bottom. `lean` is that
-  // horizontal cost per unit of inset, off the flanks' own slope.
-  const t = size * p.baseStroke;
-  const slope = (bottomHalf - topHalf) / (bottom - top);
-  const lean = Math.hypot(1, slope);
-
-  const trapezoid = (yTop: number, yBottom: number, halfTop: number, halfBottom: number): void => {
-    ctx.beginPath();
-    ctx.moveTo(cx - halfTop, yTop);
-    ctx.lineTo(cx + halfTop, yTop);
-    ctx.lineTo(cx + halfBottom, yBottom);
-    ctx.lineTo(cx - halfBottom, yBottom);
-    ctx.closePath();
-    ctx.fill();
-  };
-
-  ctx.save();
-  ctx.fillStyle = AVATAR_FRAME.pipLight;
-  trapezoid(top, bottom, topHalf, bottomHalf);
-  ctx.fillStyle = cachedGradient(ctx, `avatar-pip:${cx}:${bottom}:${size}`, (target) =>
-    linearGradient(
-      target,
-      cx - bottomHalf,
-      bottom,
-      cx + bottomHalf,
-      bottom,
-      AVATAR_FRAME.pipFillStops,
-    ),
-  );
-  trapezoid(top + t, bottom - t, topHalf - t * (lean - slope), bottomHalf - t * (lean + slope));
-
-  const tipBottom = y - size * p.tipRise;
-  const tipHalf = size * p.tipHalfWidth;
-  ctx.beginPath();
-  ctx.moveTo(cx, tipBottom - size * p.tipHeight);
-  ctx.lineTo(cx + tipHalf, tipBottom);
-  ctx.lineTo(cx - tipHalf, tipBottom);
-  ctx.closePath();
-  ctx.fillStyle = AVATAR_FRAME.pipLight;
-  ctx.fill();
-  ctx.restore();
-}
-
-function drawHandle(ctx: Ctx2D, input: DrawInput, ink: string): void {
+function drawHandle(ctx: Ctx2D, input: DrawInput, ink: string, accent: string): void {
   const { state, assets } = input;
   const avatar = assets.avatar;
   const { x, y, size } = SPEC.avatar;
 
-  // The picture sits inside the badge rather than filling the slot; the badge
-  // owns the slot's 54px and `drawAvatarBadge` says where the picture lands.
-  const picture = drawAvatarBadge(ctx, x, y, size);
+  // The picture sits inside the frame rather than filling the slot; the frame
+  // owns the slot's 54.5px and `drawAvatarFrame` says where the picture lands.
+  const picture = drawAvatarFrame(ctx, x, y, size, {
+    frameId: state.display.frameId,
+    frameColor: state.display.frameColor,
+    accent,
+    ink,
+  });
   ctx.save();
   roundRectPath(ctx, picture.x, picture.y, picture.size, picture.size, picture.radius);
   ctx.clip();
