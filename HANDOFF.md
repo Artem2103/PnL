@@ -23,7 +23,9 @@ the fourth.
 
 ## Start here (2026-09-12, second pass)
 
-**The avatar frame is now a choice, and the red badge takes any colour.** Seven frames in a picker
+**The avatar frame is now a choice, and the red badge takes any colour — on `main` and deployed**
+as `cf080be`; <https://nexocards.vercel.app> rebuilt within a minute of the push and the live bundle
+(`assets/index-DcjcOQKf.js`) carries the picker's `frame-swatch` class. Seven frames in a picker
 under *Identity → Avatar frame*; the pin (the red badge from `reference/frame.png`, the default
 and what every existing card keeps) gets a colour picker beneath the grid, the other six do not.
 Requested as: make the red frame's colour changeable with the gradient working itself out from
