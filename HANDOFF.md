@@ -37,7 +37,14 @@ public → profiles* shows every account's email.
 - `insert`/`update` on `profiles` are revoked from API roles except `update (display_name)`. That
   way nobody can overwrite the copied email with something false. The app doesn't write this table,
   so nothing breaks.
-- Not verified: the SQL running on the real project.
+- **Verified 2026-09-14 after Artem ran it**, in the SQL Editor: 1 profile, and it has an email;
+  1 `media` row, which `admin.uploads` also shows; the `on_auth_user_updated` trigger exists;
+  2 objects in the `media` bucket.
+- **Opening an upload, checked in Chrome:** *Storage* → *Files* → `media` → the folder named after
+  the user id (the `user_id` column in `admin.uploads`) → click the file. A panel on the right plays
+  the video (the current one is 12 s, 7.78 MB, `video/mp4`) and has *Download* and *Get URL*. Both
+  current objects predate the rename, so they are still called `<media id>` and `<media id>.poster`.
+  Uploads from now on will carry the original file name.
 
 ### Seeing uploads, and who uploaded them, in the dashboard (2026-09-14)
 
