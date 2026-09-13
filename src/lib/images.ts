@@ -730,6 +730,27 @@ export function peekImageElement(id: string): HTMLImageElement | null {
 }
 
 /**
+ * The clip's bytes, for the frame-exact exporter (`lib/offline.ts`), which
+ * reads the file rather than playing it. Same download-on-first-use rule as
+ * `openVideoForExport`, and the same error when the bytes are not here yet.
+ */
+export async function openClipBytes(
+  id: string,
+): Promise<{ bytes: ArrayBuffer; mimeType: string; duration: number } | null> {
+  const stored = await getRecord(id);
+  if (!stored || kindOf(stored) !== 'video') return null;
+  const record = await ensureBlob(stored);
+  if (!record?.blob) {
+    throw new ImageError('That clip has not downloaded to this browser yet. Try again in a moment.');
+  }
+  return {
+    bytes: await record.blob.arrayBuffer(),
+    mimeType: record.mimeType,
+    duration: record.duration ?? 0,
+  };
+}
+
+/**
  * A private `<video>` for the exporter, so seeking and playing during a
  * recording never disturbs the clip the preview is showing.
  */

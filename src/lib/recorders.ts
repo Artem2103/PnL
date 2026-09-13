@@ -79,6 +79,32 @@ export interface AudioGraph {
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /* ------------------------------------------------------------------ */
+/* Bitrate                                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Bits per pixel per frame at 30 fps. 0.09 was budgeted for flat card
+ * graphics, but the background is a photographic clip — grain, motion and
+ * film-like detail — and at that rate it came out mushy and blocked up around
+ * the moving parts. Raised again with the frame-exact exporter, which is not
+ * racing the clock and can afford it.
+ */
+const BITS_PER_PIXEL = 0.18;
+/** Frames past 30 a second look more like their neighbours and cost half. */
+const BITS_PER_EXTRA_PIXEL = 0.09;
+/** A card is mostly type. Under this it stops surviving a platform re-encode. */
+const MIN_BITRATE = 6_000_000;
+const MAX_BITRATE = 24_000_000;
+
+/** The video bitrate for a frame size and rate, bits per second. */
+export function bitrateFor(width: number, height: number, fps = 30): number {
+  const base = Math.min(fps, 30) * BITS_PER_PIXEL;
+  const extra = Math.max(0, fps - 30) * BITS_PER_EXTRA_PIXEL;
+  const budget = Math.round(width * height * (base + extra));
+  return Math.min(MAX_BITRATE, Math.max(MIN_BITRATE, budget));
+}
+
+/* ------------------------------------------------------------------ */
 /* WebCodecs                                                           */
 /* ------------------------------------------------------------------ */
 

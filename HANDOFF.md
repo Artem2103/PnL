@@ -13,6 +13,7 @@ file easier to read:
 | 2026-08-25 (a) | accounts: Supabase auth, per-account card and media | `62b4a5b` → `main` |
 | 2026-08-25 (b) | reference-sized pictures, white/black text, cherry and custom colour | `c96f703` → `main` |
 | 2026-08-25 (c) | local mode, and the scroll fix that came out of testing it | `f3d739d`, `45c4b95` → `main` |
+| 2026-09-14 (b) | frame-exact video export: every source frame, at the source's rate, sound to the sample | see **Start here** |
 
 All of it is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
@@ -23,7 +24,108 @@ the fourth.
 
 ## Start here (2026-09-14)
 
-### Topbar avatar fixed (2026-09-14, latest)
+### Video export rebuilt as frame-exact; preview pauses while it runs (2026-09-14, latest)
+
+Artem reported, after the accounts and uploads work: *"the videos are laggy when downloading and
+also in the preview they are also laggy and the sound doesn't keep up. Optimize that (videos
+quality, fps, smoothness, audio, etc) to the MAX."*
+
+**What was actually wrong, measured before anything was changed.**
+
+- The files in `Downloads` from that night say it plainly. `dev/mp4-cadence.mjs` on the three
+  `august-2026-pnl (12–14).mp4` exports of the 23 s clip: **13.1, 10.3 and 14.9 fps**, worst gaps of
+  300, 233 and 133 ms. The same evening's 12 s export (`1d-realized-pnl.mp4`) was a clean 29.8 fps.
+  So it was not every export, it was the long one.
+- The source clips are **HEVC**, not H.264: `ssstik.io_1788973037641.mp4` is 1440 × 1080 at
+  **59.9 fps** (1393 frames in 23.2 s, six key frames), `ssstik.io_1789071549332.mp4` is 1600 × 1080
+  at 24 fps. Both have an audio edit list of 2112 samples, which matters below.
+- Reproduced in the isolated Chrome (the recipe under **Environment notes**), local mode, the 60 fps
+  clip: the preview on its own is fine — **361 frames decoded, 0 dropped**, each video draw 0.4 ms,
+  no long tasks, with sound on or off. Start an export and the same preview drops **293 of 1198
+  frames** over 20 s, the main thread's frame gap doubles, and the export comes out at **21.4 fps**
+  with 167 ms holes (`baseline-realtime-60fps.mp4` in the scratchpad). That is the whole report:
+  the live recorder plays the clip in a second `<video>` next to the preview's, so the one GPU is
+  decoding a 60 fps HEVC stream twice while the canvas is painted at 60 Hz and the encoder runs, and
+  whatever the `<video>` fails to show, the file fails to contain. The picture stalls while the
+  sound carries on, which is "the sound doesn't keep up".
+- One assumption in this file was wrong and is corrected: **there is no hardware H.264 encoder in
+  Chrome on this machine.** `VideoEncoder.isConfigSupported` with `hardwareAcceleration:
+  'prefer-hardware'` answers *unsupported* for High and Baseline alike; the export has always used
+  the software encoder, which does **47 fps at 1680 × 1140** (High) on this Intel UHD. The section
+  *The lag at 0.5 s* attributes the start-up freeze to "the hardware encoder coming up in the GPU
+  process"; the measurement stood, the explanation did not. Two, three and four software encoders
+  in parallel on alternate key-frame groups were tried and gained nothing (46.9 → 44.4 → 41.7 →
+  40.2 fps), so there is one encoder.
+
+**What was built.** The export no longer records anything. `src/lib/mp4read.ts` is a demuxer —
+`moov`/`stbl` for a progressive file, `moof`/`trun` for a fragmented one, H.264 and HEVC sample
+entries with their codec strings, AAC through `esds`, edit lists and the rotation matrix — and
+`src/lib/offline.ts` drives it: every sample in the trim window goes to a `VideoDecoder`, each
+decoded frame is painted once through the unchanged `renderToCanvas` and encoded by a
+`VideoEncoder` at the source frame's own timestamp; the sound goes through an `AudioDecoder`, is cut
+to the window to the sample, and is re-encoded at 192 kbit/s AAC on the same timeline; `writeMp4`
+writes the file as before. `renderCardVideo` tries this first and falls back to the live recorder
+on `OfflineUnavailable` (WebM, a codec the machine will not decode, no decoders, or a decoder that
+gives up before the first frame). `App` pauses the preview for the duration of any export and puts
+it back after; the toast now says which path made the file, its frame rate and how long it took.
+The bitrate budget moved to `recorders.ts` and takes the frame rate: ~10.3 Mbit/s at 30 fps for the
+card, 15.5 at 60 (frames past 30 are budgeted at half), still capped at 24. `BackgroundMedia.element`
+may now be a `VideoFrame` or a canvas, and `isPaintable` in `draw.ts` only asks a `<video>` for its
+`readyState`.
+
+**Verified, isolated Chrome 152 on this machine, local mode, the real clips:**
+
+| | before (live) | after (frame-exact) |
+|---|---|---|
+| 60 fps HEVC, 23.2 s window | 497 frames, 21.4 fps, 19.5 ms jitter, 167 ms worst gap | **1393 frames, 59.92 fps, 0.62 ms jitter, 36.4 ms worst gap — the source's own numbers exactly** |
+| sound against the source (envelope cross-correlation, `dev/av-sync.js`) | −6 to −16 ms | **0 ms, correlation 0.999** |
+| wall time for that window | 23.3 s | 28.6 s (encoder-bound: 25.0 of 28.6 s is waiting on the software encoder) |
+| 24 fps HEVC, 12.3 s | — | 296 frames, 23.98 fps, 0 ms jitter — the source's — in 7.5 s |
+| trimmed window, start 5 s, 6 s long, 60 fps | — | 360 frames, exactly 60 fps, sound 0 ms off the source's 5–11 s, first frame is the source's 5.0 s (checked visually against the source at 5.5 s) |
+| WebM source (recorded in-page, VP9/Opus) | — | falls back to the live recorder with a console warning; 30.25 fps |
+| preview during export | 24 % of frames dropped | paused, resumes after |
+| unit tests | 199 | **219**, all passing; `mp4read.test.ts` round-trips `writeMp4`'s output and a hand-built fragmented file, `offline.test.ts` covers the window arithmetic |
+
+A side result worth having: with the preview paused, the **live** recorder also holds 30 fps on
+this machine (29.96 fps, 2.2 ms jitter on the same 60 fps clip). The pause alone would have fixed
+most of the report; the frame-exact path is what makes it 60 fps and exact.
+
+**The trap that cost the most time here: `AudioDecoder` output timestamps.** The first cut trusted
+`AudioData.timestamp` and the sound came out 24–48 ms late. A phone clip's audio track carries an
+edit list of 2112 samples (the AAC encoder's priming), so its first packet sits at −47.9 ms once
+that is applied — and Chrome's `AudioDecoder` starts its output clock at zero regardless of a
+negative input timestamp. Three impulse experiments pinned it (`scratchpad/audiolab.js` that
+session; the results are the point): encoder → `writeMp4` → the browser's player is exact to the
+sample; our own file back through `AudioDecoder` is exact; the source decoded with a **running
+sample counter anchored on the first packet's own timestamp** matches the player with correlation
+1.000. So `transcodeAudio` counts frames from the first packet's `pts` and never reads
+`data.timestamp`. The encoder is also configured from the first decoded buffer's rate and channel
+count rather than the header's, because HE-AAC decodes at twice its stated rate.
+
+**Two smaller traps:**
+- The demuxer test fixture holds two identity matrices (`mvhd`'s and `tkhd`'s); patching "the"
+  identity matrix patched the wrong one. The test takes the last.
+- `dev/start-check.html`, `cadence-check.html` and `audio-check.html` drive `renderCardVideo`, and
+  their synthetic MediaRecorder sources are fragmented MP4s the demuxer reads — so they now measure
+  the frame-exact path, not the live one. To measure the live recorder again, hand them a WebM.
+
+**How to verify.** The isolated Chrome (below) on the local-mode server: `VITE_SUPABASE_URL=""
+VITE_SUPABASE_ANON_KEY="" npx vite --port 5174`. `dev/probe.mjs` is `app-probe.mjs` plus
+`--match`, `--file`, `--download=<dir>` and `--screenshot=<png>`; drop a clip in `dev/` as
+`tmp-clip60.mp4` (the pattern is gitignored), inject it through the picker's file input with a
+`DataTransfer`, press *Download MP4* with `--gesture`, and read the file with `dev/mp4-cadence.mjs`
+and its sound with `dev/av-sync.js`. `window.__pnlExportStats` after an export (dev builds only)
+says where the time went. Note that `Browser.setDownloadBehavior` over CDP did **not** redirect
+the download in this Chrome; the files landed in `Downloads` and were moved out by hand — check
+there first when a run seems to have produced nothing.
+
+**Not verified:** Safari (the decoders exist from 16.4; HEVC decode and AAC encode there are
+untested); a source with a rotation matrix in the browser (the matrix is unit-tested, the
+`orient` paint is not); an HE-AAC source; an export with the window hidden (the isolated Chrome
+cannot be hidden, and the everyday one cannot be driven); the live site — this is on `main` but
+the deploy was not checked.
+
+### Topbar avatar fixed (2026-09-14)
 
 The round profile button looked broken until you clicked it: a small figure floating in the circle.
 The cause was the browser's default `<button>` padding, 6px on each side in Chrome. It squeezed the
@@ -1767,6 +1869,13 @@ costs nothing.
 
 ---
 
+18. **The frame-exact export is encoder-bound and single-threaded (2026-09-14).** 28.6 s for a
+    23.2 s window at 60 fps here, all of it waiting on Chrome's software H.264 encoder; parallel
+    encoders did not help. If it ever needs to be faster, the levers are the encoder's own
+    (`latencyMode`; a lower `bitrate` does not help; `avc1.42E028` was slower than High) or a
+    machine with a hardware encoder Chrome will use. Also: the live recorder is now only reached
+    for WebM and undecodable sources, so item 17's note that only one recorder has been run since
+    the split now applies to both live recorders.
 17. **The video export has two recorders and only one has been run since the split (2026-09-11).**
     `WebCodecsRecorder` is what every browser tested here takes and is what *The lag at 0.5 s*
     measures. `MediaStreamRecorder` is the old MediaRecorder path moved behind the `CardRecorder`

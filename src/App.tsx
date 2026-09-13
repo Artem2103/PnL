@@ -183,19 +183,33 @@ export default function App() {
   const handleDownloadVideo = useCallback(async () => {
     setBusy('video');
     setProgress(0);
+    // The export and the preview share one decoder and one GPU. Holding the
+    // preview on its current frame while the file is made gives the export
+    // the whole machine, and spares the person a stuttering preview next to
+    // a progress bar.
+    const wasPlaying = playing;
+    setPlaying(false);
     try {
       const result = await downloadCardVideo(state, {
         scale,
         onProgress: setProgress,
       });
-      notify(`${result.extension.toUpperCase()} downloaded — ${result.duration.toFixed(1)} s.`);
+      const how =
+        result.recorder === 'frame-exact'
+          ? `${result.fps} fps, every frame`
+          : `recorded live at ${result.fps} fps`;
+      notify(
+        `${result.extension.toUpperCase()} downloaded — ${result.duration.toFixed(1)} s, ${how}, ` +
+          `in ${result.elapsed.toFixed(1)} s.`,
+      );
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Video export failed.', 'error');
     } finally {
       setBusy(null);
       setProgress(0);
+      setPlaying(wasPlaying);
     }
-  }, [notify, scale, state]);
+  }, [notify, playing, scale, state]);
 
   const handleShare = useCallback(async () => {
     setBusy('share');
@@ -389,7 +403,7 @@ export default function App() {
                     className="btn btn--primary"
                     onClick={() => void handleDownloadVideo()}
                     disabled={busy !== null}
-                    title={`Records ${clip.length.toFixed(1)} s in real time`}
+                    title={`Every frame of the ${clip.length.toFixed(1)} s window, at the clip's own frame rate`}
                   >
                     {busy === 'video'
                       ? `Recording ${Math.round(progress * 100)}%`
@@ -434,11 +448,11 @@ export default function App() {
                 video.supported ? (
                   <>
                     One renderer paints the preview, the PNG and every video frame, so the card is
-                    identical in all three. Recording runs in real time — {clip.length.toFixed(1)} s
-                    of clip takes {clip.length.toFixed(1)} s. Browsers stop decoding video in a
-                    window that is behind another one, so the recording pauses there and picks up
-                    when this window comes back. The scale buttons set the PNG; video always records
-                    at {videoScale}×, because anything smaller is smeared by the time a platform has
+                    identical in all three. The video is built frame by frame from the clip's own
+                    frames, not recorded off the screen: it keeps the clip's frame rate, the sound
+                    stays in step, and it goes as fast as this machine can encode. The preview
+                    pauses while it runs. The scale buttons set the PNG; video always records at{' '}
+                    {videoScale}×, because anything smaller is smeared by the time a platform has
                     re-encoded it.
                   </>
                 ) : (

@@ -137,7 +137,11 @@ export function foregroundKey(input: DrawInput): string {
  * blank the card, so the themed ground is shown until it can.
  */
 function isPaintable(media: BackgroundMedia): boolean {
-  return media.kind !== 'video' || (media.element as HTMLVideoElement).readyState >= 2;
+  // A decoded frame handed over by the frame-exact exporter is always ready;
+  // only a `<video>` can be asked for a picture it has not buffered yet.
+  if (media.kind !== 'video') return true;
+  const element = media.element;
+  return !(element instanceof HTMLVideoElement) || element.readyState >= 2;
 }
 
 function drawBackground(ctx: Ctx2D, input: DrawInput, theme: Theme): void {

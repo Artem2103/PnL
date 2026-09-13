@@ -114,7 +114,12 @@ export interface CardState {
  */
 export interface BackgroundMedia {
   kind: 'image' | 'video';
-  element: HTMLImageElement | HTMLVideoElement;
+  /**
+   * What `drawImage` is handed. The preview and the live recorder draw a
+   * `<video>`; the frame-exact exporter draws each decoded `VideoFrame`, or a
+   * canvas holding it turned the right way up.
+   */
+  element: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | VideoFrame;
   width: number;
   height: number;
   /** Seconds. Zero for stills. */

@@ -3,26 +3,35 @@
  *
  * The card invariant still holds: there is exactly one function that paints a
  * card, `drawCard`, reached through `renderToCanvas`. A video is nothing more
- * than that same function called once per frame while the background clip
- * plays, with `MediaRecorder` encoding the canvas. Every number, label and
- * colour on a video frame is produced by the code that produces the PNG.
+ * than that same function called once per frame of the background clip. Every
+ * number, label and colour on a video frame is produced by the code that
+ * produces the PNG.
  *
- * Recording happens in real time — the browser has no way to encode a canvas
- * faster than playback — so a 30 s clip takes 30 s to export.
+ * There are two ways the frames get made, tried in this order:
  *
- * The frames are encoded by one of the two recorders in `lib/recorders.ts`:
- * WebCodecs wherever it exists, which writes the file itself
- * (`lib/mp4write.ts`), and `MediaRecorder` otherwise, whose output is then
- * put right by `repairFragmentedMp4` (`lib/mp4.ts`). Why there are two, and
- * why the first is preferred, is at the top of `lib/recorders.ts`.
+ * 1. **Frame-exact** (`lib/offline.ts`): the clip's own frames, decoded from
+ *    its file with `VideoDecoder`, painted once each and encoded with
+ *    `VideoEncoder`, on the clip's own timestamps; the sound decoded from the
+ *    same file and re-encoded on the same timeline. Every frame lands, at the
+ *    clip's own frame rate, whatever the machine is doing, and it runs as fast
+ *    as the codecs allow. Needs an MP4/MOV with H.264 or HEVC and AAC.
+ * 2. **Live** (`lib/recorders.ts`): the clip plays in a detached `<video>`
+ *    while the canvas is repainted and sampled thirty times a second. Real
+ *    time, and only as smooth as the machine manages to play — which is why
+ *    it is the fallback now: WebM sources, codecs this machine will not
+ *    decode, browsers without the decoders. `WebCodecsRecorder` writes the
+ *    file itself (`lib/mp4write.ts`); `MediaStreamRecorder` is `MediaRecorder`
+ *    with `repairFragmentedMp4` (`lib/mp4.ts`) after it.
  */
 
 import type { CardState, RenderAssets } from '../types';
-import { MAX_CLIP_SECONDS, openVideoForExport } from './images';
+import { MAX_CLIP_SECONDS, openClipBytes, openVideoForExport } from './images';
 import type { RecordingRepair } from './mp4';
+import { OfflineUnavailable, exportOffline } from './offline';
 import {
   MediaStreamRecorder,
   WebCodecsRecorder,
+  bitrateFor,
   planWebCodecs,
   type AudioGraph,
   type CardRecorder,
@@ -46,7 +55,10 @@ export function videoScaleFor(scale: number): number {
   return Math.min(MAX_VIDEO_SCALE, Math.max(MIN_VIDEO_SCALE, scale));
 }
 
-/** Frame rate of the exported file. */
+/**
+ * Frame rate of a *live-recorded* file. The frame-exact path keeps the
+ * clip's own rate instead (up to `MAX_OUTPUT_FPS` in `lib/offline.ts`).
+ */
 export const VIDEO_FPS = 30;
 
 export interface Candidate {
@@ -90,6 +102,16 @@ export function webCodecsAvailable(): boolean {
     typeof VideoFrame === 'function' &&
     typeof AudioEncoder === 'function' &&
     typeof HTMLCanvasElement !== 'undefined'
+  );
+}
+
+/** Whether the frame-exact exporter can exist here; the clip decides the rest. */
+export function frameExactAvailable(): boolean {
+  return (
+    webCodecsAvailable() &&
+    typeof VideoDecoder === 'function' &&
+    typeof AudioDecoder === 'function' &&
+    typeof EncodedVideoChunk === 'function'
   );
 }
 
@@ -174,10 +196,17 @@ export interface VideoExportResult {
   duration: number;
   /** What the container repair found and changed; nothing, on the WebCodecs path. */
   repair: RecordingRepair;
-  /** Which encoder path made the file. */
-  recorder: 'webcodecs' | 'mediarecorder';
+  /**
+   * Which path made the file. `frame-exact` decoded the clip's own frames
+   * (`lib/offline.ts`); the other two recorded a playing `<video>` live.
+   */
+  recorder: 'frame-exact' | 'webcodecs' | 'mediarecorder';
   /** Frames the encoder was too busy to take; zero on a machine that keeps up. */
   framesSkipped: number;
+  /** Frames per second the file carries. */
+  fps: number;
+  /** Wall-clock seconds the export took. */
+  elapsed: number;
 }
 
 export class VideoExportError extends Error {}
@@ -360,25 +389,60 @@ async function attachAudio(
 }
 
 /**
- * Bits per pixel per frame. 0.09 was budgeted for flat card graphics, but the
- * background is a photographic clip — grain, motion and film-like detail — and
- * at that rate it came out mushy and blocked up around the moving parts.
+ * The frame-exact path: the clip's own frames, decoded and painted one by one.
+ * Throws `OfflineUnavailable` when this clip or this browser cannot take it,
+ * in which case the caller records live instead.
  */
-const BITS_PER_PIXEL = 0.14;
-/** A card is mostly type. Under this it stops surviving a platform re-encode. */
-const MIN_BITRATE = 6_000_000;
-const MAX_BITRATE = 24_000_000;
-
-function bitrateFor(width: number, height: number): number {
-  const budget = Math.round(width * height * VIDEO_FPS * BITS_PER_PIXEL);
-  return Math.min(MAX_BITRATE, Math.max(MIN_BITRATE, budget));
+async function renderCardVideoFrameExact(
+  state: CardState,
+  options: VideoExportOptions,
+): Promise<VideoExportResult> {
+  const clipBytes = await openClipBytes(state.artwork.imageId!);
+  if (!clipBytes) throw new VideoExportError('That background is a photo, not a clip.');
+  const clip = resolveClip(clipBytes.duration, state.artwork.clipStart, state.artwork.clipLength);
+  if (clip.length <= 0) {
+    throw new VideoExportError('That clip window is empty. Move the start point back.');
+  }
+  // Avatar and logo only: the artwork slot is filled per frame by the
+  // exporter, and resolving the clip here would spin up a `<video>` for it.
+  const assets = await prepareAssets({ ...state, artwork: { ...state.artwork, imageId: null } });
+  const result = await exportOffline({
+    bytes: clipBytes.bytes,
+    state,
+    assets,
+    scale: videoScaleFor(options.scale),
+    clipStart: clip.start,
+    clipLength: clip.length,
+    muteAudio: state.artwork.muteAudio,
+    onProgress: options.onProgress,
+    signal: options.signal,
+  });
+  return {
+    blob: result.blob,
+    mimeType: 'video/mp4',
+    extension: 'mp4',
+    width: result.width,
+    height: result.height,
+    duration: result.duration,
+    repair: {
+      patched: false,
+      videoSeconds: result.videoSeconds,
+      audioSeconds: result.audioSeconds,
+      audioLeadSeconds: 0,
+      durationSeconds: result.duration,
+    },
+    recorder: 'frame-exact',
+    framesSkipped: 0,
+    fps: result.fps,
+    elapsed: result.elapsed,
+  };
 }
-
 
 /**
  * Records the card over its background clip and returns the encoded file.
  *
- * Runs on a fresh, detached `<video>` so the preview keeps playing untouched.
+ * Frame-exact wherever it can be (`lib/offline.ts`); otherwise a live
+ * recording on a fresh, detached `<video>`, so the preview is left untouched.
  */
 export async function renderCardVideo(
   state: CardState,
@@ -391,6 +455,22 @@ export async function renderCardVideo(
   if (!state.artwork.imageId) {
     throw new VideoExportError('Pick a background clip first.');
   }
+
+  if (frameExactAvailable()) {
+    try {
+      return await renderCardVideoFrameExact(state, options);
+    } catch (error) {
+      if (!(error instanceof OfflineUnavailable)) throw error;
+      // WebM, a codec this machine will not decode, a decoder that gave up
+      // before the first frame: the live recorder still handles all of these.
+      console.warn(
+        'Frame-exact export unavailable for this clip; recording live instead:',
+        error.message,
+      );
+      options.onProgress?.(0);
+    }
+  }
+
   const blocked = typeof document === 'undefined' ? null : blockedByVisibility(document.visibilityState);
   if (blocked) throw new VideoExportError(blocked);
 
@@ -434,7 +514,7 @@ export async function renderCardVideo(
     stream = canvas.captureStream(VIDEO_FPS);
     if (!state.artwork.muteAudio) audio = await attachAudio(video, stream);
 
-    const bitrate = bitrateFor(canvas.width, canvas.height);
+    const bitrate = bitrateFor(canvas.width, canvas.height, VIDEO_FPS);
     const withMediaRecorder = (): CardRecorder => {
       const fallback = mediaRecorderSupport();
       if (!fallback) {
@@ -496,6 +576,7 @@ export async function renderCardVideo(
     await play();
     await nextDecodedFrame(video);
     renderToCanvas(canvas, state, assets, scale);
+    const takeStartedAt = performance.now();
     active.begin();
     active.frame();
 
@@ -693,6 +774,8 @@ export async function renderCardVideo(
       repair: file.repair,
       recorder: file.recorder,
       framesSkipped: file.framesSkipped,
+      fps: VIDEO_FPS,
+      elapsed: (performance.now() - takeStartedAt) / 1000,
     };
   } finally {
     recorder?.abort();

@@ -94,7 +94,9 @@ export function CardPreview({
 
     const media = assets.artwork;
     const video =
-      media && media.kind === 'video' ? (media.element as HTMLVideoElement) : null;
+      media && media.kind === 'video' && media.element instanceof HTMLVideoElement
+        ? media.element
+        : null;
 
     if (video && media) {
       clipRef.current = video;

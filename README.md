@@ -244,9 +244,26 @@ covered tab, and the check says so in its `note` rather than reporting a false f
 
 ## The video export
 
-`renderCardVideo` opens its own `<video>` for the clip (the preview keeps its own, so recording
-never disturbs what is on screen), seeks to the trim point, and records the canvas in real time —
-a 30 s clip takes 30 s. Points worth knowing:
+`renderCardVideo` makes the file one of two ways, and tries them in this order.
+
+**Frame-exact** (`src/lib/offline.ts`), wherever the clip and the browser allow it. The clip's file
+is read (`src/lib/mp4read.ts` — the sample tables of a progressive or fragmented MP4/MOV), every
+sample in the trim window is handed to a `VideoDecoder`, the card is painted over each decoded frame
+exactly once by the same `renderToCanvas` as the preview and the PNG, and the result is encoded with
+a `VideoEncoder` on the source frame's own timestamp. The sound is decoded from the same file with an
+`AudioDecoder`, cut to the window to the sample, and re-encoded on the same timeline. Nothing plays,
+so nothing can be dropped: a 60 fps clip gives a 60 fps card with every frame in it, the picture and
+the sound cannot drift, it goes as fast as the codecs allow rather than in real time, and the window
+does not have to be in front. It needs H.264 or HEVC video and AAC sound in an MP4 or MOV, and a
+browser with the WebCodecs decoders (Chrome, Edge, Safari 16.4+). A phone's rotation matrix is
+applied; the output rate is the source's, capped at 60. The preview pauses while it runs, so the
+export has the decoder to itself.
+
+**Live** (`src/lib/recorders.ts`), for everything else — WebM, a codec the machine will not decode,
+a browser without the decoders. It opens its own `<video>` for the clip (the preview keeps its own),
+seeks to the trim point, and records the canvas thirty times a second in real time — a 30 s clip
+takes 30 s, and it is only as smooth as the machine manages to play. The toast says which path made
+the file. Points worth knowing about this one:
 
 - **MP4 is preferred, WebM is the fallback.** MP4 records on Chrome 126+ and Safari and posts
   everywhere without transcoding; the rest get WebM. `pickMimeType` holds the preference order.
@@ -333,8 +350,10 @@ src/
     defaults.ts          card defaults, hydration, per-account cache     (tested)
     render.ts            the single paint entry point, preview + export
     share.ts             PNG download / clipboard / Web Share
-    video.ts             clip trim window + the export loop             (tested)
-    recorders.ts         WebCodecs and MediaRecorder encoders           (tested)
+    video.ts             clip trim window + which export path            (tested)
+    offline.ts           frame-exact export through WebCodecs decoders  (tested)
+    mp4read.ts           MP4/MOV demuxer for the frame-exact path       (tested)
+    recorders.ts         live recorders: WebCodecs and MediaRecorder    (tested)
     mp4write.ts          progressive MP4 writer for WebCodecs output    (tested)
     mp4.ts               container repair for MediaRecorder output      (tested)
     selftest.ts          preview-vs-export pixel diff (dev only)
@@ -363,8 +382,14 @@ src/
   the colour that was picked — legible, but still a quiet row.
 - Browser canvases are capped at 8192px per edge; `clampScale` lowers the export scale rather than
   producing a blank image.
-- Video export needs WebCodecs (`VideoEncoder`, `AudioEncoder`) or, failing that, `MediaRecorder`
-  and `canvas.captureStream`. Where neither exists the clip still previews and still exports as a
-  PNG of the frame on screen; the app says so instead of offering a button that cannot work.
+- The frame-exact video export needs the WebCodecs decoders and encoders (`VideoDecoder`,
+  `AudioDecoder`, `VideoEncoder`, `AudioEncoder`); the live one needs the encoders or, failing
+  that, `MediaRecorder` and `canvas.captureStream`. Where none of that exists the clip still
+  previews and still exports as a PNG of the frame on screen; the app says so instead of offering a
+  button that cannot work.
+- Video encoding is software on many Windows laptops — Chrome exposes no hardware H.264 encoder on
+  the Intel UHD graphics this was built on — and runs at roughly 45–55 frames a second at the
+  card's 1680 × 1140. A 60 fps clip therefore exports at a little over real time; a 24 or 30 fps one
+  well under it.
 - A clip is accepted up to 120 s and 80 MB, and the card plays at most 30 s of it. The limit is the
   format's, not the encoder's: these cards are meant to be posted.

@@ -14,3 +14,4 @@ reference/
 # there; it stays out of the repo because someone else's clip is not this
 # project's to redistribute.
 dev/sample-clip.mp4
+dev/tmp-*.mp4
