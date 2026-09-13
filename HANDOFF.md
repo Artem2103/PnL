@@ -21,6 +21,26 @@ the fourth.
 
 ---
 
+## Start here (2026-09-14)
+
+**Sound toggle on the preview, and a new sample card — uncommitted in the working tree.**
+
+- **Sound on / Sound off** sits beside Play/Pause in the clip bar (video backgrounds only). It sets
+  `muted` on the preview's own `<video>` inside `CardPreview`'s paint loop (`soundOn` prop, read
+  through a ref like `playing`). Not saved: every visit starts silent, because browsers refuse to
+  autoplay sound before a click anyway. A clip that leaves the card is re-muted as it is paused,
+  since the library keeps it alive. The exporter records from its own element, so the toggle never
+  changes an export — whether an export has audio is still the *Keep audio* checkbox.
+- **Defaults** (`createDefaultState`): start and end balance both 10,000; wordmark empty (hidden);
+  footer right reads "Save 10% off fees"; the pin frame starts white (`#FFFFFF`). Only new cards
+  and *Reset* see this — saved cards keep their values. `DEFAULT_FRAME_COLOR` in `frames.ts` is
+  deliberately still the reference red: the badge palette is fitted against it.
+- Placeholders in *Identity* follow suit ("Empty hides it", "Save 10% off fees").
+- Two tests in `content.test.ts` checked the reference strings through the old defaults; they now
+  pass the reference balances (10,680 / 20,800) explicitly. Typecheck clean; `npm test` 180/180.
+- **Not yet checked in a browser**: that the button actually unmutes the clip in the preview.
+  Not committed or deployed.
+
 ## Start here (2026-09-12, second pass)
 
 **The avatar frame is now a choice, and the red badge takes any colour — on `main` and deployed**

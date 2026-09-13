@@ -9,8 +9,12 @@ function render(state: CardState) {
 }
 
 describe('buildContent', () => {
-  it('reproduces the reference card exactly from the defaults', () => {
-    const content = render(createDefaultState());
+  it('reproduces the reference card exactly from its balances', () => {
+    const base = createDefaultState();
+    const content = render({
+      ...base,
+      period: { ...base.period, startBalance: 10680, endBalance: 20800 },
+    });
     expect(content.title).toBe('August 2026');
     expect(content.hero).toBe('+$10.1K');
     expect(content.rows.map((row) => [row.label, row.value])).toEqual([
@@ -64,7 +68,11 @@ describe('buildContent', () => {
 
   it('uses the full amount when compact is off', () => {
     const base = createDefaultState();
-    const state: CardState = { ...base, display: { ...base.display, compactHero: false } };
+    const state: CardState = {
+      ...base,
+      period: { ...base.period, startBalance: 10680, endBalance: 20800 },
+      display: { ...base.display, compactHero: false },
+    };
     expect(render(state).hero).toBe('+$10,120.00');
   });
 });

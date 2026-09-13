@@ -1,6 +1,6 @@
 import type { CardState } from '../types';
 import { MAX_CLIP_SECONDS } from './images';
-import { DEFAULT_FRAME_COLOR, DEFAULT_FRAME_ID } from './frames';
+import { DEFAULT_FRAME_ID } from './frames';
 import { DEFAULT_CUSTOM_ACCENT, DEFAULT_THEME_ID } from './themes';
 
 /**
@@ -13,9 +13,15 @@ import { DEFAULT_CUSTOM_ACCENT, DEFAULT_THEME_ID } from './themes';
 export const STORAGE_KEY = 'pnl-card-studio:v2';
 
 /**
- * The defaults reproduce the reference card, so the layout can be compared
- * against it directly. The balances are chosen to print exactly the reference
- * strings: 10,680 -> "$10.7K", 20,800 -> "$20.8K", delta "+$10.1K", "+95%".
+ * A new card's frame colour. Not `DEFAULT_FRAME_COLOR`: that is the reference
+ * red the badge palette is fitted against, and has to stay red.
+ */
+const DEFAULT_SAMPLE_FRAME_COLOR = '#FFFFFF';
+
+/**
+ * The sample card a new account starts from. Both balances are 10,000, so it
+ * opens flat ("$10.0K" to "$10.0K") rather than claiming a result nobody had;
+ * the wordmark is empty and the pin frame starts white.
  */
 export function createDefaultState(): CardState {
   return {
@@ -31,14 +37,14 @@ export function createDefaultState(): CardState {
     },
     period: {
       title: 'August 2026',
-      startBalance: 10680,
-      endBalance: 20800,
+      startBalance: 10000,
+      endBalance: 10000,
     },
     brand: {
-      wordmark: 'STUDIO',
+      wordmark: '',
       handle: '@yourhandle',
       footerPrimary: 'yoursite.com',
-      footerSecondary: 'Referral code: YOURS',
+      footerSecondary: 'Save 10% off fees',
       currency: 'USD',
     },
     display: {
@@ -52,7 +58,7 @@ export function createDefaultState(): CardState {
       showLogo: true,
       compactHero: true,
       frameId: DEFAULT_FRAME_ID,
-      frameColor: DEFAULT_FRAME_COLOR,
+      frameColor: DEFAULT_SAMPLE_FRAME_COLOR,
     },
     artwork: {
       imageId: null,

@@ -38,12 +38,19 @@ export function CardPreview({
   canvasRef,
   patchArtwork,
   playing = true,
+  soundOn = false,
 }: {
   state: CardState;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   patchArtwork?: (patch: Partial<ArtworkState>) => void;
   /** Video backgrounds only. A paused preview freezes the frame. */
   playing?: boolean;
+  /**
+   * Video backgrounds only: the preview clip is heard. Off by default, since a
+   * browser refuses to autoplay sound before anyone has clicked. The exporter
+   * records from its own element, so this never changes what gets exported.
+   */
+  soundOn?: boolean;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const assetsRef = useRef<RenderAssets | null>(null);
@@ -55,6 +62,7 @@ export function CardPreview({
   // never tears the loop down and rebuilds it — it just marks the card dirty.
   const stateRef = useRef(state);
   const playingRef = useRef(playing);
+  const soundOnRef = useRef(soundOn);
   const cssWidthRef = useRef(0);
   const dirtyRef = useRef(true);
   const rafRef = useRef(0);
@@ -66,6 +74,7 @@ export function CardPreview({
 
   stateRef.current = state;
   playingRef.current = playing;
+  soundOnRef.current = soundOn;
 
   /* -------------------------------------------------------------- */
   /* The paint loop                                                  */
@@ -95,6 +104,7 @@ export function CardPreview({
       if (video.currentTime < clip.start - 0.05 || video.currentTime > end) {
         video.currentTime = clip.start;
       }
+      if (video.muted === soundOnRef.current) video.muted = !soundOnRef.current;
       if (playingRef.current) {
         // Loop the chosen window rather than the whole file.
         if (video.ended || video.currentTime >= end) video.currentTime = clip.start;
@@ -228,6 +238,8 @@ export function CardPreview({
       if (video && videoFrameRef.current) video.cancelVideoFrameCallback?.(videoFrameRef.current);
       videoFrameRef.current = 0;
       video?.pause();
+      // Kept alive in the library, so it must not come back with sound on.
+      if (video) video.muted = true;
       clipRef.current = null;
       frameIntervalRef.current = 0;
       lastFrameAtRef.current = 0;

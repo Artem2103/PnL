@@ -424,7 +424,7 @@ export function ControlPanel({
           <TextInput
             value={brand.wordmark}
             onChange={(wordmark) => patchBrand({ wordmark })}
-            placeholder="STUDIO"
+            placeholder="Empty hides it"
             maxLength={18}
           />
         </Field>
@@ -449,7 +449,7 @@ export function ControlPanel({
             <TextInput
               value={brand.footerSecondary}
               onChange={(footerSecondary) => patchBrand({ footerSecondary })}
-              placeholder="Referral code: YOURS"
+              placeholder="Save 10% off fees"
               maxLength={32}
             />
           </Field>

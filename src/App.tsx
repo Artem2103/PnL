@@ -62,6 +62,8 @@ export default function App() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [background, setBackground] = useState<BackgroundInfo | null>(null);
   const [playing, setPlaying] = useState(true);
+  // Preview only, and not saved: every visit starts silent.
+  const [soundOn, setSoundOn] = useState(false);
   const [progress, setProgress] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const video = useMemo(videoSupport, []);
@@ -337,6 +339,7 @@ export default function App() {
               canvasRef={canvasRef}
               patchArtwork={patchArtwork}
               playing={playing}
+              soundOn={soundOn}
             />
 
             {isVideoBackground ? (
@@ -347,6 +350,14 @@ export default function App() {
                   onClick={() => setPlaying((value) => !value)}
                 >
                   {playing ? 'Pause' : 'Play'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--small"
+                  onClick={() => setSoundOn((value) => !value)}
+                  aria-pressed={soundOn}
+                >
+                  {soundOn ? 'Sound off' : 'Sound on'}
                 </button>
                 <span className="clipbar__meta">
                   {clip.length.toFixed(1)} s clip · video {videoScale}× ·{' '}
