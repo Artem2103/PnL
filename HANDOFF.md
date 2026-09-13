@@ -23,7 +23,50 @@ the fourth.
 
 ## Start here (2026-09-14)
 
-**Sound toggle on the preview, and a new sample card — uncommitted in the working tree.**
+**Sound toggle on the preview, and a new sample card — on `main` and deployed** as `99ec233`; the
+live bundle `assets/index-Bg7IcgZV.js` carries "Sound on" and "Save 10% off fees".
+
+### Turning on accounts (register / login) — steps for Artem
+
+The sign-up/sign-in screen, sessions and per-account syncing are **already built** (`AuthGate`,
+`AuthScreen`, `src/lib/auth.tsx`, `supabase/schema.sql`). They switch on by themselves once two
+environment variables exist. Checked 2026-09-14: the **live site has no Supabase credentials**, so
+it currently runs in local mode — an open editor with no login. A `.env.local` exists on this
+machine (contents not read).
+
+1. **Create the project.** supabase.com → New project. Any name and region; save the database
+   password somewhere.
+2. **Create the tables.** Dashboard → *SQL Editor* → New query → paste the whole of
+   `supabase/schema.sql` → *Run*. It makes `profiles`, `cards`, `media`, the private `media`
+   storage bucket and the row-level security policies. Safe to run again.
+3. **Copy the keys.** *Project Settings → API*: the **Project URL** and the **anon public** key.
+   Never the `service_role` key.
+4. **Local dev.** In `D:\PnL\.env.local`:
+   ```
+   VITE_SUPABASE_URL=https://<your-ref>.supabase.co
+   VITE_SUPABASE_ANON_KEY=<anon public key>
+   ```
+   Restart `npm run dev`. The "Accounts are off" banner is gone and the sign-in screen appears.
+5. **Email settings.** *Authentication → Providers → Email*:
+   - *Confirm email* **on**: after registering, the form says to check the inbox; sign in after
+     clicking the link.
+   - *Confirm email* **off**: registering signs you straight in. Easiest for testing.
+   Supabase's built-in email sender is heavily rate-limited (a few emails an hour). For real users,
+   set up custom SMTP under *Authentication → Emails → SMTP Settings*.
+6. **Redirect URLs.** *Authentication → URL Configuration*: set *Site URL* to
+   `https://nexocards.vercel.app` and add `http://localhost:5173` under *Redirect URLs*. Otherwise
+   confirmation links bounce.
+7. **Production.** Vercel → the project → *Settings → Environment Variables*: add the same two
+   `VITE_` variables for Production (and Preview if wanted). Then *Deployments → ⋯ → Redeploy*.
+   Vite bakes them in at build time, so an existing build will not pick them up.
+8. **Test.** Register an account, edit the card, upload a background, sign out, sign in on another
+   browser: the card and the media should be there. The topbar shows *Saved / Saving... / Not saved*.
+
+Things to know: cards made in local mode do **not** move into a new account. Signing out clears
+that browser's cached copy (the account keeps it). Security is the RLS policies in `schema.sql`,
+not the secrecy of the anon key.
+
+### What changed in `99ec233`
 
 - **Sound on / Sound off** sits beside Play/Pause in the clip bar (video backgrounds only). It sets
   `muted` on the preview's own `<video>` inside `CardPreview`'s paint loop (`soundOn` prop, read
@@ -39,7 +82,6 @@ the fourth.
 - Two tests in `content.test.ts` checked the reference strings through the old defaults; they now
   pass the reference balances (10,680 / 20,800) explicitly. Typecheck clean; `npm test` 180/180.
 - **Not yet checked in a browser**: that the button actually unmutes the clip in the preview.
-  Not committed or deployed.
 
 ## Start here (2026-09-12, second pass)
 
