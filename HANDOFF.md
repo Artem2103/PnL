@@ -23,17 +23,33 @@ the fourth.
 
 ## Start here (2026-09-14)
 
-### Seeing uploads, and who uploaded them, in the dashboard (2026-09-14, latest)
+### Emails in the profiles table (2026-09-14, latest)
+
+`public.profiles` has a new **`email`** column. `display_name` is now filled in from the name given
+at sign-up. Both are copied from `auth.users` by the sign-up trigger. A new trigger,
+`on_auth_user_updated`, keeps them in step when an email or name changes. A backfill fills them in
+for accounts that already exist.
+**To apply it:** run the whole of `supabase/schema.sql` again in the SQL Editor. It is safe to
+re-run, and it also creates the `admin.uploads` view described below. After that, *Table Editor →
+public → profiles* shows every account's email.
+- RLS still limits each account to its own row, so the API never shows one user another user's
+  email.
+- `insert`/`update` on `profiles` are revoked from API roles except `update (display_name)`. That
+  way nobody can overwrite the copied email with something false. The app doesn't write this table,
+  so nothing breaks.
+- Not verified: the SQL running on the real project.
+
+### Seeing uploads, and who uploaded them, in the dashboard (2026-09-14)
 
 Artem asked to see the file itself in Supabase, not only its metadata, and to see which account
-uploaded it. **Committed locally, not pushed.** The SQL has **not been run**, because nothing here can
+uploaded it. **Pushed to `main`.** The SQL has **not been run**, because nothing here can
 reach the database: the anon key can't create schemas.
 
 **What to do, in order:**
 1. **Run the new SQL.** Dashboard → *SQL Editor* → paste the `admin views` block from
    `supabase/schema.sql` (from `create schema if not exists admin;` to `revoke all on admin.uploads …`)
    → *Run*. Running the whole file again is fine too.
-2. **Push** (`git push`) so Vercel deploys the new file names.
+2. ~~Push~~ — done, Vercel deploys the new file names from `main`.
 
 **Where to look afterwards:**
 - **Who uploaded what:** *Table Editor* → switch the schema dropdown from `public` to **`admin`** →

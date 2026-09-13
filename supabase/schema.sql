@@ -30,6 +30,17 @@ create table if not exists public.profiles (
 comment on table public.profiles is
   'One row per account. Exists so future per-user settings have somewhere to go that is not the auth schema, which the app cannot extend.';
 
+-- A copy of the sign-in email, so the Table Editor shows who each row is. It
+-- is kept in step with auth.users by the triggers further down; nothing else
+-- should write it. RLS still limits each account to its own row, so the API
+-- never shows one user another's email.
+alter table public.profiles add column if not exists email text;
+
+-- The app never writes this table. Users may set their own display name, but
+-- not the mirrored email, which would then lie about who the account is.
+revoke insert, update on public.profiles from anon, authenticated;
+grant update (display_name) on public.profiles to authenticated;
+
 -- ------------------------------------------------------------------- cards
 
 create table if not exists public.cards (
@@ -112,8 +123,11 @@ security definer
 set search_path = public
 as $fn$
 begin
-  insert into public.profiles (id) values (new.id)
-  on conflict (id) do nothing;
+  insert into public.profiles (id, email, display_name)
+  values (new.id, new.email, nullif(new.raw_user_meta_data ->> 'display_name', ''))
+  on conflict (id) do update
+    set email        = excluded.email,
+        display_name = coalesce(excluded.display_name, public.profiles.display_name);
   return new;
 end;
 $fn$;
@@ -122,6 +136,20 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- Same function on change, so a changed email or name reaches the profile.
+drop trigger if exists on_auth_user_updated on auth.users;
+create trigger on_auth_user_updated
+  after update of email, raw_user_meta_data on auth.users
+  for each row execute function public.handle_new_user();
+
+-- Accounts made before the email column existed, and any without a profile.
+insert into public.profiles (id, email, display_name)
+select u.id, u.email, nullif(u.raw_user_meta_data ->> 'display_name', '')
+from auth.users u
+on conflict (id) do update
+  set email        = excluded.email,
+      display_name = coalesce(excluded.display_name, public.profiles.display_name);
 
 -- ================================================================= RLS
 
