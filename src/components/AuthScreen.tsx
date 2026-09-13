@@ -11,12 +11,14 @@ const MIN_PASSWORD = 8;
 export function AuthScreen() {
   const { configured, signIn, signUp } = useAuth();
   const [mode, setMode] = useState<Mode>('signin');
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const nameId = useId();
   const emailId = useId();
   const passwordId = useId();
   const confirmId = useId();
@@ -49,7 +51,7 @@ export function AuthScreen() {
     setBusy(true);
     try {
       if (isSignUp) {
-        const signedIn = await signUp(email, password);
+        const signedIn = await signUp(email, password, name);
         if (!signedIn) {
           // Email confirmation is on. There is no session yet, so the gate will
           // keep showing this screen — say why, instead of looking broken.
@@ -111,6 +113,26 @@ export function AuthScreen() {
         </div>
 
         <form className="auth__form" onSubmit={(event) => void handleSubmit(event)} noValidate>
+          {isSignUp ? (
+            <div className="field">
+              <label className="field__label" htmlFor={nameId}>
+                Name
+                <em>optional</em>
+              </label>
+              <input
+                id={nameId}
+                className="input"
+                type="text"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Your name"
+                autoComplete="name"
+                maxLength={40}
+                disabled={!configured || busy}
+              />
+            </div>
+          ) : null}
+
           <div className="field">
             <label className="field__label" htmlFor={emailId}>
               Email

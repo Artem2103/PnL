@@ -24,6 +24,7 @@ import { describeMedia, loadMedia } from './lib/images';
 import { downloadCardVideo, resolveClip, videoScaleFor, videoSupport } from './lib/video';
 import { checkExportMatchesPreview } from './lib/selftest';
 import { useAuth } from './lib/auth';
+import { ProfileMenu } from './components/ProfileMenu';
 
 type ToastTone = 'info' | 'error';
 
@@ -281,24 +282,15 @@ export default function App() {
           >
             Reset
           </button>
-          {user?.email ? (
-            <span className="topbar__email" title={user.email}>
-              {user.email}
-            </span>
-          ) : null}
-          {authMode === 'account' ? (
-            <button
-              type="button"
-              className="btn btn--ghost btn--small"
-              onClick={() => {
-                void signOut().catch((error: unknown) =>
-                  notify(error instanceof Error ? error.message : 'Sign out failed.', 'error'),
-                );
-              }}
-            >
-              Sign out
-            </button>
-          ) : null}
+          <ProfileMenu
+            user={user}
+            mode={authMode}
+            onSignOut={() => {
+              void signOut().catch((error: unknown) =>
+                notify(error instanceof Error ? error.message : 'Log out failed.', 'error'),
+              );
+            }}
+          />
         </div>
       </header>
 

@@ -57,7 +57,7 @@ interface AuthValue {
   signIn: (email: string, password: string) => Promise<void>;
   /** Resolves to true when a session came back, false when the address still
    *  has to be confirmed by email before the account can sign in. */
-  signUp: (email: string, password: string) => Promise<boolean>;
+  signUp: (email: string, password: string, name?: string) => Promise<boolean>;
   signOut: () => Promise<void>;
 }
 
@@ -127,11 +127,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw new Error(friendlyMessage(error.message));
   }, []);
 
-  const signUp = useCallback(async (email: string, password: string) => {
+  const signUp = useCallback(async (email: string, password: string, name = '') => {
     const { data, error } = await requireSupabase().auth.signUp({
       email: email.trim(),
       password,
       options: {
+        // Kept on the auth user, so the session carries it and the profile menu
+        // needs no extra query to greet someone by name.
+        data: name.trim() ? { display_name: name.trim() } : undefined,
         // Where the confirmation link comes back to. Whatever origin the app is
         // served from has to be listed under Authentication → URL Configuration
         // in the Supabase dashboard, or the link bounces.

@@ -26,6 +26,25 @@ the fourth.
 **Sound toggle on the preview, and a new sample card — on `main` and deployed** as `99ec233`; the
 live bundle `assets/index-Bg7IcgZV.js` carries "Sound on" and "Save 10% off fees".
 
+### Profile menu (2026-09-14, later)
+
+- **`src/components/ProfileMenu.tsx`** is a round blank-avatar button at the far right of the
+  topbar; Reset now sits to its left. Clicking it opens a card with the avatar, name, email and
+  **Log out**. It closes on an outside click or Escape. In local mode it says "Not signed in" and
+  has no log-out button. It replaces the old email text and *Sign out* button.
+- **Name:** sign-up has an optional *Name* field, stored as `user_metadata.display_name` on the
+  auth user (no schema change, and the session already carries it). Accounts without a name show
+  the part of the email before the @.
+- **Topbar CSS:** `contain: layout paint` became `contain: layout`. Paint containment was clipping
+  the menu to the height of the bar.
+- **Uploads already go to the account.** When signed in, `addMedia` saves to IndexedDB first and
+  then uploads to Storage and the `media` table. Uploads that fail are retried on the next sign-in.
+  Deploys only keep pictures in the browser when they are built without the two `VITE_` variables —
+  that is the case on Vercel right now.
+- Checked in Chrome: the icon and menu (in local mode, on a second dev server with blank keys) and
+  the Name field on the sign-up form (with the real keys). **The signed-in menu has not been seen**,
+  because that needs a confirmed account.
+
 ### Accounts check (2026-09-14, after Artem added keys to `.env.local`)
 
 - **Keys work.** Project `zwrpcaoestatmshuconp`; the new-style `sb_publishable_…` key is accepted

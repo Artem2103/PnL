@@ -94,7 +94,9 @@ kbd {
      on every scroll frame. */
   will-change: backdrop-filter;
   transform: translateZ(0);
-  contain: layout paint;
+  /* Layout only: paint containment clips to the bar, and the account menu has
+     to hang below it. */
+  contain: layout;
 }
 
 .brand {
@@ -1137,20 +1139,107 @@ kbd {
   min-width: 0;
 }
 
-.topbar__email {
-  font-size: 12px;
+/* The account button at the far right of the topbar, and the card it opens. */
+
+.profile {
+  position: relative;
+  flex: none;
+  margin-left: 6px;
+}
+
+.profile__button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elev-strong);
+  color: var(--text-muted);
+  overflow: hidden;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.profile__button svg {
+  /* Sits low so the shoulders are cut by the circle, like a real avatar. */
+  transform: translateY(3px) scale(1.15);
+}
+
+.profile__button:hover,
+.profile__button.is-open {
+  border-color: rgba(31, 224, 138, 0.55);
+  color: var(--text);
+}
+
+.profile__button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(31, 224, 138, 0.25);
+}
+
+.profile__menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: min(280px, calc(100vw - 32px));
+  padding: 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  /* Opaque: the local-mode banner's text showed through a translucent card. */
+  background: #0c0e13;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 12px;
+  animation: toast-in 0.16s ease;
+}
+
+.profile__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.profile__avatar {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--bg-elev-strong);
+  border: 1px solid var(--border-strong);
   color: var(--text-faint);
-  /* An address long enough to squeeze the buttons gets clipped instead. */
-  max-width: 200px;
+}
+
+.profile__avatar svg {
+  transform: translateY(5px) scale(1.25);
+}
+
+.profile__who {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.profile__who strong,
+.profile__who span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-@media (max-width: 720px) {
-  .topbar__email {
-    display: none;
-  }
+.profile__who strong {
+  font-size: 14px;
+}
+
+.profile__who span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.profile__signout {
+  width: 100%;
 }
 
 /* The card's sync state, in the topbar. Quiet by default — it only needs to
