@@ -26,6 +26,24 @@ the fourth.
 **Sound toggle on the preview, and a new sample card — on `main` and deployed** as `99ec233`; the
 live bundle `assets/index-Bg7IcgZV.js` carries "Sound on" and "Save 10% off fees".
 
+### Accounts check (2026-09-14, after Artem added keys to `.env.local`)
+
+- **Keys work.** Project `zwrpcaoestatmshuconp`; the new-style `sb_publishable_…` key is accepted
+  (supabase-js 2.112.3). The space after `=` in `.env.local` is harmless: `supabase.ts` trims.
+- **Schema is applied.** `profiles`, `cards`, `media` all answer `200 []` to the anon key, as RLS
+  should. The storage bucket can't be seen without a session. It is created by the same script, so
+  it should be there, but that is not confirmed.
+- **Email sign-ups need confirmation** (`mailer_autoconfirm: false`), so registering sends an email.
+  Supabase's built-in sender allows only a few emails an hour.
+- A build using these keys switches into account mode (the project URL is baked into the bundle).
+- **Deleting uploads already exists:** the ✕ on each tile in the background picker calls
+  `deleteMedia`, which removes the Storage object, its poster and the `media` row, then the local
+  copy. Uploads are per account and appear on every device the account signs in on.
+- **Still to do for the live site:** add the two `VITE_` variables in Vercel and redeploy (step 7
+  below). The Vercel CLI isn't installed here, so this has to be done in the dashboard.
+- **Not yet tested end to end** (register → upload → reload → delete). Doing that needs a real
+  inbox, because of email confirmation.
+
 ### Turning on accounts (register / login) — steps for Artem
 
 The sign-up/sign-in screen, sessions and per-account syncing are **already built** (`AuthGate`,
