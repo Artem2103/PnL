@@ -122,8 +122,11 @@ there first when a run seems to have produced nothing.
 **Not verified:** Safari (the decoders exist from 16.4; HEVC decode and AAC encode there are
 untested); a source with a rotation matrix in the browser (the matrix is unit-tested, the
 `orient` paint is not); an HE-AAC source; an export with the window hidden (the isolated Chrome
-cannot be hidden, and the everyday one cannot be driven); the live site — this is on `main` but
-the deploy was not checked.
+cannot be hidden, and the everyday one cannot be driven).
+
+**Deployed.** Pushed as `63112d9`; Vercel built it within a minute and <https://nexocards.vercel.app>
+serves `assets/index-CglHwRhq.js`, the same hash as the local `npm run build`, with `frame-exact`
+in it. Not exercised on the live site from here: an export there, in the signed-in app.
 
 ### Topbar avatar fixed (2026-09-14)
 
