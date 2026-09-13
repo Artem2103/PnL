@@ -26,6 +26,45 @@ the fourth.
 **Sound toggle on the preview, and a new sample card — on `main` and deployed** as `99ec233`; the
 live bundle `assets/index-Bg7IcgZV.js` carries "Sound on" and "Save 10% off fees".
 
+### Why uploads are not showing up in Supabase (2026-09-14)
+
+**The live site is built without Supabase credentials, so it runs in local mode.** Every upload stays
+in the visitor's IndexedDB and nothing reaches Storage or the `media` table. That is by design when
+the variables are missing, not a failure.
+
+The evidence: `ba1b9a2` (profile menu) was pushed, and Vercel built `assets/index-3fx-C-qc.js`. That
+bundle has the profile menu in it but **not** the project ref `zwrpcaoestatmshuconp`, no
+`*.supabase.co` project URL, and no key (publishable or legacy JWT). Vite replaces
+`import.meta.env.VITE_*` at build time, so if the variables were visible to that build, they would
+be in the file. The bundle before it (`index-Bg7IcgZV.js`, after Artem's manual redeploy) had none
+either.
+
+Common reasons, in the order to check them in Vercel → Project → *Settings → Environment Variables*:
+1. **Wrong names.** They must be exactly `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. Without
+   the `VITE_` prefix, Vite does not expose them to the browser code.
+2. **Wrong environment.** The checkbox for **Production** has to be ticked. Preview-only variables do
+   not reach `nexocards.vercel.app`.
+3. **Wrong project.** They were added to a different Vercel project or team than the one serving
+   `nexocards.vercel.app`.
+4. **Values.** The URL should be `https://zwrpcaoestatmshuconp.supabase.co`, with no quotes and no
+   leading space. (A leading space would still work, since `supabase.ts` trims, but it is worth
+   removing.)
+
+After fixing them, redeploy **without** the build cache (*Deployments → ⋯ → Redeploy*, untick
+*Use existing Build Cache*), or push any commit. Check the result: the live bundle should contain
+`zwrpcaoestatmshuconp`, and the site should open on the sign-in screen, not the "Accounts are off"
+banner.
+
+**Where uploads appear once it works:** Supabase → *Storage → media*, one folder per user id, with
+each file named by its media id (plus `<id>.poster` for video thumbnails). There is also one row per
+file in *Table Editor → media*. Uploads made while the site was in local mode are **not** migrated.
+They exist only in the browsers they were made in, and have to be uploaded again after signing in.
+
+**One more limit to know about:** the bucket allows 100 MB, but Supabase's Free plan caps any single
+upload at **50 MB** (*Project Settings → Storage → Upload file size limit*). Larger videos will
+fail to upload, with a toast saying "Upload failed: …", even once accounts work. The app itself
+accepts up to 80 MB.
+
 ### Profile menu (2026-09-14, later)
 
 - **`src/components/ProfileMenu.tsx`** is a round blank-avatar button at the far right of the
