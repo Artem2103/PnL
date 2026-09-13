@@ -26,6 +26,24 @@ the fourth.
 **Sound toggle on the preview, and a new sample card — on `main` and deployed** as `99ec233`; the
 live bundle `assets/index-Bg7IcgZV.js` carries "Sound on" and "Save 10% off fees".
 
+### Accounts are live on the deployed site (2026-09-14, verified)
+
+Artem fixed the Vercel variables (as plain config, not *secret*: Vercel does not allow `VITE_`
+variables to be secret, and neither value needs to be). `db816fa` was pushed and Vercel built
+`assets/index-EaLsWgjG.js`. That bundle contains `https://zwrpcaoestatmshuconp.supabase.co` and the
+publishable key. Checked on <https://nexocards.vercel.app> in Chrome, which was already signed in to
+Artem's account:
+- no "Accounts are off" banner, the profile icon is present, and the topbar shows **Saved**;
+- the card preview draws, with a 12.3 s MP4 as the background (the first screenshot, taken 2 s
+  after load, was still black while the clip downloaded);
+- there are 4 tiles in the background library and **none has the "Saving…" badge**, so every file
+  has a `storagePath` and is in the account;
+- Supabase answers requests from the live origin (`Access-Control-Allow-Origin: *`), and the console
+  showed no errors.
+
+Not checked from here: the rows themselves in the Supabase dashboard, since RLS hides them from the
+anon key. Also not checked: deleting a file end to end on the live site.
+
 ### Why uploads are not showing up in Supabase (2026-09-14)
 
 **The live site is built without Supabase credentials, so it runs in local mode.** Every upload stays
