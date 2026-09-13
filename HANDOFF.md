@@ -23,7 +23,16 @@ the fourth.
 
 ## Start here (2026-09-14)
 
-### Emails in the profiles table (2026-09-14, latest)
+### Topbar avatar fixed (2026-09-14, latest)
+
+The round profile button looked broken until you clicked it: a small figure floating in the circle.
+The cause was the browser's default `<button>` padding, 6px on each side in Chrome. It squeezed the
+SVG into a 20×30 box. The avatar inside the menu is a `<span>`, which is why it always looked right.
+The fix is `padding: 0` on `.profile__button` in `global.css`. Checked in Chrome, first on the live
+site (still broken there) and then on a local-mode dev server with the fix: the button now fills its
+circle the same way the menu avatar does.
+
+### Emails in the profiles table (2026-09-14)
 
 `public.profiles` has a new **`email`** column. `display_name` is now filled in from the name given
 at sign-up. Both are copied from `auth.users` by the sign-up trigger. A new trigger,
