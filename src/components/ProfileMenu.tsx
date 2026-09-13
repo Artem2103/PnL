@@ -13,12 +13,16 @@ export function displayNameFor(user: User | null): string {
   return email.split('@')[0] || 'Your account';
 }
 
-/** A blank avatar: head and shoulders, drawn in the current text colour. */
-function Silhouette({ size }: { size: number }) {
+/**
+ * A blank avatar: head and shoulders, drawn in the current text colour. Centred
+ * on the vertical axis of a square box; the shoulders run past the bottom edge
+ * so the round container crops them evenly on both sides.
+ */
+function Silhouette() {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <circle cx="12" cy="9" r="4" fill="currentColor" />
-      <path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z" fill="currentColor" />
+    <svg viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+      <circle cx="20" cy="15.5" r="7" fill="currentColor" />
+      <path d="M4 42c0-9.4 7.2-16 16-16s16 6.6 16 16z" fill="currentColor" />
     </svg>
   );
 }
@@ -67,14 +71,14 @@ export function ProfileMenu({
         aria-controls={menuId}
         aria-label="Account"
       >
-        <Silhouette size={20} />
+        <Silhouette />
       </button>
 
       {open ? (
         <div className="profile__menu" id={menuId} role="dialog" aria-label="Account">
           <div className="profile__head">
             <span className="profile__avatar">
-              <Silhouette size={30} />
+              <Silhouette />
             </span>
             <div className="profile__who">
               <strong title={name}>{name}</strong>

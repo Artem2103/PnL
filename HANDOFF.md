@@ -74,6 +74,10 @@ accepts up to 80 MB.
 - **Name:** sign-up has an optional *Name* field, stored as `user_metadata.display_name` on the
   auth user (no schema change, and the session already carries it). Accounts without a name show
   the part of the email before the @.
+- **Blank avatar, redrawn:** the first version was lopsided. It used a 24-unit shape nudged down and
+  scaled by CSS, so the circle cropped it unevenly. It is now drawn on a centred 40×40 viewBox, with
+  shoulders that run off the bottom edge, filling its circle with no transforms. Checked in Chrome
+  in both the button and the menu.
 - **Topbar CSS:** `contain: layout paint` became `contain: layout`. Paint containment was clipping
   the menu to the height of the bar.
 - **Uploads already go to the account.** When signed in, `addMedia` saves to IndexedDB first and
