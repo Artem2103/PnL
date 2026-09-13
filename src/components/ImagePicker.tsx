@@ -96,14 +96,14 @@ function ImagePickerView({
   const remove = useCallback(
     async (id: string) => {
       try {
-        await deleteMedia(id, userId);
+        await deleteMedia(id);
         if (selectedId === id) onSelect(null);
         await refresh();
       } catch (error) {
         onError(error instanceof Error ? error.message : 'Could not delete that image.');
       }
     },
-    [onError, onSelect, refresh, selectedId, userId],
+    [onError, onSelect, refresh, selectedId],
   );
 
   return (

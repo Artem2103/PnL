@@ -2,7 +2,7 @@
  * The account's copy of the media library: rows in `public.media`, bytes in the
  * private `media` storage bucket.
  *
- * Every path is `<user_id>/<media_id>`, which is not a convention but the
+ * Every path starts `<user_id>/`, which is not a convention but the
  * security model — the storage policies in `supabase/schema.sql` match on that
  * first segment to decide who may read an object. Changing the layout here
  * without changing those policies would quietly open the bucket up.
@@ -74,12 +74,34 @@ function fromRow(row: MediaRow): RemoteMedia {
   };
 }
 
-export function objectPath(userId: string, id: string): string {
-  return `${userId}/${id}`;
+/**
+ * The object's file name, as the Storage browser in the dashboard shows it:
+ * the upload's own name first so it can be recognised, then the media id so
+ * two uploads of `clip.mp4` cannot overwrite each other, then an extension so
+ * the file opens as what it is once downloaded.
+ *
+ * Only the name part changes — the first segment is still the user id, which
+ * the storage policies depend on. Files uploaded before this existed are named
+ * `<user_id>/<id>`, which is why nothing may rebuild a path from the id alone:
+ * always use the `storage_path` stored on the row.
+ */
+export function objectFileName(id: string, name: string, mimeType: string): string {
+  const dot = name.lastIndexOf('.');
+  const rawStem = dot > 0 ? name.slice(0, dot) : name;
+  const rawExt = dot > 0 ? name.slice(dot + 1) : mimeType.split('/')[1] ?? '';
+  // Storage keys reject some characters, and a name straight off a phone can
+  // hold anything. Keep it plain and short.
+  const stem = rawStem.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^[._]+|_+$/g, '').slice(0, 60);
+  const ext = rawExt.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8);
+  return `${stem ? `${stem}--` : ''}${id}${ext ? `.${ext}` : ''}`;
 }
 
-export function posterObjectPath(userId: string, id: string): string {
-  return `${userId}/${id}.poster`;
+export function objectPath(userId: string, id: string, name: string, mimeType: string): string {
+  return `${userId}/${objectFileName(id, name, mimeType)}`;
+}
+
+export function posterObjectPath(userId: string, id: string, name: string): string {
+  return `${userId}/${objectFileName(id, name, '').replace(/(\.[a-z0-9]+)?$/, '.poster.webp')}`;
 }
 
 /** Every file the account owns, newest first. This is the manifest a second
@@ -103,8 +125,13 @@ export async function uploadMedia(
 ): Promise<{ storagePath: string; posterPath: string | null }> {
   if (!record.blob) throw new Error('That file has no data to upload.');
   const client = requireSupabase();
-  const storagePath = objectPath(record.userId, record.id);
-  const posterPath = record.poster ? posterObjectPath(record.userId, record.id) : null;
+  // A retry after a half-failed upload keeps the path it was given, so the
+  // retry overwrites that object rather than leaving a second copy behind.
+  const storagePath =
+    record.storagePath ?? objectPath(record.userId, record.id, record.name, record.mimeType);
+  const posterPath = record.poster
+    ? record.posterPath ?? posterObjectPath(record.userId, record.id, record.name)
+    : null;
 
   const { error: uploadError } = await client.storage
     .from(BUCKET)
@@ -178,12 +205,12 @@ export async function signedUrlsFor(paths: string[]): Promise<Map<string, string
 
 /** Bytes first, row last — see the note at the top of this file. */
 export async function deleteRemoteMedia(
-  userId: string,
   id: string,
+  storagePath: string,
   posterPath?: string | null,
 ): Promise<void> {
   const client = requireSupabase();
-  const paths = [objectPath(userId, id)];
+  const paths = [storagePath];
   if (posterPath) paths.push(posterPath);
 
   const { error: objectError } = await client.storage.from(BUCKET).remove(paths);

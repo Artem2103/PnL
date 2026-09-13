@@ -262,10 +262,10 @@ export async function addMedia(
  * visibly gone from this browser but comes back on the next sign-in — the most
  * confusing possible outcome of pressing delete.
  */
-export async function deleteMedia(id: string, userId: string): Promise<void> {
+export async function deleteMedia(id: string): Promise<void> {
   const record = await getRecord(id);
   if (record?.storagePath && isSupabaseConfigured) {
-    await deleteRemoteMedia(userId, id, record.posterPath ?? null);
+    await deleteRemoteMedia(id, record.storagePath, record.posterPath ?? null);
   }
   await deleteRecord(id);
 }

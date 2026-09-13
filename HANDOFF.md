@@ -23,6 +23,46 @@ the fourth.
 
 ## Start here (2026-09-14)
 
+### Seeing uploads, and who uploaded them, in the dashboard (2026-09-14, latest)
+
+Artem asked to see the file itself in Supabase, not only its metadata, and to see which account
+uploaded it. **Committed locally, not pushed.** The SQL has **not been run**, because nothing here can
+reach the database: the anon key can't create schemas.
+
+**What to do, in order:**
+1. **Run the new SQL.** Dashboard → *SQL Editor* → paste the `admin views` block from
+   `supabase/schema.sql` (from `create schema if not exists admin;` to `revoke all on admin.uploads …`)
+   → *Run*. Running the whole file again is fine too.
+2. **Push** (`git push`) so Vercel deploys the new file names.
+
+**Where to look afterwards:**
+- **Who uploaded what:** *Table Editor* → switch the schema dropdown from `public` to **`admin`** →
+  **`uploads`**. Each row has `uploader_email`, `uploader_name`, `file_name`, kind, seconds,
+  megabytes, size, the time, and `file_in_storage`, the exact path of the file.
+- **The file itself:** *Storage* → `media` → the uploader's `user_id` folder (the same id is in the
+  `user_id` column of `admin.uploads`). Clicking a file opens a preview panel that plays videos and
+  shows images, with *Download* and *Get URL*. The Table Editor itself can't show a picture or a
+  video inside a cell. That is a limit of Supabase, so Storage is the place to view files.
+
+**What changed:**
+- **Readable object names.** New uploads are stored as
+  `<user_id>/<original name>--<media id>.<ext>`, e.g. `…/ssstiktok_7412--3f2a….mp4`, and their
+  posters as `….poster.webp`. The name is cleaned to `[A-Za-z0-9._-]` and capped at 60 characters.
+  Cyrillic names reduce to little or nothing, and then only the id is used. The first segment is
+  still the user id, so the storage policies are unchanged. The logic is in `objectFileName` in
+  `src/lib/remote/media.ts`, covered by `media.test.ts`.
+- **Older uploads keep their names** (`<user_id>/<media id>`, no extension). They are not renamed,
+  but they still appear in `admin.uploads` with their uploader.
+- **Delete now uses the stored `storage_path`** instead of rebuilding it from the id. Without this,
+  deleting a file with the new name would have left the file behind. `deleteMedia` no longer takes
+  `userId`.
+- **Why a separate `admin` schema:** a view skips row-level security and this one reads
+  `auth.users`. If it were in `public`, the API would give every user's email to anyone holding the
+  anon key. `admin` isn't exposed through the API, and API roles have their grants revoked as well.
+
+**Not verified:** the SQL running without errors on the real project, and an upload and delete on
+the live site with the new names.
+
 **Sound toggle on the preview, and a new sample card — on `main` and deployed** as `99ec233`; the
 live bundle `assets/index-Bg7IcgZV.js` carries "Sound on" and "Save 10% off fees".
 

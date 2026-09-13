@@ -182,6 +182,46 @@ create policy "media objects are deletable by their owner" on storage.objects
   for delete to authenticated
   using (bucket_id = 'media' and (storage.foldername(name))[1] = auth.uid()::text);
 
+-- ========================================================= admin views
+
+-- For browsing uploads in the dashboard, not for the app. Table Editor ->
+-- schema "admin" -> uploads shows every file with the account that uploaded
+-- it; the file itself opens from Storage -> media -> <user_id> folder, where
+-- objects are named "<original name>--<media id>.<ext>" (older uploads are
+-- just "<media id>").
+--
+-- It lives in its own schema on purpose. A view reads as its owner and so
+-- skips row-level security, and it joins auth.users: in "public" the API would
+-- hand every account's email to anyone holding the anon key. "admin" is not
+-- in the API's exposed schemas, and the grants below shut it for API roles
+-- even if someone adds it there later.
+create schema if not exists admin;
+revoke all on schema admin from public, anon, authenticated;
+
+create or replace view admin.uploads as
+select
+  m.created_at                                              as uploaded_at,
+  u.email                                                   as uploader_email,
+  coalesce(nullif(u.raw_user_meta_data ->> 'display_name', ''),
+           nullif(p.display_name, ''))                      as uploader_name,
+  m.name                                                    as file_name,
+  m.kind,
+  m.role,
+  m.mime_type,
+  round(m.duration::numeric, 1)                             as seconds,
+  round(m.byte_size / 1048576.0, 2)                         as megabytes,
+  m.width,
+  m.height,
+  'media/' || m.storage_path                                as file_in_storage,
+  m.user_id,
+  m.id                                                      as media_id
+from public.media m
+join auth.users u on u.id = m.user_id
+left join public.profiles p on p.id = m.user_id
+order by m.created_at desc;
+
+revoke all on admin.uploads from public, anon, authenticated;
+
 -- Deleting a media row does NOT delete its bytes: Postgres cannot reach into
 -- the storage API. The client deletes the object first and the row second, and
 -- orphaned objects are the failure mode to look for if the two ever disagree.
