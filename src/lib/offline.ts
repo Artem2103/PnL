@@ -27,7 +27,8 @@
  *
  * What it needs: `VideoDecoder`, `VideoEncoder`, `AudioDecoder` and
  * `AudioEncoder` (Chrome, Edge, Safari 16.4+), and a clip in an MP4 or MOV
- * container with H.264 or HEVC video and AAC sound. Anything else — WebM, a
+ * container with H.264 or HEVC video and AAC sound (any profile, any rate — a
+ * rate the AAC encoder refuses is resampled, `lib/resample.ts`). Anything else — WebM, a
  * codec the machine will not decode, a decoder that fails mid-way — throws
  * `OfflineUnavailable`, and `renderCardVideo` falls back to the recorder.
  */
@@ -37,12 +38,15 @@ import { demuxMp4, type DemuxedAudioTrack, type DemuxedSample, type DemuxedVideo
 import { writeMp4, type MuxSample } from './mp4write';
 import { bitrateFor, planWebCodecs } from './recorders';
 import { renderToCanvas } from './render';
+import { resample } from './resample';
 
 /** Key frame every two seconds, as the live recorder writes them. */
 const KEYFRAME_US = 2_000_000;
 /** AAC-LC at 192 kbit/s stereo is transparent; mono needs less. */
 const AUDIO_BITRATE_STEREO = 192_000;
 const AUDIO_BITRATE_MONO = 128_000;
+/** Frames per buffer handed to the encoder when the sound had to be resampled. */
+const CONVERTED_CHUNK = 1024;
 /** Decoded frames waiting to be painted before decoding pauses. */
 const MAX_PENDING_FRAMES = 4;
 const MAX_DECODE_QUEUE = 6;
@@ -272,8 +276,6 @@ async function transcodeAudio(
     numberOfChannels: track.channels,
     description: track.description,
   };
-  // The encoder is configured from what the decoder actually produces: an
-  // HE-AAC source decodes at twice the rate its header states.
   const encoderConfigFor = (
     sampleRate: number,
     channels: number,
@@ -284,15 +286,49 @@ async function transcodeAudio(
     bitrate: channels >= 2 ? AUDIO_BITRATE_STEREO : AUDIO_BITRATE_MONO,
     aac: { format: 'aac' },
   });
+  // Only the decoder can be asked up front. The encoder is chosen from what the
+  // decoder actually produces, which the header does not say: an HE-AAC v2
+  // clip's header reads 22.05 kHz mono and it decodes to 44.1 kHz stereo.
+  // Asking the encoder about the header's numbers turned every such clip —
+  // most TikTok downloads — away to the live recorder.
   try {
-    const [canDecode, canEncode] = await Promise.all([
-      AudioDecoder.isConfigSupported(decoderConfig),
-      AudioEncoder.isConfigSupported(encoderConfigFor(track.sampleRate, track.channels)),
-    ]);
-    if (!canDecode.supported || !canEncode.supported) return null;
+    if (!(await AudioDecoder.isConfigSupported(decoderConfig)).supported) return null;
   } catch {
     return null;
   }
+
+  interface Encoding {
+    rate: number;
+    channels: number;
+    /** The decoded sound has to be resampled (or narrowed) to reach it. */
+    convert: boolean;
+  }
+  /**
+   * The decoded format when the encoder takes it, which is nearly always;
+   * otherwise the nearest one it does. Chrome's AAC encoder takes 44.1 and
+   * 48 kHz only, so AAC at 22.05, 32 or 96 kHz is resampled rather than
+   * sending the whole export to the live recorder.
+   */
+  const chooseEncoding = async (rate: number, channels: number): Promise<Encoding | null> => {
+    const stereo = Math.min(channels, 2);
+    const candidates: Array<[number, number]> = [
+      [rate, channels],
+      [48000, channels],
+      [44100, channels],
+      [48000, stereo],
+      [44100, stereo],
+    ];
+    for (const [r, c] of candidates) {
+      try {
+        if ((await AudioEncoder.isConfigSupported(encoderConfigFor(r, c))).supported) {
+          return { rate: r, channels: c, convert: r !== rate || c !== channels };
+        }
+      } catch {
+        /* try the next */
+      }
+    }
+    return null;
+  };
 
   const range = decodeRange(track.samples, startUs, endUs);
   if (!range) return null;
@@ -307,8 +343,13 @@ async function transcodeAudio(
   let description: Uint8Array | null = null;
   const samples: MuxSample[] = [];
   const pending: AudioData[] = [];
-  let outputRate = 0;
-  let outputChannels = 0;
+  // Cast, not annotated: both are set inside callbacks, which TypeScript's
+  // narrowing cannot see, and an annotated `null` would read as `never` below.
+  let encoding = null as Encoding | null;
+  let decodedRate = 0;
+  /** Sound waiting to be resampled, per output channel, in window order. */
+  const collected: Float32Array[][] = [];
+  let collectedFrom = -1;
   /**
    * Where the next decoded buffer sits on the clip's timeline, in output
    * sample frames. Kept by counting rather than read off each buffer: the
@@ -319,7 +360,6 @@ async function transcodeAudio(
    * counting from the first packet's own time is exact to the sample.
    */
   let cursor = 0;
-  let configured = false;
   const firstPts = track.samples[first]!.pts;
 
   const encoder = new AudioEncoder({
@@ -336,17 +376,21 @@ async function transcodeAudio(
 
   const encodeTrimmed = (data: AudioData): void => {
     try {
-      if (!configured) {
-        configured = true;
-        outputRate = data.sampleRate;
-        outputChannels = data.numberOfChannels;
-        cursor = Math.round((firstPts * outputRate) / 1_000_000);
-        encoder.configure(encoderConfigFor(outputRate, outputChannels));
-      }
-      const timestampUs = Math.round((cursor * 1_000_000) / outputRate);
+      const timestampUs = Math.round((cursor * 1_000_000) / decodedRate);
       cursor += data.numberOfFrames;
       const cut = trimAudio(timestampUs, data.numberOfFrames, data.sampleRate, startUs, endUs);
       if (!cut) return;
+      if (encoding!.convert) {
+        // Kept as float, one plane per channel, and resampled in one pass once
+        // the window is complete, so no buffer boundary can leave a seam.
+        if (collectedFrom < 0) collectedFrom = cut.timestamp;
+        for (let c = 0; c < encoding!.channels; c += 1) {
+          const plane = new Float32Array(cut.take);
+          data.copyTo(plane, { planeIndex: c, format: 'f32-planar', frameOffset: cut.skip, frameCount: cut.take });
+          (collected[c] ??= []).push(plane);
+        }
+        return;
+      }
       const planar = data.format?.endsWith('-planar') ?? false;
       const planes = planar ? data.numberOfChannels : 1;
       const sizes: number[] = [];
@@ -388,7 +432,49 @@ async function transcodeAudio(
 
   const drainPending = async () => {
     while (pending.length) {
+      if (!encoding) {
+        const head = pending[0]!;
+        encoding = await chooseEncoding(head.sampleRate, head.numberOfChannels);
+        if (!encoding) throw new OfflineUnavailable('No AAC encoder here takes this sound.');
+        decodedRate = head.sampleRate;
+        cursor = Math.round((firstPts * decodedRate) / 1_000_000);
+        encoder.configure(encoderConfigFor(encoding.rate, encoding.channels));
+      }
       encodeTrimmed(pending.shift()!);
+      await drain(encoder, MAX_ENCODE_QUEUE, () => failure);
+    }
+  };
+
+  const encodeConverted = async (target: Encoding) => {
+    const planes = collected.map((chunks) => {
+      const joined = new Float32Array(chunks.reduce((n, chunk) => n + chunk.length, 0));
+      let at = 0;
+      for (const chunk of chunks) {
+        joined.set(chunk, at);
+        at += chunk.length;
+      }
+      return resample(joined, decodedRate, target.rate);
+    });
+    const frames = planes[0]?.length ?? 0;
+    for (let at = 0; at < frames; at += CONVERTED_CHUNK) {
+      if (signal?.aborted) throw new OfflineUnavailable('Export cancelled.');
+      if (failure) throw failure;
+      const take = Math.min(CONVERTED_CHUNK, frames - at);
+      const buffer = new Float32Array(take * target.channels);
+      planes.forEach((plane, c) => buffer.set(plane.subarray(at, at + take), c * take));
+      const chunk = new AudioData({
+        format: 'f32-planar',
+        sampleRate: target.rate,
+        numberOfFrames: take,
+        numberOfChannels: target.channels,
+        timestamp: collectedFrom + Math.round((at * 1_000_000) / target.rate),
+        data: buffer,
+      });
+      try {
+        encoder.encode(chunk);
+      } finally {
+        chunk.close();
+      }
       await drain(encoder, MAX_ENCODE_QUEUE, () => failure);
     }
   };
@@ -412,6 +498,7 @@ async function transcodeAudio(
     }
     await bounded(decoder.flush(), 'The sound decoder');
     await drainPending();
+    if (encoding?.convert) await encodeConverted(encoding);
     if (encoder.state === 'configured') await bounded(encoder.flush(), 'The sound encoder');
     if (failure) throw failure;
   } finally {
@@ -429,7 +516,7 @@ async function transcodeAudio(
   }
 
   if (!description || !samples.length) return null;
-  return { description, samples, sampleRate: outputRate, channels: outputChannels };
+  return { description, samples, sampleRate: encoding!.rate, channels: encoding!.channels };
 }
 
 /* ------------------------------------------------------------------ */

@@ -15,6 +15,7 @@ file easier to read:
 | 2026-08-25 (c) | local mode, and the scroll fix that came out of testing it | `f3d739d`, `45c4b95` → `main` |
 | 2026-09-14 (b) | frame-exact video export: every source frame, at the source's rate, sound to the sample | see **Start here** |
 | 2026-09-14 (c) | renamed to Astra; editor restyled sharp black and white | `e253c3f` → `main` |
+| 2026-09-15 | clips with HE-AAC or odd-rate sound no longer fall back to the laggy live recorder | see **Start here (2026-09-15)** |
 
 All of it is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
@@ -22,6 +23,78 @@ the two picture slots** the third, and **Local mode** and **The scroll trap in t
 the fourth.
 
 ---
+
+## Start here (2026-09-15)
+
+### "JWT expired" was this PC's clock, not the app (2026-09-15)
+
+Artem reported *"JWT expired mistake"*. Windows was set to *SE Asia Standard Time* (UTC+7), so the
+machine's UTC read 15:15 while Supabase's `Date` header said 20:15. Supabase tokens live one hour on
+the server's clock; the client thought each one had five more hours, never refreshed, and every
+request after the first hour failed with `JWT expired`. Artem switched the time to automatic and it
+cleared up; the two clocks then agreed to the second. **No code was changed for this.** If the
+error comes back, check the clock first (`Invoke-WebRequest <supabase-url>/auth/v1/health -Headers
+@{apikey=...}` and compare its `Date` with `(Get-Date).ToUniversalTime()`).
+
+### A 19 s clip exported laggy while a 23 s one was perfect (2026-09-15, latest)
+
+Artem: *"23s video is good, 19s one is laggy, please fix it. So that every video I upload, is
+PERFECT in quality, smoothness, fps, audio is not delayed."*
+
+**Measured first.** `dev/mp4-cadence.mjs` on the Downloads folder: every export over the new clip
+(`september-2026-pnl (1)`–`(4)`, 19.1 s) came out at **30, 13.8, 12.5 and 26.5 fps** with up to
+233 ms holes — the live recorder's signature — while the same night's exports over the 60 fps and
+24 fps clips were frame-exact (59.92 and 23.98 fps, 0 jitter). So the clip, not the length, decided
+it: this one was being turned away from the frame-exact path.
+
+**Why.** The clip (`ssstik.io_@hisrevenue_1789416295020.mp4`, a TikTok download) is H.264 918 × 720
+at 30 fps — fine — with **HE-AAC v2** sound (`mp4a.40.29`). Its header says 22 050 Hz mono; Chrome
+decodes it to **44 100 Hz stereo** (2048 frames a packet, all 415 packets accounted for).
+`transcodeAudio` asked `AudioEncoder.isConfigSupported` about the *header's* 22 050 Hz mono before
+decoding anything, and Chrome 152's AAC encoder on this machine accepts **44.1 and 48 kHz only**
+(checked: 8, 11.025, 16, 22.05, 24, 32, 88.2 and 96 kHz all unsupported, at 1, 2 and 6 channels).
+So the check failed, `transcodeAudio` returned null, the export threw `OfflineUnavailable` and
+quietly recorded live. The code already knew HE-AAC decodes at twice its header rate — it
+configured the real encoder from the first decoded buffer — but the pre-check came first.
+
+**What changed** (`src/lib/offline.ts`, new `src/lib/resample.ts`):
+- The up-front check asks only the decoder. The encoder format is chosen from the first decoded
+  buffer (`chooseEncoding`): the decoded rate and channel count if the encoder takes them, else
+  48 kHz, else 44.1 kHz, then the same at stereo.
+- When the chosen format differs from the decoded one (plain AAC at 22.05/32/96 kHz, or more
+  channels than the encoder takes), the trimmed window is collected as float planes and resampled
+  in one pass by `resample.ts` — a Blackman-windowed sinc, 32 zero crossings, table-driven,
+  symmetric so it adds **no delay** — then encoded in 1024-frame buffers on the window's timeline.
+  The common path (encoder takes the decoded format) is unchanged.
+
+**Verified** in the isolated Chrome, local mode, the real clip through the real *Upload* and
+*Download MP4* buttons:
+
+| | before | after | after, 44.1 kHz refused (forces resampling to 48 kHz) |
+|---|---|---|---|
+| path | live recorder | frame-exact | frame-exact |
+| frames / fps | 238–573, 12.5–30 fps | **573, 30 fps** (the source's own) | **573, 30 fps** |
+| jitter / worst gap | up to 53.7 ms / 233 ms | **0 ms / 33.3 ms** | **0 ms / 33.3 ms** |
+| sound | — | AAC-LC 44.1 kHz stereo, **0 ms** off the source, corr 0.996 | AAC-LC 48 kHz stereo, **0 ms**, corr 0.997 |
+| wall time | ~19 s | 12.1 s | 16.2 s (3.9 s of it the resampler) |
+
+`npm run typecheck` clean; `npx vitest run` 226 tests (7 new in `resample.test.ts`: constant level
+exact at the ends, 1 kHz up from 22.05 kHz and 5 kHz down from 96 kHz within 1 % of the ideal tone,
+30 kHz removed when going to 48 kHz, an impulse at 50 ms stays at 50 ms).
+
+**Two traps from this session:**
+- **PowerShell `$env:VITE_SUPABASE_URL=''` deletes the variable** rather than blanking it, so Vite
+  read `.env.local` and the local-mode server came up on the sign-in screen. Start it from bash:
+  `VITE_SUPABASE_URL="" VITE_SUPABASE_ANON_KEY="" npx vite --port 5174 --strictPort`.
+- **A fresh Chrome profile blocks the second automatic download** of a session silently. Measure
+  the export in the page instead: wrap `URL.createObjectURL` to catch the video `Blob`, then demux
+  it with `/src/lib/mp4read.ts` and run the `dev/av-sync.js` correlation against it.
+
+**Still not covered — what else sends a clip to the live recorder:** WebM or a VP9/AV1 video track
+(the demuxer reads H.264 and HEVC only), sound that is not AAC (Opus or AC-3 in an MP4), and a
+decoder the machine does not have. The console says which: *"Frame-exact export unavailable for
+this clip; recording live instead: …"*. The resampler runs on the main thread, so a 30 s window that
+needs it holds the progress bar still for ~4–6 s.
 
 ## Start here (2026-09-14)
 
