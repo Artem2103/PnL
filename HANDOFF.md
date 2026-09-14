@@ -14,7 +14,7 @@ file easier to read:
 | 2026-08-25 (b) | reference-sized pictures, white/black text, cherry and custom colour | `c96f703` → `main` |
 | 2026-08-25 (c) | local mode, and the scroll fix that came out of testing it | `f3d739d`, `45c4b95` → `main` |
 | 2026-09-14 (b) | frame-exact video export: every source frame, at the source's rate, sound to the sample | see **Start here** |
-| 2026-09-14 (c) | renamed to Astra; editor restyled sharp black and white | uncommitted, see **Start here** |
+| 2026-09-14 (c) | renamed to Astra; editor restyled sharp black and white | `e253c3f` → `main` |
 
 All of it is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
@@ -73,7 +73,10 @@ wanted.
 **Verified.** `npm run typecheck` is clean and `npx vitest run` passes all 219 tests in 18 files. Screenshots from headless Chrome against two dev servers, one in local mode and one
 with `.env.local` for the sign-in screen, are in `Desktop\Astra-redesign\`:
 `editor-desktop.png`, `editor-phone.png` (about 500 px wide, the narrowest headless Chrome allows)
-and `signin.png`. Nothing is committed or deployed yet.
+and `signin.png`.
+
+**Deployed.** Pushed as `e253c3f`; within about 15 s of the push <https://nexocards.vercel.app>
+served the page titled `Astra — PnL cards` with the new stylesheet (white accent, zero radius).
 
 ### Video export rebuilt as frame-exact; preview pauses while it runs (2026-09-14, latest)
 
