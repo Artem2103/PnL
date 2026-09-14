@@ -96,6 +96,10 @@ decoder the machine does not have. The console says which: *"Frame-exact export 
 this clip; recording live instead: …"*. The resampler runs on the main thread, so a 30 s window that
 needs it holds the progress bar still for ~4–6 s.
 
+**Deployed.** Pushed as `63da15f`; about 15 s later <https://nexocards.vercel.app> served
+`assets/index-1yXROTOl.js`, the same hash as the local `npm run build`, containing the new code. Not
+exercised from here: an export on the live site, signed in.
+
 ## Start here (2026-09-14)
 
 ### Renamed to Astra, and the editor restyled sharp black and white (2026-09-14, latest)
