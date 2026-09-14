@@ -87,6 +87,9 @@ test background behaviour. A hidden tab cannot load a `<video>` for an upload, s
 tab of the same origin (IndexedDB and `localStorage` are shared) and call `renderCardVideo` directly
 in the hidden one.
 
+**Deployed.** Pushed as `447852c`; <https://nexocards.vercel.app> then served
+`assets/index-J2wEQSgt.js`, the same hash as the local `npm run build`.
+
 ### A 19 s clip exported laggy while a 23 s one was perfect (2026-09-15)
 
 Artem: *"23s video is good, 19s one is laggy, please fix it. So that every video I upload, is
