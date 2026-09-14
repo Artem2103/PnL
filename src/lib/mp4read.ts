@@ -242,23 +242,34 @@ export function parseAudioSpecificConfig(asc: Uint8Array): {
 /* ------------------------------------------------------------------ */
 
 interface Edit {
-  /** Media time (track timescale) that plays at the start; subtracted from every pts. */
+  /** Subtracted from every pts, track timescale: the media time that plays at the movie's start, less any delay before it. */
   offset: number;
 }
 
-function readEdit(view: DataView, trak: Box[]): Edit {
+function readEdit(view: DataView, trak: Box[], movieTimescale: number, trackTimescale: number): Edit {
   const edts = find(trak, 'edts');
   const elst = edts && find(boxes(view, edts.body, edts.end), 'elst');
   if (!elst) return { offset: 0 };
   const version = view.getUint8(elst.body);
   const count = view.getUint32(elst.body + 4);
+  const entryBytes = version === 1 ? 20 : 12;
   let p = elst.body + 8;
-  for (let i = 0; i < count; i += 1) {
+  /** Movie timescale: how long the track waits before its first real edit. */
+  let delay = 0;
+  for (let i = 0; i < count && p + entryBytes <= elst.end; i += 1) {
+    const segment = version === 1 ? Number(view.getBigUint64(p)) : view.getUint32(p);
     const mediaTime = version === 1 ? Number(view.getBigInt64(p + 8)) : view.getInt32(p + 4);
-    p += version === 1 ? 20 : 12;
-    // An empty edit (-1) is a delay before the track starts; the first real
-    // entry says where in the media that start lands.
-    if (mediaTime >= 0) return { offset: mediaTime };
+    p += entryBytes;
+    // An empty edit (-1) is a delay before the track starts — how a sound
+    // track that begins after the picture says so. Ignoring it put that sound
+    // early by the whole delay. The first real entry says where in the media
+    // the start lands.
+    if (mediaTime < 0) {
+      delay += segment;
+      continue;
+    }
+    const delayTicks = movieTimescale ? Math.round((delay * trackTimescale) / movieTimescale) : 0;
+    return { offset: mediaTime - delayTicks };
   }
   return { offset: 0 };
 }
@@ -359,9 +370,19 @@ function readStbl(view: DataView, stbl: Box): RawSample[] | null {
   if (!stts || !stsz || !stsc || !stco) return null;
   const wideOffsets = stco.type === 'co64';
 
+  // A table claiming more entries than its box can hold is damaged. Refusing
+  // it here stops a corrupt count from allocating gigabytes below.
+  const holds = (table: Box, header: number, entries: number, entryBytes: number) =>
+    table.body + header + entries * entryBytes <= table.end;
+
   // Sizes.
   const uniform = view.getUint32(stsz.body + 4);
   const count = view.getUint32(stsz.body + 8);
+  // Every sample is at least a byte of the file.
+  if (count > view.byteLength || (!uniform && !holds(stsz, 12, count, 4))) return null;
+  if (!holds(stts, 8, view.getUint32(stts.body + 4), 8)) return null;
+  if (!holds(stsc, 8, view.getUint32(stsc.body + 4), 12)) return null;
+  if (!holds(stco, 8, view.getUint32(stco.body + 4), stco.type === 'co64' ? 8 : 4)) return null;
   const sizes = new Array<number>(count);
   for (let i = 0; i < count; i += 1) {
     sizes[i] = uniform || view.getUint32(stsz.body + 12 + i * 4);
@@ -391,7 +412,7 @@ function readStbl(view: DataView, stbl: Box): RawSample[] | null {
   // Composition offsets, when frames were reordered.
   const cts = new Array<number>(count).fill(0);
   const ctts = find(inStbl, 'ctts');
-  if (ctts) {
+  if (ctts && holds(ctts, 8, view.getUint32(ctts.body + 4), 8)) {
     const version = view.getUint8(ctts.body);
     const runs = view.getUint32(ctts.body + 4);
     let p = ctts.body + 8;
@@ -410,7 +431,7 @@ function readStbl(view: DataView, stbl: Box): RawSample[] | null {
   // Sync samples: every sample when the table is absent.
   const keys = new Array<boolean>(count).fill(true);
   const stss = find(inStbl, 'stss');
-  if (stss) {
+  if (stss && holds(stss, 8, view.getUint32(stss.body + 4), 4)) {
     keys.fill(false);
     const n = view.getUint32(stss.body + 4);
     for (let i = 0; i < n; i += 1) {
@@ -621,6 +642,8 @@ export function demuxMp4(buffer: ArrayBuffer): DemuxedMovie | null {
   if (!moov) return null;
   const inMoov = boxes(view, moov.body, moov.end);
   const trex = readTrex(view, moov);
+  const mvhd = find(inMoov, 'mvhd');
+  const movieTimescale = mvhd ? view.getUint32(mvhd.body + (view.getUint8(mvhd.body) === 1 ? 20 : 12)) : 0;
 
   let video: DemuxedVideoTrack | null = null;
   let audio: DemuxedAudioTrack | null = null;
@@ -656,7 +679,7 @@ export function demuxMp4(buffer: ArrayBuffer): DemuxedMovie | null {
     let raw = readStbl(view, stbl);
     if (!raw || raw.length === 0) raw = readFragments(view, top, trackId, trex.get(trackId));
     if (!raw.length) continue;
-    const samples = toSamples(raw, timescale, readEdit(view, inTrak));
+    const samples = toSamples(raw, timescale, readEdit(view, inTrak, movieTimescale, timescale));
     const last = samples[samples.length - 1]!;
     duration = Math.max(duration, (last.pts + last.duration) / 1_000_000);
 

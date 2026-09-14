@@ -242,7 +242,40 @@ describe('demuxMp4 on a progressive file', () => {
     expect(parsed.samples.map((s) => s.dts)).toEqual([0, step, 2 * step, 3 * step]);
     expect(parsed.samples.map((s) => s.key)).toEqual([true, false, false, false]);
   });
+
+  it('places a track that starts late by its empty edit', () => {
+    // The writer marks sound that begins 200 ms after the picture with an
+    // empty edit; reading it back must put that sound at 200 ms, not at 0.
+    const late = audioSamples(20, 48000).map((s) => ({ ...s, timestamp: s.timestamp + 200_000 }));
+    const file = writeMp4({
+      video: { width: 64, height: 64, description: AVCC, samples: videoSamples(25, 25, 25) },
+      audio: { sampleRate: 48000, channels: 2, description: ASC, samples: late },
+    });
+    const parsed = demuxMp4(file.buffer)!;
+    expect(parsed.video!.samples[0]!.pts).toBe(0);
+    expect(parsed.audio!.samples[0]!.pts).toBe(200_000);
+    expect(parsed.audio!.samples[1]!.pts).toBe(200_000 + Math.round((1024 * 1_000_000) / 48000));
+  });
+
+  it('refuses a sample table whose count is larger than the file, without throwing', () => {
+    const damaged = new Uint8Array(written.buffer.slice(0));
+    const at = findType(damaged, 'stsz');
+    new DataView(damaged.buffer).setUint32(at + 12, 0x7fffffff); // sample_count of the first track
+    let movie: ReturnType<typeof demuxMp4> = null;
+    expect(() => (movie = demuxMp4(damaged.buffer))).not.toThrow();
+    expect(movie!.video).toBeNull();
+    expect(movie!.audio!.samples).toHaveLength(130);
+  });
 });
+
+/** Byte position of a four-character box type. */
+function findType(bytes: Uint8Array, type: string): number {
+  const code = enc.encode(type);
+  for (let i = 0; i + 4 <= bytes.length; i += 1) {
+    if (bytes[i] === code[0] && bytes[i + 1] === code[1] && bytes[i + 2] === code[2] && bytes[i + 3] === code[3]) return i;
+  }
+  return -1;
+}
 
 describe('demuxMp4 on a fragmented file', () => {
   const { buffer, payloads } = fragmentedFixture();

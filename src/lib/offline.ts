@@ -558,7 +558,15 @@ export async function exportOffline(options: OfflineExportOptions): Promise<Offl
   if (typeof VideoDecoder !== 'function' || typeof VideoEncoder !== 'function') {
     throw new OfflineUnavailable('WebCodecs decoders are not available here.');
   }
-  const movie = demuxMp4(bytes);
+  let movie: ReturnType<typeof demuxMp4>;
+  try {
+    movie = demuxMp4(bytes);
+  } catch {
+    // A truncated or damaged file reads past its own end. The live recorder
+    // hands it to the browser's own player, which may still manage it; an
+    // export that simply failed would not.
+    throw new OfflineUnavailable('Not an MP4 this exporter can read.');
+  }
   const track = movie?.video;
   if (!movie || !track) throw new OfflineUnavailable('Not an MP4 this exporter can read.');
   if (!track.codec || !track.description) {

@@ -36,7 +36,58 @@ cleared up; the two clocks then agreed to the second. **No code was changed for 
 error comes back, check the clock first (`Invoke-WebRequest <supabase-url>/auth/v1/health -Headers
 @{apikey=...}` and compare its `Date` with `(Get-Date).ToUniversalTime()`).
 
-### A 19 s clip exported laggy while a 23 s one was perfect (2026-09-15, latest)
+### Export review: two hardening fixes, nothing else touched (2026-09-15, latest)
+
+Artem: *"let's just use our own video decoder/encoder … Optimize it to the max again, however, right
+now it's very good so be careful not to break it. If you find any vulnerabilities, then do and
+optimize smth. If not, then it's better to not touch it."* He also asked, before that, whether a
+ready-made library would be better; the answer was to keep this pipeline (it already uses the
+browser's own WebCodecs decoders and encoders — the only custom parts are reading and writing the
+MP4), with **Mediabunny** as the one library worth trying later if WebM/VP9/AV1/Opus clips matter.
+
+**Checked and left alone, because they are already right:**
+- **H.264 level.** The requested codec string says level 4.0, which does not allow 60 fps at
+  1680 × 1140 — but the encoder writes its own level: **4.2** in the 60 fps export, **5.0** in the
+  30 fps ones (read from `avcC` and the SPS). The files are valid.
+- **Background tabs.** A chain of 50 `setTimeout(0)` in a hidden tab took **43.8 s** (0.2 s in
+  front), which suggested the export's progress yields would stall it. Measured on the real engine
+  instead: the 19 s clip exported in **11.1 s hidden** and 12.0 s in front — the yields follow codec
+  events, not each other, so they are not chained and not throttled. Not changed.
+- **Memory.** `openClipBytes` loads the whole clip, but uploads are capped at 80 MB
+  (`MAX_VIDEO_BYTES`), and a 30 s window is at most ~1 800 frames, far below the spread-argument
+  limits in `mp4write.ts`.
+- Bitrate (0.18 bit/pixel/frame, 6–24 Mbit/s) and `latencyMode: 'realtime'` (see *The lag at
+  0.5 s*: `quality` hangs a hardware encoder) — not changed.
+
+**Fixed:**
+1. **A damaged file failed the export instead of falling back.** `demuxMp4` throws `RangeError`
+   when a box runs past the file's end, and that is not `OfflineUnavailable`, so `renderCardVideo`
+   rethrew it. And a corrupt `stsz` count (up to 4 294 967 295) went straight into `new Array(count)`.
+   Now `exportOffline` turns any demuxer exception into `OfflineUnavailable` (the live recorder then
+   tries the browser's own player), and `readStbl` refuses any table whose entry count does not fit
+   its box — `stsz`, `stts`, `stsc`, `stco`/`co64`, and skips a `ctts`/`stss` that does not.
+2. **A track that starts late came out early.** `readEdit` skipped empty edits (`media_time −1`),
+   which is how a file says "this track begins N ms after the movie starts". Sound with a 200 ms
+   empty edit was read as starting at 0 — 200 ms early in the export. The delay (movie timescale,
+   from `mvhd`) is now converted to the track's timescale and subtracted from the edit offset.
+   Our own `writeMp4` writes exactly this for a late track, so the new test round-trips it.
+
+**Verified:** `npm run typecheck` clean, `npx vitest run` **228** tests (2 new in
+`mp4read.test.ts`: the 200 ms empty edit reads back at 200 000 µs; a `stsz` count of 0x7FFFFFFF
+leaves the video track out without throwing). The old and new demuxer (`git show HEAD:…` vs the
+working copy) give **identical** sample counts, first timestamps and durations on **all 80** MP4/MOV
+files in `Downloads` — iPhone clips, TikTok downloads, screen recordings, OBS files up to 28 min,
+and every export. None of those 80 has an empty edit, so fix 2 is covered by the unit test only.
+The 19 s clip through the real button with both fixes: 573 frames, 30 fps, 0 ms jitter, sound
+0 ms off the source (corr 0.996), 10.0 s.
+
+**Trap:** `Target.createTarget` with `background: true` over CDP gives a genuinely hidden tab
+(`visibilityState: 'hidden'`) in a Chrome launched *without* the anti-throttling flags — the way to
+test background behaviour. A hidden tab cannot load a `<video>` for an upload, so upload in a front
+tab of the same origin (IndexedDB and `localStorage` are shared) and call `renderCardVideo` directly
+in the hidden one.
+
+### A 19 s clip exported laggy while a 23 s one was perfect (2026-09-15)
 
 Artem: *"23s video is good, 19s one is laggy, please fix it. So that every video I upload, is
 PERFECT in quality, smoothness, fps, audio is not delayed."*
