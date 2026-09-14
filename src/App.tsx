@@ -277,7 +277,7 @@ export default function App() {
         <div className="brand">
           <span className="brand__mark" aria-hidden="true" />
           <div>
-            <h1>PnL Card Studio</h1>
+            <h1>Astra</h1>
             <p>Share cards, rendered in your browser.</p>
           </div>
         </div>

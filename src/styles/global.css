@@ -3,19 +3,23 @@
      its sticky offset and as the height it has left — so the two cannot drift
      apart. Measured from the bar's padding and content, not guessed. */
   --topbar-h: 67px;
-  --bg: #06070a;
-  --bg-elev: rgba(255, 255, 255, 0.035);
-  --bg-elev-strong: rgba(255, 255, 255, 0.06);
-  --border: rgba(255, 255, 255, 0.09);
-  --border-strong: rgba(255, 255, 255, 0.16);
-  --text: #eef2fb;
-  --text-muted: rgba(238, 242, 251, 0.62);
-  --text-faint: rgba(238, 242, 251, 0.4);
-  --accent: #1fe08a;
-  --loss: #ff5c6c;
-  --radius: 16px;
-  --radius-sm: 10px;
-  --shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  /* Black and white with square corners. Colour is kept for meaning only:
+     profit and loss figures, and error states. */
+  --bg: #0a0a0a;
+  --bg-elev: #101010;
+  --bg-elev-strong: #1a1a1a;
+  --border: #242424;
+  --border-strong: #3a3a3a;
+  --text: #f2f2f2;
+  --text-muted: #a3a3a3;
+  --text-faint: #6b6b6b;
+  --accent: #ffffff;
+  --accent-ink: #0a0a0a;
+  --profit: #4ade80;
+  --loss: #f87171;
+  --radius: 0;
+  --radius-sm: 0;
+  --shadow: 0 0 0 1px var(--border);
   --font: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
   color-scheme: dark;
@@ -33,10 +37,7 @@ body {
 
 body {
   min-height: 100vh;
-  background:
-    radial-gradient(1200px 800px at 12% -10%, rgba(31, 224, 138, 0.09), transparent 60%),
-    radial-gradient(1000px 700px at 92% 4%, rgba(110, 120, 255, 0.09), transparent 55%),
-    var(--bg);
+  background: var(--bg);
   color: var(--text);
   font-family: var(--font);
   font-size: 15px;
@@ -65,7 +66,7 @@ kbd {
   padding: 1px 5px;
   border: 1px solid var(--border);
   border-bottom-width: 2px;
-  border-radius: 5px;
+  border-radius: 0;
   background: var(--bg-elev);
 }
 
@@ -84,7 +85,7 @@ kbd {
   gap: 16px;
   padding: 18px 26px;
   border-bottom: 1px solid var(--border);
-  background: rgba(6, 7, 10, 0.72);
+  background: rgba(10, 10, 10, 0.88);
   backdrop-filter: blur(14px);
   position: sticky;
   top: 0;
@@ -108,16 +109,17 @@ kbd {
 .brand__mark {
   width: 30px;
   height: 30px;
-  border-radius: 9px;
-  background: linear-gradient(140deg, var(--accent), #0e8f5c 60%, #063a26);
-  box-shadow: 0 0 22px rgba(31, 224, 138, 0.45);
+  background: var(--accent);
+  clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%);
   flex: none;
 }
 
-.brand h1 {
-  font-size: 17px;
+.brand h1,
+.auth__brand h1 {
+  font-size: 16px;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
 }
 
 .brand p {
@@ -253,8 +255,8 @@ kbd {
   flex: 1 1 120px;
   height: 4px;
   min-width: 80px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  border-radius: 0;
+  background: var(--border);
   overflow: hidden;
 }
 
@@ -387,7 +389,7 @@ kbd {
   padding: 10px 12px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.28);
+  background: var(--bg);
   color: var(--text);
   font-size: 14px;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -400,8 +402,8 @@ kbd {
 .theme-swatch:focus-visible,
 .bg-tile__select:focus-visible {
   outline: none;
-  border-color: rgba(31, 224, 138, 0.6);
-  box-shadow: 0 0 0 3px rgba(31, 224, 138, 0.18);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .input--number {
@@ -433,14 +435,14 @@ kbd {
   gap: 3px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.28);
+  background: var(--bg);
 }
 
 .segmented__item {
   flex: 1;
   padding: 7px 8px;
   border: none;
-  border-radius: 7px;
+  border-radius: 0;
   background: transparent;
   color: var(--text-muted);
   font-size: 12.5px;
@@ -454,21 +456,20 @@ kbd {
 }
 
 .segmented__item.is-active {
-  background: var(--bg-elev-strong);
-  color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--border-strong);
+  background: var(--accent);
+  color: var(--accent-ink);
 }
 
 .segmented__item.is-active.is-profit {
-  color: var(--accent);
-  box-shadow: inset 0 0 0 1px rgba(31, 224, 138, 0.35);
-  background: rgba(31, 224, 138, 0.12);
+  color: var(--profit);
+  box-shadow: inset 0 0 0 1px var(--profit);
+  background: transparent;
 }
 
 .segmented__item.is-active.is-loss {
   color: var(--loss);
-  box-shadow: inset 0 0 0 1px rgba(255, 92, 108, 0.35);
-  background: rgba(255, 92, 108, 0.12);
+  box-shadow: inset 0 0 0 1px var(--loss);
+  background: transparent;
 }
 
 .toggles {
@@ -495,9 +496,9 @@ kbd {
 .toggle__track {
   width: 34px;
   height: 20px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
   position: relative;
   flex: none;
   transition: background 0.18s ease;
@@ -509,23 +510,23 @@ kbd {
   left: 2px;
   width: 14px;
   height: 14px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.7);
+  border-radius: 0;
+  background: var(--text-muted);
   transition: transform 0.18s ease, background 0.18s ease;
 }
 
 .toggle input:checked + label .toggle__track {
-  background: rgba(31, 224, 138, 0.28);
-  border-color: rgba(31, 224, 138, 0.45);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .toggle input:checked + label .toggle__thumb {
   transform: translateX(14px);
-  background: var(--accent);
+  background: var(--accent-ink);
 }
 
 .toggle input:focus-visible + label .toggle__track {
-  box-shadow: 0 0 0 3px rgba(31, 224, 138, 0.18);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .toggle input:checked + label .toggle__label {
@@ -569,7 +570,7 @@ kbd {
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: rgba(0, 0, 0, 0.18);
+  background: var(--bg);
 }
 
 .subsection__head {
@@ -595,7 +596,7 @@ kbd {
   padding: 12px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.24);
+  background: var(--bg);
 }
 
 .readout dt {
@@ -613,7 +614,7 @@ kbd {
 }
 
 .readout .is-profit {
-  color: var(--accent);
+  color: var(--profit);
 }
 
 .readout .is-loss {
@@ -636,13 +637,13 @@ kbd {
   padding: 10px 26px;
   font-size: 12.5px;
   line-height: 1.6;
-  color: #f0d9a8;
-  background: rgba(255, 201, 77, 0.07);
-  border-bottom: 1px solid rgba(255, 201, 77, 0.18);
+  color: var(--text-muted);
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
 }
 
 .localnote strong {
-  color: #ffcf6a;
+  color: var(--text);
   font-weight: 650;
 }
 
@@ -650,8 +651,8 @@ kbd {
   font-family: var(--font-mono);
   font-size: 11.5px;
   padding: 1px 5px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.07);
+  border-radius: 0;
+  background: var(--bg-elev-strong);
   color: var(--text);
 }
 
@@ -671,19 +672,19 @@ kbd {
   padding: 4px 4px 6px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.18);
+  background: var(--bg);
   color: var(--text-muted);
   transition: transform 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .frame-swatch:hover {
-  transform: translateY(-1px);
+  border-color: var(--border-strong);
   color: var(--text);
 }
 
 .frame-swatch.is-selected {
-  border-color: rgba(31, 224, 138, 0.65);
-  box-shadow: 0 0 0 1px rgba(31, 224, 138, 0.35);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
   color: var(--text);
 }
 
@@ -715,12 +716,12 @@ kbd {
 }
 
 .theme-swatch:hover {
-  transform: translateY(-1px);
+  border-color: var(--border-strong);
 }
 
 .theme-swatch.is-selected {
-  border-color: rgba(31, 224, 138, 0.65);
-  box-shadow: 0 0 0 1px rgba(31, 224, 138, 0.35);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .theme-swatch__dot {
@@ -729,7 +730,7 @@ kbd {
   right: 7px;
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: 0;
 }
 
 .theme-swatch__name {
@@ -775,12 +776,12 @@ kbd {
 
 .rgb__well::-webkit-color-swatch {
   border: none;
-  border-radius: 3px;
+  border-radius: 0;
 }
 
 .rgb__well::-moz-color-swatch {
   border: none;
-  border-radius: 3px;
+  border-radius: 0;
 }
 
 .rgb__hex {
@@ -805,14 +806,14 @@ kbd {
   padding: 16px 14px;
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius-sm);
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--bg);
   text-align: center;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .dropzone.is-dragging {
-  border-color: rgba(31, 224, 138, 0.7);
-  background: rgba(31, 224, 138, 0.06);
+  border-color: var(--accent);
+  background: var(--bg-elev-strong);
 }
 
 .dropzone.is-busy {
@@ -837,12 +838,12 @@ kbd {
   border-radius: var(--radius-sm);
   overflow: hidden;
   border: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--bg);
 }
 
 .bg-tile.is-selected {
-  border-color: rgba(31, 224, 138, 0.7);
-  box-shadow: 0 0 0 1px rgba(31, 224, 138, 0.3);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .bg-tile--none {
@@ -853,7 +854,7 @@ kbd {
   font-size: 10px;
   line-height: 1.2;
   color: var(--text-muted);
-  background: linear-gradient(140deg, #12161d, #05070a);
+  background: var(--bg-elev);
 }
 
 .bg-tile__select {
@@ -881,8 +882,8 @@ kbd {
   left: 4px;
   bottom: 4px;
   padding: 1px 5px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.72);
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.8);
   border: 1px solid var(--border);
   font-family: var(--font-mono);
   font-size: 9.5px;
@@ -897,7 +898,7 @@ kbd {
   width: 20px;
   height: 20px;
   line-height: 1;
-  border-radius: 50%;
+  border-radius: 0;
   border: 1px solid var(--border);
   background: rgba(0, 0, 0, 0.7);
   color: #fff;
@@ -928,16 +929,13 @@ kbd {
   color: var(--text);
   font-size: 13px;
   font-weight: 600;
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  letter-spacing: 0.02em;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
+  background: #242424;
   border-color: var(--border-strong);
-}
-
-.btn:active:not(:disabled) {
-  transform: translateY(1px);
 }
 
 .btn:disabled {
@@ -955,19 +953,19 @@ kbd {
 }
 
 .btn--primary {
-  background: linear-gradient(140deg, #26f095, #0fa768);
-  border-color: rgba(31, 224, 138, 0.5);
-  color: #04150d;
-  box-shadow: 0 8px 24px rgba(31, 224, 138, 0.22);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .btn--primary:hover:not(:disabled) {
-  background: linear-gradient(140deg, #3bf6a3, #14b873);
+  background: #d9d9d9;
+  border-color: #d9d9d9;
 }
 
 .chip {
   padding: 5px 11px;
-  border-radius: 999px;
+  border-radius: 0;
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-muted);
@@ -977,9 +975,9 @@ kbd {
 }
 
 .chip.is-active {
-  background: var(--bg-elev-strong);
-  color: var(--text);
-  border-color: var(--border-strong);
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
 }
 
 /* ---------------------------------------------------------------- Toasts */
@@ -995,17 +993,16 @@ kbd {
 
 .toast {
   padding: 10px 18px;
-  border-radius: 999px;
+  border-radius: 0;
   font-size: 13px;
   font-weight: 500;
   border: 1px solid var(--border-strong);
-  background: rgba(12, 14, 19, 0.94);
-  box-shadow: var(--shadow);
+  background: #111111;
   animation: toast-in 0.22s ease;
 }
 
 .toast--error {
-  border-color: rgba(255, 92, 108, 0.45);
+  border-color: var(--loss);
   color: #ffd9dd;
 }
 
@@ -1042,21 +1039,13 @@ kbd {
   padding: 28px 26px 24px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
-  background: rgba(12, 14, 19, 0.72);
-  backdrop-filter: blur(18px);
-  box-shadow: var(--shadow);
+  background: var(--bg-elev);
 }
 
 .auth__brand {
   display: flex;
   align-items: center;
   gap: 13px;
-}
-
-.auth__brand h1 {
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
 }
 
 .auth__brand p {
@@ -1088,8 +1077,8 @@ kbd {
 }
 
 .auth__message--error {
-  border-color: rgba(255, 92, 108, 0.45);
-  background: rgba(255, 92, 108, 0.09);
+  border-color: var(--loss);
+  background: rgba(248, 113, 113, 0.08);
   color: #ffd9dd;
 }
 
@@ -1115,7 +1104,7 @@ kbd {
 .auth__spinner {
   width: 26px;
   height: 26px;
-  border-radius: 50%;
+  border-radius: 0;
   border: 2px solid var(--border-strong);
   border-top-color: var(--accent);
   animation: auth-spin 0.7s linear infinite;
@@ -1156,7 +1145,7 @@ kbd {
      the drawing into a 20×30 box: a shrunken figure floating in the circle.
      The menu's avatar is a <span> and never had the problem. */
   padding: 0;
-  border-radius: 50%;
+  border-radius: 0;
   border: 1px solid var(--border-strong);
   background: var(--bg-elev-strong);
   color: var(--text-muted);
@@ -1173,13 +1162,13 @@ kbd {
 
 .profile__button:hover,
 .profile__button.is-open {
-  border-color: rgba(31, 224, 138, 0.55);
+  border-color: var(--accent);
   color: var(--text);
 }
 
 .profile__button:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(31, 224, 138, 0.25);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .profile__menu {
@@ -1191,8 +1180,7 @@ kbd {
   border-radius: var(--radius);
   border: 1px solid var(--border-strong);
   /* Opaque: the local-mode banner's text showed through a translucent card. */
-  background: #0c0e13;
-  box-shadow: var(--shadow);
+  background: #0d0d0d;
   display: grid;
   gap: 12px;
   animation: toast-in 0.16s ease;
@@ -1211,7 +1199,7 @@ kbd {
   width: 46px;
   height: 46px;
   flex: none;
-  border-radius: 50%;
+  border-radius: 0;
   overflow: hidden;
   background: var(--bg-elev-strong);
   border: 1px solid var(--border-strong);
@@ -1259,14 +1247,13 @@ kbd {
 .syncdot__mark {
   width: 7px;
   height: 7px;
-  border-radius: 50%;
+  border-radius: 0;
   background: currentColor;
   flex: none;
 }
 
 .syncdot--saved .syncdot__mark {
   background: var(--accent);
-  box-shadow: 0 0 8px rgba(31, 224, 138, 0.5);
 }
 
 .syncdot--saving .syncdot__mark,
@@ -1303,8 +1290,8 @@ kbd {
      would sit on top of each other during the seconds both are shown. */
   top: 4px;
   bottom: auto;
-  background: rgba(31, 224, 138, 0.85);
-  border-color: rgba(31, 224, 138, 0.5);
-  color: #04150d;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
   font-weight: 700;
 }

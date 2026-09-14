@@ -1,4 +1,4 @@
-# Handoff — PnL Card Studio
+# Handoff — Astra (formerly PnL Card Studio)
 
 Written 2026-08-23, revised 2026-08-26. Repo: <https://github.com/Artem2103/PnL> (private), initial
 commit `5216f81`. Working directory `D:\PnL`. Read `README.md` first for what the app *is*; this
@@ -14,6 +14,7 @@ file easier to read:
 | 2026-08-25 (b) | reference-sized pictures, white/black text, cherry and custom colour | `c96f703` → `main` |
 | 2026-08-25 (c) | local mode, and the scroll fix that came out of testing it | `f3d739d`, `45c4b95` → `main` |
 | 2026-09-14 (b) | frame-exact video export: every source frame, at the source's rate, sound to the sample | see **Start here** |
+| 2026-09-14 (c) | renamed to Astra; editor restyled sharp black and white | uncommitted, see **Start here** |
 
 All of it is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
@@ -23,6 +24,56 @@ the fourth.
 ---
 
 ## Start here (2026-09-14)
+
+### Renamed to Astra, and the editor restyled sharp black and white (2026-09-14, latest)
+
+Artem asked: *"I named this project "Astra" … Change the names everywhere from Nexo to Astra, and
+also I dont really like the all-green UI of the website. Make it more rectangle and sharp … Make it
+Sharp in some comfortable black & white colors."*
+
+**The name.** "Nexo" appears nowhere in the code or on the page. It exists only in the Vercel
+project's address, `nexocards.vercel.app`, which is set in the Vercel dashboard, not in the repo.
+What the site actually showed was "PnL Card Studio", so that is what became Astra:
+
+- the topbar and the sign-in card (`App.tsx`, `AuthScreen.tsx`), shown uppercase and tracked;
+- the browser tab title (`Astra — PnL cards`) in `index.html`;
+- the package name in `package.json` and `package-lock.json`, the README title, the schema header
+  comment, and the title passed to the system share sheet.
+
+**Deliberately not renamed:** the `localStorage` key `pnl-card-studio:v2` and the IndexedDB name
+`pnl-card-studio`. Changing either would make every browser forget its saved card and uploaded
+media. The GitHub repo name and the Vercel address are also outside the code. When the
+`astracards.com` domain is bought, add it under the Vercel project's *Domains*, and add the new URL
+to Supabase *Authentication → URL Configuration* (Site URL and Redirect URLs), or sign-up
+confirmation links will keep pointing at the old address.
+
+**The look.** Everything is in `src/styles/global.css`; no component markup changed.
+
+- Tokens: near-black ground `#0a0a0a`, solid panels `#101010`, hairline borders `#242424`, white as
+  the only accent with black ink on it. `--radius` and `--radius-sm` are `0`, and every hard-coded
+  `999px` / `50%` / small radius in the editor is now `0` too: buttons, chips, toggles, the avatar
+  button, the sync dot, toasts, badges, the spinner.
+- The two background glows (green and violet radial gradients) and the green gradient on the
+  primary button are gone. The primary button is solid white with black text; selected segments,
+  chips and toggles invert to white. Selected tiles get a white outline. Drop shadows are replaced
+  by a hairline.
+- The brand mark is a white four-point star (a `clip-path` polygon) instead of the glowing green
+  rounded square.
+- Colour is kept only where it carries meaning: profit readouts use `--profit` (`#4ade80`), loss
+  uses `--loss` (`#f87171`), and the Profit/Loss segment gets a thin outline in that colour. The
+  local-mode banner went from amber to neutral grey.
+- The dark fade under each colour-swatch name is the only gradient left, since it keeps the label
+  legible on light swatches.
+
+**Not changed: the card itself.** The exported card still defaults to the *Mint* colour, because
+that is the product's design, not the editor's chrome. One click on *Bone* in the Colour section
+gives a black-and-white card. Making Bone the default is a one-line change in `defaults.ts` if
+wanted.
+
+**Verified.** `npm run typecheck` is clean and `npx vitest run` passes all 219 tests in 18 files. Screenshots from headless Chrome against two dev servers, one in local mode and one
+with `.env.local` for the sign-in screen, are in `Desktop\Astra-redesign\`:
+`editor-desktop.png`, `editor-phone.png` (about 500 px wide, the narrowest headless Chrome allows)
+and `signin.png`. Nothing is committed or deployed yet.
 
 ### Video export rebuilt as frame-exact; preview pauses while it runs (2026-09-14, latest)
 

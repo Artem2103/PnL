@@ -78,7 +78,7 @@ export function AuthScreen() {
         <div className="auth__brand">
           <span className="brand__mark" aria-hidden="true" />
           <div>
-            <h1>PnL Card Studio</h1>
+            <h1>Astra</h1>
             <p>Sign in to open the card editor.</p>
           </div>
         </div>

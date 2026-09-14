@@ -1,5 +1,5 @@
 -- =====================================================================
--- PnL Card Studio — accounts, cards and media
+-- Astra — accounts, cards and media
 -- =====================================================================
 --
 -- Run once, whole file, in the Supabase dashboard's SQL editor

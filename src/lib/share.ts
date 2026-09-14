@@ -78,7 +78,7 @@ export async function shareCard(state: CardState, scale: number): Promise<ShareO
 
   sharePending = true;
   const share = navigator
-    .share({ files: [file], title: 'PnL card' })
+    .share({ files: [file], title: 'Astra PnL card' })
     .then<ShareOutcome>(() => 'shared')
     .catch<ShareOutcome>((error) => {
       // The sheet opened and the person closed it: not a failure.

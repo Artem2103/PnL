@@ -1,4 +1,4 @@
-# PnL Card Studio
+# Astra
 
 A web app for traders to turn a closed trade — or a whole month — into a shareable card, and
 download it as a high-resolution PNG or, over a background clip, an MP4. Every pixel is drawn in the

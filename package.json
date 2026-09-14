@@ -1,9 +1,9 @@
 {
-  "name": "pnl-card-studio",
+  "name": "astra",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Premium PnL card generator for day traders.",
+  "description": "Astra — premium PnL card generator for day traders.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
