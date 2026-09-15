@@ -68,6 +68,9 @@ out the description as a cookie laid out byte for byte like the phone file's (`s
 `12 10`; a bare ASC passes, junk is refused). **Not verified on the iPhone itself** — that needs
 Artem to export once more on the phone.
 
+**Deployed.** Pushed as `d286029`; <https://nexocards.vercel.app> then served
+`assets/index-C-o7Pnsd.js`, the same hash as the local `npm run build`.
+
 ### Exports made on a phone came out silent (2026-09-16, first pass — diagnosis wrong for Artem's phone)
 
 Artem: *"when I download the video from my phone and export it, it downloads without sound, while at
