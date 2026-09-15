@@ -86,6 +86,9 @@ phone and check the toast says *"every frame"* (frame-exact) and the file has so
 *"recorded live"* and is silent, the clip is one the phone's decoder refuses — the console line
 *"Frame-exact export unavailable…"* says why.
 
+**Deployed.** Pushed as `da8a03a`; within about 10 s <https://nexocards.vercel.app> served
+`assets/index-DayxKi21.js`, the same hash as the local `npm run build`.
+
 ## Start here (2026-09-15)
 
 ### "JWT expired" was this PC's clock, not the app (2026-09-15)
