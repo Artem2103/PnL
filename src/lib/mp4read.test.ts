@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  audioSpecificConfigFrom,
   avcCodecString,
   demuxMp4,
   estimateFps,
@@ -173,6 +174,24 @@ describe('parseAudioSpecificConfig', () => {
   it('reads a 48 kHz mono HE-AAC config', () => {
     // AOT 5 (00101), rate index 3 (0011), channels 1 (0001) → 0010 1001 1000 1000.
     expect(parseAudioSpecificConfig(u8(0x29, 0x88))).toEqual({ codec: 'mp4a.40.5', sampleRate: 48000, channels: 1 });
+  });
+});
+
+describe('audioSpecificConfigFrom', () => {
+  it("takes the ASC out of Safari's magic cookie, byte for byte as an iPhone export carried it", () => {
+    const cookie = Uint8Array.from(
+      '038080802200000004808080144014001800000000000000000005808080021210068080800102'
+        .match(/../g)!
+        .map((h) => parseInt(h, 16)),
+    );
+    expect(Array.from(audioSpecificConfigFrom(cookie)!)).toEqual([0x12, 0x10]);
+  });
+
+  it("passes Chrome's bare ASC through and refuses what is neither", () => {
+    expect(Array.from(audioSpecificConfigFrom(u8(0x12, 0x10))!)).toEqual([0x12, 0x10]);
+    expect(audioSpecificConfigFrom(u8(0x03, 0x01, 0x02))).toBeNull();
+    expect(audioSpecificConfigFrom(u8(0x00, 0x00))).toBeNull();
+    expect(audioSpecificConfigFrom(u8(0x12))).toBeNull();
   });
 });
 

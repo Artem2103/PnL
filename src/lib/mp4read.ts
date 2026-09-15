@@ -211,6 +211,31 @@ export function readEsds(view: DataView, body: number, end: number): AudioConfig
   return { ...parseAudioSpecificConfig(asc), description: asc };
 }
 
+/**
+ * The AudioSpecificConfig in an AAC encoder's `decoderConfig.description`.
+ * Chrome hands over the ASC itself (`12 10`). Safari hands over Apple's magic
+ * cookie, a whole ES descriptor (`03 … 04 … 05 … 12 10 06 …`) — written into
+ * `esds` as it was, it nested one descriptor in another, and every player,
+ * the iPhone's and Windows' alike, refused the sound ("mp4a is not
+ * supported"). No valid ASC starts with 0x03: that is object type 0.
+ * Null when neither reading gives an AAC configuration.
+ */
+export function audioSpecificConfigFrom(description: Uint8Array): Uint8Array | null {
+  let asc: Uint8Array | null = description;
+  if (description[0] === 0x03) {
+    // readEsds expects a full box body: four bytes of version and flags first.
+    const wrapped = new Uint8Array(description.byteLength + 4);
+    wrapped.set(description, 4);
+    try {
+      asc = readEsds(new DataView(wrapped.buffer), 0, wrapped.byteLength)?.description ?? null;
+    } catch {
+      asc = null;
+    }
+  }
+  if (!asc || asc.byteLength < 2) return null;
+  return asc[0]! >> 3 >= 1 ? asc : null;
+}
+
 /** Object type, sample rate and channel count out of an AudioSpecificConfig. */
 export function parseAudioSpecificConfig(asc: Uint8Array): {
   codec: string;

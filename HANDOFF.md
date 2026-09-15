@@ -16,7 +16,7 @@ file easier to read:
 | 2026-09-14 (b) | frame-exact video export: every source frame, at the source's rate, sound to the sample | see **Start here** |
 | 2026-09-14 (c) | renamed to Astra; editor restyled sharp black and white | `e253c3f` → `main` |
 | 2026-09-15 | clips with HE-AAC or odd-rate sound no longer fall back to the laggy live recorder | see **Start here (2026-09-15)** |
-| 2026-09-16 | exports made on a phone carry sound | see **Start here (2026-09-16)** |
+| 2026-09-16 | exports made on a phone carry sound (second pass: Safari's magic cookie) | see **Start here (2026-09-16)** |
 
 All of it is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
@@ -27,7 +27,48 @@ the fourth.
 
 ## Start here (2026-09-16)
 
-### Exports made on a phone came out silent (2026-09-16)
+### Phone exports still silent: Safari's encoder hands over a magic cookie (2026-09-16, latest)
+
+Artem, after the first pass below was deployed: *"still no sound on my phon, on PC there is sound.
+The quality of the video is good in both, so keep it unchanged"*. Asked: **iPhone, Safari**; the
+toast said *"60 fps, every frame, in 37.1 s"* — so it was already frame-exact, and **the first
+pass's diagnosis (no audio codecs, live recorder) was wrong for this phone**; it is Safari 26, which
+has `AudioEncoder`. The phone's file, sent to the PC, played silent there too, with Windows saying
+*"the format mp4a is not supported"*.
+
+**The file itself says why** (`Downloads/Telegram Desktop/september-2026-pnl 4.mp4`, dumped with
+`scratchpad/dump-sound.mjs`): the video track is identical to the PC's export of the same clip
+(1393 frames, same `stts`). The sound track's `esds` DecoderSpecificInfo held **39 bytes starting
+`03 80 80 80 22 …`** — a whole ES descriptor with its own `04` and `05 … 12 10` inside — where the PC
+file holds the bare AudioSpecificConfig `12 10`. Safari's `AudioEncoder` puts Apple's AAC *magic
+cookie* in `decoderConfig.description`, not the ASC the WebCodecs registry asks for; `writeMp4`
+wrapped it in a second descriptor, and no player could read the codec configuration. The same file
+also shows Safari's timing differs from Chrome's: an empty edit of 22 ms and two extra 6-byte packets
+at the front (1003 packets vs 1001).
+
+**What changed** (audio only; nothing on the picture path):
+- `audioSpecificConfigFrom` in `mp4read.ts` returns the ASC from either form (a description starting
+  `0x03` is read through `readEsds`; no valid ASC starts with `0x03`, that is object type 0), or null.
+  `transcodeAudio` uses it and fails over when it gives null.
+- When the encoder answered with the cookie (`appleEncoder`), `exportOffline` uses `copyAudio` — the
+  clip's own packets, exact by construction — instead of Safari's re-encode, whose timing was never
+  measured and which the phone file shows starting late. The re-encode is kept only when the sound
+  cannot be copied. Chrome's re-encode path is untouched.
+
+**Verified**, isolated Chrome 152, the TikTok clip, `AudioEncoder` replaced by a subclass that hands
+out the description as a cookie laid out byte for byte like the phone file's (`scratchpad/safari-cookie.js`):
+
+| | sound in the file | `esds` ASC | off the source | corr |
+|---|---|---|---|---|
+| Chrome's encoder, full clip | AAC-LC re-encoded | `1210` | 0 ms | 0.996 |
+| Safari-style encoder, full clip | clip's own HE-AAC v2 | `eb8a0800` (the clip's) | **0 ms** | 0.998 |
+| Safari-style encoder, 5 s + 6 s | clip's own, 6.000 s | `eb8a0800` | **0 ms** | 0.9999 |
+
+`npm run typecheck` clean; `npx vitest run` **237** (2 new: the cookie bytes from the phone file give
+`12 10`; a bare ASC passes, junk is refused). **Not verified on the iPhone itself** — that needs
+Artem to export once more on the phone.
+
+### Exports made on a phone came out silent (2026-09-16, first pass — diagnosis wrong for Artem's phone)
 
 Artem: *"when I download the video from my phone and export it, it downloads without sound, while at
 the PC it's all good. Fix it"*

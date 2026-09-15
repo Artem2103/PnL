@@ -36,7 +36,13 @@
  */
 
 import type { CardState, RenderAssets } from '../types';
-import { demuxMp4, type DemuxedAudioTrack, type DemuxedSample, type DemuxedVideoTrack } from './mp4read';
+import {
+  audioSpecificConfigFrom,
+  demuxMp4,
+  type DemuxedAudioTrack,
+  type DemuxedSample,
+  type DemuxedVideoTrack,
+} from './mp4read';
 import { writeMp4, type MuxSample } from './mp4write';
 import { bitrateFor, planWebCodecs } from './recorders';
 import { renderToCanvas } from './render';
@@ -263,6 +269,12 @@ interface EncodedAudio {
   /** Set when the packets are the clip's own: see `MuxAudioTrack.trimStartUs`. */
   trimStartUs?: number;
   trimLengthUs?: number;
+  /**
+   * The encoder described its stream as Apple's magic cookie: this is Safari's
+   * encoder, whose timing was never measured. Its file from an iPhone started
+   * the sound 22 ms late behind two extra priming packets.
+   */
+  appleEncoder?: boolean;
 }
 
 /**
@@ -417,10 +429,16 @@ async function transcodeAudio(
   let cursor = 0;
   const firstPts = track.samples[first]!.pts;
 
+  let appleEncoder = false;
   const encoder = new AudioEncoder({
     output: (chunk, metadata) => {
       const desc = metadata?.decoderConfig?.description;
-      if (desc && !description) description = toBytes(desc);
+      if (desc && !description) {
+        const raw = toBytes(desc);
+        appleEncoder = raw[0] === 0x03;
+        description = audioSpecificConfigFrom(raw);
+        if (!description) fail(new Error('The sound encoder described its stream in a form this cannot read.'));
+      }
       const data = new Uint8Array(chunk.byteLength);
       chunk.copyTo(data);
       samples.push({ data, timestamp: chunk.timestamp, duration: chunk.duration ?? 0, key: true });
@@ -571,7 +589,7 @@ async function transcodeAudio(
   }
 
   if (!description || !samples.length) return null;
-  return { description, samples, sampleRate: encoding!.rate, channels: encoding!.channels };
+  return { description, samples, sampleRate: encoding!.rate, channels: encoding!.channels, appleEncoder };
 }
 
 /* ------------------------------------------------------------------ */
@@ -687,6 +705,10 @@ export async function exportOffline(options: OfflineExportOptions): Promise<Offl
         error instanceof Error ? error.message : error,
       );
     }
+    // Safari's encoder (Safari 26 on an iPhone): the clip's own sound is exact
+    // by construction, where Safari's re-encode came out late. Its re-encode is
+    // kept only for a clip whose sound cannot be copied.
+    if (audio?.appleEncoder) audio = copyAudio(bytes, movie.audio, startUs, endUs) ?? audio;
     // No sound codecs at all (Safari before 26) comes back as null.
     audio ??= copyAudio(bytes, movie.audio, startUs, endUs);
     if (!audio) throw new OfflineUnavailable('The sound could not be decoded here.');
