@@ -25,10 +25,12 @@
  *   need the window in front;
  * - the first frame is the window's first frame — nothing to pre-roll.
  *
- * What it needs: `VideoDecoder`, `VideoEncoder`, `AudioDecoder` and
- * `AudioEncoder` (Chrome, Edge, Safari 16.4+), and a clip in an MP4 or MOV
- * container with H.264 or HEVC video and AAC sound (any profile, any rate — a
- * rate the AAC encoder refuses is resampled, `lib/resample.ts`). Anything else — WebM, a
+ * What it needs: `VideoDecoder` and `VideoEncoder` (Chrome, Edge, Safari
+ * 16.4+), and a clip in an MP4 or MOV container with H.264 or HEVC video and
+ * AAC sound (any profile, any rate — a rate the AAC encoder refuses is
+ * resampled, `lib/resample.ts`). Where the sound cannot be re-encoded — no
+ * `AudioEncoder` on a phone, or one that takes no AAC — the clip's own AAC
+ * packets are copied in and trimmed by an edit list (`copyAudio`). Anything else — WebM, a
  * codec the machine will not decode, a decoder that fails mid-way — throws
  * `OfflineUnavailable`, and `renderCardVideo` falls back to the recorder.
  */
@@ -258,6 +260,59 @@ interface EncodedAudio {
   samples: MuxSample[];
   sampleRate: number;
   channels: number;
+  /** Set when the packets are the clip's own: see `MuxAudioTrack.trimStartUs`. */
+  trimStartUs?: number;
+  trimLengthUs?: number;
+}
+
+/**
+ * The clip's own AAC packets for the window, unchanged, with the edit that
+ * cuts them to it. No decoder, no encoder, no audio context: this is what
+ * makes a phone's export carry sound. The packet before the window is kept
+ * because AAC frames overlap and the first one presented needs it; the edit
+ * starts presentation at the window's first sample, so the sound lands on the
+ * same instant a re-encode would put it.
+ */
+export function copyAudio(
+  bytes: ArrayBuffer,
+  track: DemuxedAudioTrack,
+  startUs: number,
+  endUs: number,
+): EncodedAudio | null {
+  if (!track.codec?.startsWith('mp4a.40.') || !track.description || !track.sampleRate || !track.channels) {
+    return null;
+  }
+  const range = decodeRange(track.samples, startUs, endUs);
+  if (!range) return null;
+  const first = Math.max(0, range.first - 1);
+  const samples: MuxSample[] = [];
+  for (let i = first; i <= range.last; i += 1) {
+    const s = track.samples[i]!;
+    if (s.offset < 0 || s.offset + s.size > bytes.byteLength) return null;
+    samples.push({
+      data: new Uint8Array(bytes, s.offset, s.size),
+      timestamp: s.pts - startUs,
+      duration: s.duration,
+      key: true,
+    });
+  }
+  const firstPts = track.samples[first]!.pts;
+  const trimStartUs = Math.max(0, startUs - firstPts);
+  const presentedFrom = Math.max(startUs, firstPts) - startUs;
+  // HE-AAC plays at twice the rate its header names (SBR), and v2 in stereo
+  // from a mono header (PS). Players count the edit's ticks at the rate the
+  // sound plays, so the track is written at that rate, as the clip's own is:
+  // written at the header's 22.05 kHz, only half the lead-in was skipped and
+  // a TikTok download's sound came out 26–34 ms late.
+  const sbr = (track.codec === 'mp4a.40.5' || track.codec === 'mp4a.40.29') && track.sampleRate <= 24_000;
+  return {
+    description: track.description,
+    samples,
+    sampleRate: sbr ? track.sampleRate * 2 : track.sampleRate,
+    channels: track.codec === 'mp4a.40.29' ? 2 : track.channels,
+    trimStartUs,
+    trimLengthUs: endUs - startUs - presentedFrom,
+  };
 }
 
 async function transcodeAudio(
@@ -621,7 +676,19 @@ export async function exportOffline(options: OfflineExportOptions): Promise<Offl
   let audio: EncodedAudio | null = null;
   if (!options.muteAudio && movie.audio) {
     const t0 = now();
-    audio = await transcodeAudio(bytes, movie.audio, startUs, endUs, signal);
+    try {
+      audio = await transcodeAudio(bytes, movie.audio, startUs, endUs, signal);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      // An AAC encoder that takes none of the formats (a phone's), or a sound
+      // codec that gave up part-way: the clip's own packets still carry it.
+      console.warn(
+        "The sound could not be re-encoded here; copying the clip's own:",
+        error instanceof Error ? error.message : error,
+      );
+    }
+    // No sound codecs at all (Safari before 26) comes back as null.
+    audio ??= copyAudio(bytes, movie.audio, startUs, endUs);
     if (!audio) throw new OfflineUnavailable('The sound could not be decoded here.');
     if (timing) stats.audio = now() - t0;
   }
@@ -766,6 +833,8 @@ export async function exportOffline(options: OfflineExportOptions): Promise<Offl
           channels: audio.channels,
           description: audio.description,
           samples: audio.samples,
+          trimStartUs: audio.trimStartUs,
+          trimLengthUs: audio.trimLengthUs,
         }
       : null,
   });

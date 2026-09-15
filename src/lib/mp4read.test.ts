@@ -257,6 +257,20 @@ describe('demuxMp4 on a progressive file', () => {
     expect(parsed.audio!.samples[1]!.pts).toBe(200_000 + Math.round((1024 * 1_000_000) / 48000));
   });
 
+  it('reads a trimmed sound track back on the timeline it was written for', () => {
+    // Copied sound: the first packet is decoded but hidden, presentation starts at 0.
+    const step = Math.round((1024 * 1_000_000) / 48000);
+    const primed = audioSamples(20, 48000).map((s) => ({ ...s, timestamp: s.timestamp - step }));
+    const file = writeMp4({
+      video: { width: 64, height: 64, description: AVCC, samples: videoSamples(25, 25, 25) },
+      audio: { sampleRate: 48000, channels: 2, description: ASC, samples: primed, trimStartUs: step },
+    });
+    const parsed = demuxMp4(file.buffer)!;
+    expect(parsed.video!.samples[0]!.pts).toBe(0);
+    expect(parsed.audio!.samples[0]!.pts).toBe(-step);
+    expect(parsed.audio!.samples[1]!.pts).toBe(0);
+  });
+
   it('refuses a sample table whose count is larger than the file, without throwing', () => {
     const damaged = new Uint8Array(written.buffer.slice(0));
     const at = findType(damaged, 'stsz');

@@ -251,6 +251,48 @@ describe('writeMp4', () => {
     expect(durationSeconds).toBeCloseTo(0.04 + (46 * 1024) / 48000, 3);
   });
 
+  it('hides the sound before its trim start and after its length with the edit', () => {
+    const video = frames(30, 30, () => Uint8Array.from([1]));
+    const step = 1024 / 0.048; // µs per packet at 48 kHz
+    const edits = (trimStartUs: number, trimLengthUs?: number, lead = 0) => {
+      // The first packet sits one packet before zero, as a copied clip's does.
+      const audio = frames(46, 46.875, () => Uint8Array.from([2]), 1).map((s) => ({
+        ...s,
+        timestamp: s.timestamp - Math.round(step) + lead,
+      }));
+      const { buffer, durationSeconds, audioSeconds } = writeMp4({
+        video: { width: 64, height: 64, description: avcC, samples: video },
+        audio: { sampleRate: 48000, channels: 2, description: asc, samples: audio, trimStartUs, trimLengthUs },
+      });
+      const view = new DataView(buffer);
+      const moov = must(boxes(view, 0, buffer.byteLength), 'moov');
+      const traks = boxes(view, moov.body, moov.end).filter((b) => b.type === 'trak');
+      expect(find(boxes(view, traks[0]!.body, traks[0]!.end), 'edts')).toBeUndefined();
+      const edts = must(boxes(view, traks[1]!.body, traks[1]!.end), 'edts');
+      const elst = must(boxes(view, edts.body, edts.end), 'elst');
+      const count = view.getUint32(elst.body + 4);
+      const list = Array.from({ length: count }, (_, i) => [
+        view.getUint32(elst.body + 8 + i * 12),
+        view.getInt32(elst.body + 12 + i * 12),
+      ]);
+      return { list, durationSeconds, audioSeconds };
+    };
+
+    // Priming only: presentation starts at zero, one packet into the media.
+    const priming = edits(Math.round(step));
+    expect(priming.list).toEqual([[Math.round((45 * 1024 * 1000) / 48000), 1024]]);
+    expect(priming.audioSeconds).toBeCloseTo((45 * 1024) / 48000, 3);
+
+    // Trimmed further in and cut short: 10 ms late, 500 ms long.
+    const window = edits(Math.round(step) + 10_000, 500_000);
+    expect(window.list).toEqual([
+      [10, -1],
+      [500, 1024 + 480],
+    ]);
+    expect(window.audioSeconds).toBeCloseTo(0.51, 3);
+    expect(window.durationSeconds).toBeCloseTo(1, 2);
+  });
+
   it('refuses an empty recording', () => {
     expect(() => writeMp4({ video: { width: 64, height: 64, description: avcC, samples: [] } })).toThrow();
     expect(() =>

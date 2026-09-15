@@ -40,6 +40,16 @@ export interface MuxAudioTrack {
   /** AudioSpecificConfig, from the encoder's `decoderConfig.description`. */
   description: Uint8Array;
   samples: MuxSample[];
+  /**
+   * Presentation starts this far after the first sample's timestamp,
+   * microseconds. The samples before it are there for the decoder only — AAC
+   * frames overlap their neighbours — and an edit list hides them. For sound
+   * copied from the clip rather than re-encoded, which cannot be cut to the
+   * sample any other way.
+   */
+  trimStartUs?: number;
+  /** How long the track is presented from there, microseconds; the edit cuts the rest. */
+  trimLengthUs?: number;
 }
 
 export interface MuxInput {
@@ -315,6 +325,10 @@ interface TrackPlan {
    * how a track that begins a little after the other says so.
    */
   delayUs: number;
+  /** Track timescale units hidden at the start of the media by the edit. */
+  skip: number;
+  /** Track timescale units presented from `skip` on. */
+  presented: number;
   /** Filled in once the mdat layout is known. */
   offsets: number[];
 }
@@ -322,11 +336,17 @@ interface TrackPlan {
 /** Anything under this is inside one audio frame and not worth an edit list. */
 const MIN_DELAY_US = 1_000;
 
+/** Seconds a track occupies on the movie's timeline, its delay included. */
+function presentedSeconds(plan: TrackPlan): number {
+  return plan.presented / plan.timescale + (plan.delayUs >= MIN_DELAY_US ? plan.delayUs / 1_000_000 : 0);
+}
+
 function trak(plan: TrackPlan, now: number): Uint8Array {
   const duration = plan.timed.reduce((n, t) => n + t.duration, 0);
-  const mediaMovieDuration = Math.round((duration / plan.timescale) * MOVIE_TIMESCALE);
+  const mediaMovieDuration = Math.round((plan.presented / plan.timescale) * MOVIE_TIMESCALE);
   const delayMovie = plan.delayUs >= MIN_DELAY_US ? Math.round((plan.delayUs / 1_000_000) * MOVIE_TIMESCALE) : 0;
   const movieDuration = mediaMovieDuration + delayMovie;
+  const trimmed = plan.skip > 0 || plan.presented < duration;
   const isVideo = plan.kind === 'video';
 
   const tkhd = fullBox(
@@ -387,40 +407,19 @@ function trak(plan: TrackPlan, now: number): Uint8Array {
   tables.push(stsc(), stsz(plan.timed), stco(plan.offsets));
 
   const parts: Uint8Array[] = [tkhd];
-  if (delayMovie > 0) {
-    // An empty edit (media_time -1) for the delay, then the whole track.
-    parts.push(
-      box(
-        'edts',
-        fullBox(
-          'elst',
-          0,
-          0,
-          u32(2),
-          u32(delayMovie),
-          i32(-1),
-          u32(0x00010000),
-          u32(mediaMovieDuration),
-          u32(0),
-          u32(0x00010000),
-        ),
-      ),
-    );
+  if (delayMovie > 0 || trimmed) {
+    // An empty edit (media_time -1) for the delay, then the track from `skip`.
+    const edits: Uint8Array[] = [];
+    if (delayMovie > 0) edits.push(u32(delayMovie), i32(-1), u32(0x00010000));
+    edits.push(u32(mediaMovieDuration), i32(plan.skip), u32(0x00010000));
+    parts.push(box('edts', fullBox('elst', 0, 0, u32(edits.length / 3), ...edits)));
   }
   parts.push(box('mdia', mdhd, hdlr, box('minf', mediaHeader, dinf, box('stbl', ...tables))));
   return box('trak', ...parts);
 }
 
 function moov(plans: TrackPlan[], now: number): Uint8Array {
-  const longest = Math.max(
-    0,
-    ...plans.map(
-      (p) =>
-        ((p.timed.reduce((n, t) => n + t.duration, 0) / p.timescale) +
-          (p.delayUs >= MIN_DELAY_US ? p.delayUs / 1_000_000 : 0)) *
-        MOVIE_TIMESCALE,
-    ),
-  );
+  const longest = Math.max(0, ...plans.map((p) => presentedSeconds(p) * MOVIE_TIMESCALE));
   const mvhd = fullBox(
     'mvhd',
     1,
@@ -459,23 +458,35 @@ export function writeMp4(input: MuxInput): MuxResult {
   if (!video.description.byteLength) throw new Error('nothing to write: no avcC');
 
   const withAudio = Boolean(audio && audio.samples.length && audio.description.byteLength);
+  const videoTimed = timeSamples(video.samples, VIDEO_TIMESCALE);
+  const audioTimed = withAudio && audio ? timeSamples(audio.samples, audio.sampleRate) : [];
+  const audioMedia = audioTimed.reduce((n, t) => n + t.duration, 0);
+  const audioSkip =
+    withAudio && audio
+      ? Math.max(0, Math.min(audioMedia - 1, Math.round(((audio.trimStartUs ?? 0) / 1_000_000) * audio.sampleRate)))
+      : 0;
+  const audioPresented =
+    withAudio && audio && audio.trimLengthUs !== undefined
+      ? Math.max(1, Math.min(audioMedia - audioSkip, Math.round((audio.trimLengthUs / 1_000_000) * audio.sampleRate)))
+      : audioMedia - audioSkip;
+  const audioStart =
+    withAudio && audio ? trackStart(audio.samples) + Math.round((audioSkip * 1_000_000) / audio.sampleRate) : Infinity;
   // Both tracks are on one timeline; whichever starts first is the movie's
   // zero and the other carries its lateness as an edit.
-  const movieStart = Math.min(
-    trackStart(video.samples),
-    withAudio && audio ? trackStart(audio.samples) : Infinity,
-  );
+  const movieStart = Math.min(trackStart(video.samples), audioStart);
 
   const plans: TrackPlan[] = [
     {
       id: 1,
       kind: 'video',
       timescale: VIDEO_TIMESCALE,
-      timed: timeSamples(video.samples, VIDEO_TIMESCALE),
+      timed: videoTimed,
       entry: avc1(video.width, video.height, video.description),
       width: video.width,
       height: video.height,
       delayUs: trackStart(video.samples) - movieStart,
+      skip: 0,
+      presented: videoTimed.reduce((n, t) => n + t.duration, 0),
       offsets: [],
     },
   ];
@@ -488,11 +499,13 @@ export function writeMp4(input: MuxInput): MuxResult {
       id: 2,
       kind: 'audio',
       timescale: audio.sampleRate,
-      timed: timeSamples(audio.samples, audio.sampleRate),
+      timed: audioTimed,
       entry: mp4a(audio.sampleRate, audio.channels, audio.description, bitrate),
       width: 0,
       height: 0,
-      delayUs: trackStart(audio.samples) - movieStart,
+      delayUs: audioStart - movieStart,
+      skip: audioSkip,
+      presented: audioPresented,
       offsets: [],
     });
   }
@@ -536,13 +549,8 @@ export function writeMp4(input: MuxInput): MuxResult {
     if (sample && at !== undefined) out.set(sample.data, at);
   }
 
-  const seconds = (plan: TrackPlan | undefined) =>
-    plan
-      ? plan.timed.reduce((n, t) => n + t.duration, 0) / plan.timescale +
-        (plan.delayUs >= MIN_DELAY_US ? plan.delayUs / 1_000_000 : 0)
-      : 0;
-  const videoSeconds = seconds(plans[0]);
-  const audioSeconds = seconds(plans[1]);
+  const videoSeconds = plans[0] ? presentedSeconds(plans[0]) : 0;
+  const audioSeconds = plans[1] ? presentedSeconds(plans[1]) : 0;
   return {
     buffer: out.buffer,
     durationSeconds: +Math.max(videoSeconds, audioSeconds).toFixed(3),

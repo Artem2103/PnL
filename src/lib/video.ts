@@ -105,13 +105,23 @@ export function webCodecsAvailable(): boolean {
   );
 }
 
-/** Whether the frame-exact exporter can exist here; the clip decides the rest. */
+/**
+ * Whether the frame-exact exporter can exist here; the clip decides the rest.
+ *
+ * The sound codecs are not required. Safari before 26 — every iPhone that has
+ * not updated — has the video ones and neither `AudioDecoder` nor
+ * `AudioEncoder`, and requiring them sent phones to the live recorder, whose
+ * sound iOS will not let start that long after the tap: every export from a
+ * phone came out silent. Without them the clip's own sound is copied in
+ * (`copyAudio` in `lib/offline.ts`).
+ */
 export function frameExactAvailable(): boolean {
   return (
-    webCodecsAvailable() &&
+    typeof VideoEncoder === 'function' &&
+    typeof VideoFrame === 'function' &&
     typeof VideoDecoder === 'function' &&
-    typeof AudioDecoder === 'function' &&
-    typeof EncodedVideoChunk === 'function'
+    typeof EncodedVideoChunk === 'function' &&
+    typeof HTMLCanvasElement !== 'undefined'
   );
 }
 
@@ -317,20 +327,42 @@ interface AudioRoute {
  * recording is minutes of frozen frames. That state is unrecoverable once the
  * source node exists, so the check has to come first.
  */
+function audioContextClass(): typeof AudioContext | undefined {
+  return typeof window === 'undefined'
+    ? undefined
+    : window.AudioContext ??
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+}
+
+/**
+ * A sound context started inside the tap that asked for the export. iOS lets
+ * one start only there; the live recorder needs it several awaits later, by
+ * which time `resume()` quietly does nothing and the recording came out
+ * silent. Made up front and handed to `attachAudio`.
+ */
+function openAudioContext(): AudioContext | null {
+  const Ctor = audioContextClass();
+  if (!Ctor) return null;
+  try {
+    const context = new Ctor();
+    void context.resume().catch(() => undefined);
+    return context;
+  } catch {
+    return null;
+  }
+}
+
 async function attachAudio(
   video: HTMLVideoElement,
   stream: MediaStream,
+  primed: AudioContext | null,
 ): Promise<AudioRoute | null> {
-  const Ctor =
-    typeof window === 'undefined'
-      ? undefined
-      : window.AudioContext ??
-        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!Ctor) return null;
+  const Ctor = audioContextClass();
+  if (!primed && !Ctor) return null;
 
   let context: AudioContext;
   try {
-    context = new Ctor();
+    context = primed ?? new Ctor!();
     await context.resume();
   } catch {
     return null;
@@ -448,6 +480,21 @@ export async function renderCardVideo(
   state: CardState,
   options: VideoExportOptions,
 ): Promise<VideoExportResult> {
+  // Before the first await, while the tap still counts. The live recorder
+  // takes it; otherwise it is closed here.
+  const primed = { context: state.artwork.muteAudio ? null : openAudioContext() };
+  try {
+    return await renderCardVideoWith(state, options, primed);
+  } finally {
+    if (primed.context) void primed.context.close().catch(() => undefined);
+  }
+}
+
+async function renderCardVideoWith(
+  state: CardState,
+  options: VideoExportOptions,
+  primed: { context: AudioContext | null },
+): Promise<VideoExportResult> {
   const support = videoSupport();
   if (!support.supported || !support.mimeType || !support.extension) {
     throw new VideoExportError('This browser cannot record video. Try Chrome, Edge or Safari.');
@@ -512,7 +559,11 @@ export async function renderCardVideo(
     // needs the audio destination it carries. It is made either way, so the
     // sound is wired up identically whichever recorder is chosen.
     stream = canvas.captureStream(VIDEO_FPS);
-    if (!state.artwork.muteAudio) audio = await attachAudio(video, stream);
+    if (!state.artwork.muteAudio) {
+      const context = primed.context;
+      primed.context = null; // attachAudio owns it now, and closes it on failure
+      audio = await attachAudio(video, stream, context);
+    }
 
     const bitrate = bitrateFor(canvas.width, canvas.height, VIDEO_FPS);
     const withMediaRecorder = (): CardRecorder => {

@@ -16,6 +16,7 @@ file easier to read:
 | 2026-09-14 (b) | frame-exact video export: every source frame, at the source's rate, sound to the sample | see **Start here** |
 | 2026-09-14 (c) | renamed to Astra; editor restyled sharp black and white | `e253c3f` → `main` |
 | 2026-09-15 | clips with HE-AAC or odd-rate sound no longer fall back to the laggy live recorder | see **Start here (2026-09-15)** |
+| 2026-09-16 | exports made on a phone carry sound | see **Start here (2026-09-16)** |
 
 All of it is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
@@ -23,6 +24,67 @@ the two picture slots** the third, and **Local mode** and **The scroll trap in t
 the fourth.
 
 ---
+
+## Start here (2026-09-16)
+
+### Exports made on a phone came out silent (2026-09-16)
+
+Artem: *"when I download the video from my phone and export it, it downloads without sound, while at
+the PC it's all good. Fix it"*
+
+**Why.** `frameExactAvailable()` in `video.ts` required `AudioEncoder` and `AudioDecoder`. Safari
+before 26 (any iPhone not on iOS 26) has the WebCodecs *video* codecs but neither audio one, so a
+phone never got the frame-exact export. It went to the live recorder, which builds its sound from an
+`AudioContext` created in `attachAudio` — several awaits after the tap. iOS only lets a context start
+inside the gesture, so `resume()` left it suspended, `attachAudio` returned null without a word, and
+the file was recorded with no sound track. (A phone whose AAC encoder refuses every format would
+land in the same place through `transcodeAudio` throwing.) Not reproduced on a real phone — there is
+none here — but it is the only path on which the PC and a phone differ, and it matches the report.
+
+**What changed.**
+- **`frameExactAvailable()`** now needs only `VideoEncoder`, `VideoFrame`, `VideoDecoder`,
+  `EncodedVideoChunk` and a canvas. `webCodecsAvailable()` (the live WebCodecs recorder) is unchanged.
+- **`copyAudio` in `offline.ts`**: when the sound cannot be re-encoded — no audio codecs (returns
+  null), or `transcodeAudio` throws — the clip's own AAC packets for the window are copied into the
+  file unchanged, with the packet before the window kept for AAC's overlap. PC Chrome still takes the
+  re-encode path first; nothing about it changed.
+- **`writeMp4`** takes `trimStartUs` / `trimLengthUs` on the audio track and writes them as an edit
+  (`media_time` = the hidden lead-in, `segment_duration` = the window), after the empty edit when the
+  sound starts late. Without a trim it writes exactly what it wrote before.
+- **The trap: HE-AAC's rate.** The first cut wrote the copied track at the header's rate (22 050 Hz
+  for a TikTok download) and the sound came out **34 ms late** on the full clip, **26 ms** on a
+  trimmed one — exactly half the lead-in the edit asked to skip. Players count edit ticks at the rate
+  the sound *plays*; the TikTok file itself says 44 100 in `mdhd` and `mp4a`, with 2048-tick packets
+  and `media_time` 7106. `copyAudio` now writes `mp4a.40.5`/`.29` at ≤ 24 kHz at twice the header
+  rate, and `.29` (PS) as stereo.
+- **Live recorder on iOS:** `renderCardVideo` now opens the `AudioContext` before its first await
+  (`openAudioContext`) and hands it to `attachAudio`; it is closed if the export goes frame-exact.
+  So a clip that still needs the live recorder on a phone (WebM, a codec it will not decode) should
+  keep its sound too. That part is **not verified** — it only matters on a real iPhone.
+
+**Verified**, isolated Chrome 152, local mode, `ssstik.io_@hisrevenue_1789416295020.mp4` (19.1 s,
+HE-AAC v2, first audio packet at −161 ms), `AudioEncoder`/`AudioDecoder` deleted from `window` to
+stand in for the phone, sound compared with the source by 1 ms envelope cross-correlation
+(`scratchpad/phone-sound.js`, same method as `dev/av-sync.js`):
+
+| | path | frames | sound in the file | off the source | corr |
+|---|---|---|---|---|---|
+| PC (codecs present), full clip | frame-exact | 573, 30 fps | AAC-LC 44.1 kHz, re-encoded | 0 ms | 0.996 |
+| no sound codecs, full clip | frame-exact | 573, 30 fps | HE-AAC v2, copied | **0 ms** | 0.998 |
+| PC, window 5 s + 6 s | frame-exact | 180 | AAC-LC, re-encoded | 0 ms | 0.986 |
+| no sound codecs, window 5 s + 6 s | frame-exact | 180 | HE-AAC v2, copied, 6.000 s | **0 ms** | 0.9999 |
+| `renderCardVideo` itself, no sound codecs | **frame-exact** (was live, silent on iOS) | 573 | HE-AAC v2, copied | **0 ms** | 0.998 |
+
+`npm run typecheck` clean; `npx vitest run` **235** tests (7 new: `copyAudio` trims, late sound,
+HE-AAC rate, refuses non-AAC and out-of-file packets; the writer's trim edit with and without a
+delay; a trimmed track read back by `demuxMp4` on the right timeline). The first run in a cold Chrome
+failed the PC full-clip export once with *"The video decoder did not finish."*; every run after it
+passed, and that path was not touched.
+
+**Not verified:** a real iPhone or Android phone. Worth doing once deployed: export a clip on the
+phone and check the toast says *"every frame"* (frame-exact) and the file has sound. If it says
+*"recorded live"* and is silent, the clip is one the phone's decoder refuses — the console line
+*"Frame-exact export unavailable…"* says why.
 
 ## Start here (2026-09-15)
 
