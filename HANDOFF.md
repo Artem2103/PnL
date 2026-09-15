@@ -71,6 +71,15 @@ Artem to export once more on the phone.
 **Deployed.** Pushed as `d286029`; <https://nexocards.vercel.app> then served
 `assets/index-C-o7Pnsd.js`, the same hash as the local `npm run build`.
 
+**Confirmed on the iPhone (2026-09-16 03:38).** Artem: *"Works now"*, and sent the export
+(`Downloads/Telegram Desktop/september-2026-pnl latest.mp4`, the same 60 fps clip as before). In the
+file: `esds` holds the bare ASC `12 10`; the sound is the clip's own AAC-LC 44.1 kHz packets (1002,
+first at −24.67 ms) with one edit, `media_time` 1088 — `copyAudio`, as designed; the video track is
+identical to the PC export of that clip (1393 frames, same `stts`). Its sound against the PC export
+`september-2026-pnl (7).mp4` (whose sound path measured 0 ms off the source), 1 ms envelopes
+(`scratchpad/phone-vs-pc.js`): **0 ms** over the whole 22.9 s (corr 0.998), and **0 ms** in the
+first, middle and last 5 s each (corr 0.998) — no offset and no drift.
+
 ### Exports made on a phone came out silent (2026-09-16, first pass — diagnosis wrong for Artem's phone)
 
 Artem: *"when I download the video from my phone and export it, it downloads without sound, while at
