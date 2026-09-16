@@ -17,7 +17,7 @@ file easier to read:
 | 2026-09-14 (c) | renamed to Astra; editor restyled sharp black and white | `e253c3f` → `main` |
 | 2026-09-15 | clips with HE-AAC or odd-rate sound no longer fall back to the laggy live recorder | see **Start here (2026-09-15)** |
 | 2026-09-16 | exports made on a phone carry sound (second pass: Safari's magic cookie) | see **Start here (2026-09-16)** |
-| 2026-09-17 | plans page, 1 free card a month, promo code MM33, NOWPayments checkout | **committed, not pushed** — see **Start here (2026-09-17)** |
+| 2026-09-17 | plans page, 1 free card a month, promo code MM33, NOWPayments checkout | pushed; **payments, limit and MM33 wait on setup** — see **Start here (2026-09-17)** and `SETUP-PLANS.txt` |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
@@ -37,10 +37,14 @@ per month. Also, there will be a promocode "MM33" that gives you a paid plan for
 months."* Asked which payment provider: *"Crypto, a very popular one. Also, would be good to add
 Apple Pay"*.
 
-**It is committed on `main` but not pushed.** Nothing takes money until the three setup steps below
-are done, and they have to happen in that order. Pushing first would not break exports (see
-*Deploy order* below), but the live site would show a plans page whose buttons answer "Payments are
-not set up yet".
+**Pushed at Artem's request, before setup** (*"Put the setup and tutorial in a text file, but for
+now, push what there is for now"*). The step-by-step setup — plus everyday tasks: see who pays, add
+or switch off a code, change prices or the free limit, give someone time by hand, and what to check
+when a payment did not credit — is in **`SETUP-PLANS.txt`** at the repo root, also copied to
+`Desktop\Astra-plans\`. Until its steps are done, the live site shows the plans page, Subscribe
+answers "Payments are not set up yet", a promo code answers "Promo codes are not available yet"
+(added just before the push, in place of the raw "could not find the function" error), and exports
+are not counted — see *Deploy order* below.
 
 #### What was built
 

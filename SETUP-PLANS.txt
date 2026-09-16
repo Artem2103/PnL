@@ -1,0 +1,181 @@
+ASTRA — TURNING ON PAID PLANS
+=============================
+
+What is already live after this push
+------------------------------------
+- The plans page: https://nexocards.vercel.app/pricing
+- Upgrade / Plans buttons in the editor, and the promo-code box.
+
+What does NOT work yet, until you do the steps below
+----------------------------------------------------
+- Subscribe buttons answer "Payments are not set up yet."
+- Promo codes (MM33) answer "Promo codes are not available yet."
+- The 1-card-a-month limit is not counted yet: every export still goes through.
+  Nothing is broken for your users in the meantime.
+
+Do the steps IN ORDER. Steps 1–3 take about 20–30 minutes, not counting
+NOWPayments' verification if you want Apple Pay.
+
+
+STEP 1 — Install the database part (Supabase)          ~3 minutes
+-----------------------------------------------------------------
+This turns on the free-card limit and the MM33 promo code.
+
+ 1. Open https://supabase.com/dashboard and open your Astra project.
+ 2. Left menu -> "SQL Editor" -> "New query".
+ 3. On your PC, open D:\PnL\supabase\schema.sql in Notepad.
+    Ctrl+A to select everything, Ctrl+C to copy.
+ 4. Paste it into the Supabase query box (Ctrl+V) and press "Run".
+ 5. You should see "Success. No rows returned".
+    It is safe to run this file again later; it does not delete anything.
+
+Check it worked:
+ - Left menu -> "Table Editor". You should now see these tables:
+   billing_plans, subscriptions, payments, card_exports, promo_codes,
+   promo_redemptions, promo_attempts.
+ - Open "promo_codes": there is one row, MM33, months = 3.
+ - On https://nexocards.vercel.app/pricing (signed in), type MM33 and press
+   Redeem. It should say "Code applied: 3 months free."
+   (Your own account will then be on the paid plan for 3 months.)
+
+From this moment the limit is active: free accounts get 1 card per month.
+
+
+STEP 2 — Create the NOWPayments account                 ~15 minutes
+-----------------------------------------------------------------
+NOWPayments is the checkout: customers pay in crypto there (USDT, USDC, BTC,
+ETH, SOL and hundreds more), and — once enabled — by card, Apple Pay and
+Google Pay.
+
+ 1. Sign up at https://nowpayments.io and confirm your email.
+ 2. Add a PAYOUT WALLET: the crypto address where your money should arrive.
+    (For example a USDT TRC-20 address from your exchange or wallet.)
+    Without this, NOWPayments will not create payment pages.
+ 3. Create an API KEY:
+    in the dashboard, find the "API keys" section (under Settings / Store
+    settings) and create a key. Copy it somewhere safe.
+ 4. Create an IPN SECRET ("Instant Payment Notifications"):
+    in the dashboard, find "IPN" / "Instant payment notifications" settings and
+    generate a secret key. Copy it somewhere safe.
+    You do NOT need to type a callback URL there — Astra sends its own
+    (https://nexocards.vercel.app/api/nowpayments-ipn) with every payment.
+ 5. Note on small amounts: every coin has a minimum payment. $5.99 is fine for
+    USDT TRC-20 and most stablecoins; some coins (BTC on-chain etc.) may not be
+    offered to the customer at that price. That is normal.
+
+Apple Pay / Google Pay / cards (optional, can be done later):
+ 6. In the NOWPayments dashboard, apply for FIAT PAYMENTS ("Fiat on-ramp" /
+    "Accept fiat"). They will ask you to verify your identity/business (KYC).
+ 7. When it is approved, go to Step 3 and also add VITE_CARD_PAYMENTS = on,
+    so the plans page starts mentioning card and Apple Pay. Until then the page
+    says crypto only, so customers are never promised something that is not
+    there.
+
+
+STEP 3 — Give the keys to Vercel                         ~5 minutes
+-----------------------------------------------------------------
+ 1. Open https://vercel.com -> your project (nexocards) -> "Settings" ->
+    "Environment Variables".
+ 2. Add these, one at a time, environment "Production" (you can tick Preview
+    too). Name on the left, value on the right:
+
+    SUPABASE_SERVICE_ROLE_KEY   Supabase -> Project Settings -> API ->
+                                "service_role" key (click Reveal, copy).
+    NOWPAYMENTS_API_KEY         the API key from Step 2.3
+    NOWPAYMENTS_IPN_SECRET      the IPN secret from Step 2.4
+    SITE_URL                    https://nexocards.vercel.app
+                                (change it when you move to astracards.com)
+
+    Later, only after Apple Pay is approved:
+    VITE_CARD_PAYMENTS          on
+
+    !! The service_role key is a master key to your database. Put it ONLY here
+    !! in Vercel. Never in .env.local, never in a variable starting with VITE_,
+    !! never in a message or screenshot.
+
+ 3. Redeploy so the functions see the new keys:
+    "Deployments" tab -> the newest deployment -> "..." menu -> "Redeploy".
+
+
+STEP 4 — Test it with one real purchase                  ~10 minutes
+-----------------------------------------------------------------
+ 1. Open https://nexocards.vercel.app/pricing, signed in to an account
+    that is NOT already paid (not the one you used MM33 on — or use a new one).
+ 2. Press "Get monthly". You should land on a NOWPayments payment page for $5.99.
+    - If you see "Payments are not set up yet": a Vercel variable is missing
+      or you did not redeploy (Step 3).
+    - If you see "The payment page could not be opened": the NOWPayments API
+      key is wrong, or the payout wallet is missing (Step 2.2).
+ 3. Pay (USDT TRC-20 is cheap and fast).
+ 4. You are sent back to the plans page. It shows "Waiting for your payment…",
+    then "Payment seen — waiting for the network to confirm it", then
+    "Payment received — your plan is active". Crypto confirmation usually
+    takes a few minutes; the page updates by itself.
+ 5. Check in Supabase -> Table Editor -> schema "admin" (dropdown at the top
+    left) -> "subscribers": your account is there with active = true.
+
+    If the payment finished in NOWPayments but the plan did not appear:
+    - Supabase -> Table Editor -> public -> payments: look at "status".
+      "invoice" and nothing else = the notification never arrived: check
+      NOWPAYMENTS_IPN_SECRET and SITE_URL in Vercel, then redeploy.
+    - Vercel -> project -> "Logs": search for "nowpayments-ipn".
+      "bad signature" = the IPN secret in Vercel does not match NOWPayments.
+
+Testing without real money (optional):
+    NOWPayments has a sandbox with its own separate account (see "Sandbox" in
+    their API documentation). Use the sandbox API key and IPN secret in Vercel, and add NOWPAYMENTS_API_BASE =
+    https://api-sandbox.nowpayments.io/v1 . Remove that variable (and put the
+    real keys back) before going live.
+
+
+EVERYDAY TASKS
+==============
+
+See who is paying
+  Supabase -> Table Editor -> schema "admin" -> "subscribers":
+  email, name, paid until, active, payment or promo, which codes.
+  Every checkout attempt:   public -> payments
+  Every export:             public -> card_exports
+
+Add a new promo code
+  Supabase -> SQL Editor -> New query, run (change code and months):
+    insert into public.promo_codes (code, months) values ('SUMMER1', 1);
+  Codes must be written in CAPITALS here; customers can type them any way.
+  Limit how many people can use it (e.g. first 50):
+    insert into public.promo_codes (code, months, max_redemptions)
+    values ('FIRST50', 1, 50);
+  Make it expire:
+    update public.promo_codes set expires_at = '2026-12-31' where code = 'SUMMER1';
+
+Turn MM33 off
+    update public.promo_codes set active = false where code = 'MM33';
+
+Give someone free time by hand (e.g. a refund or a friend)
+    select public.extend_subscription(
+      (select id from auth.users where email = 'person@example.com'), 1, 'manual');
+  (the 1 is months)
+
+Change prices
+  Both places must match, or the page shows one price and charges another:
+  1. SQL:  update public.billing_plans set price_usd = 6.99 where id = 'monthly';
+  2. Code: D:\PnL\src\lib\billing.ts, the PLANS list near the top — then push.
+
+Change the free limit (e.g. 2 cards a month)
+  Both places:
+  1. SQL:  create or replace function public.free_cards_per_month()
+           returns integer language sql immutable as $fn$ select 2 $fn$;
+  2. Code: FREE_CARDS_PER_MONTH in D:\PnL\src\lib\billing.ts — then push.
+  (The page text "1 card a month" follows the number automatically.)
+
+
+HOW THE RULES WORK (what to tell customers)
+===========================================
+- Free account: 1 card per calendar month, resets on the 1st (UTC).
+- "A card" = the numbers and the name on it. Changing colour, background,
+  frame or export size is the same card, so a free user can download it as
+  PNG, MP4, copy and share it as often as they like. Different numbers = a
+  new card.
+- Monthly $5.99 = 1 month unlimited. 3 months $12.99 = 3 months unlimited.
+- Paid once, never renews automatically. Buying while a plan is running adds
+  the time to the end of it.
+- MM33 = 3 months free, once per account.

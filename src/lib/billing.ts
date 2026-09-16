@@ -200,7 +200,10 @@ export async function redeemPromo(code: string): Promise<PromoResult> {
   const trimmed = code.trim();
   if (!trimmed) return { ok: false, reason: 'invalid' };
   const { data, error } = await supabase.rpc('redeem_promo', { p_code: trimmed });
-  if (error) throw new BillingError(`Could not redeem the code: ${error.message}`);
+  if (error) {
+    if (isBillingNotInstalled(error)) throw new BillingError('Promo codes are not available yet. Try again soon.');
+    throw new BillingError(`Could not redeem the code: ${error.message}`);
+  }
   const record = (data ?? {}) as Record<string, unknown>;
   if (record.ok === true) {
     return {
