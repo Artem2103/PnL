@@ -31,10 +31,13 @@ export function ProfileMenu({
   user,
   mode,
   onSignOut,
+  onOpenPlans,
 }: {
   user: User | null;
   mode: AuthMode;
   onSignOut: () => void;
+  /** Adds a "Plans" entry; left out on the plans page itself. */
+  onOpenPlans?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -87,6 +90,18 @@ export function ProfileMenu({
               </span>
             </div>
           </div>
+          {isAccount && onOpenPlans ? (
+            <button
+              type="button"
+              className="btn btn--ghost btn--small profile__signout"
+              onClick={() => {
+                setOpen(false);
+                onOpenPlans();
+              }}
+            >
+              Plans &amp; promo codes
+            </button>
+          ) : null}
           {isAccount ? (
             <button
               type="button"

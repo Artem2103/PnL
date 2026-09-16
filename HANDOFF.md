@@ -17,13 +17,169 @@ file easier to read:
 | 2026-09-14 (c) | renamed to Astra; editor restyled sharp black and white | `e253c3f` → `main` |
 | 2026-09-15 | clips with HE-AAC or odd-rate sound no longer fall back to the laggy live recorder | see **Start here (2026-09-15)** |
 | 2026-09-16 | exports made on a phone carry sound (second pass: Safari's magic cookie) | see **Start here (2026-09-16)** |
+| 2026-09-17 | plans page, 1 free card a month, promo code MM33, NOWPayments checkout | **committed, not pushed** — see **Start here (2026-09-17)** |
 
-All of it is on `main` and deployed. Most of what follows about the render loop and the recorder is
+Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
 
 ---
+
+## Start here (2026-09-17)
+
+### Plans: Monthly $5.99, 3 months $12.99, one free card a month, promo code MM33
+
+Artem: *"I already have some demand for my product, so please create a subscription page with 2
+tiers. Monthly - 5.99$ per month, and 3 month, 12.99$ per 3 months. Make it in the same style as
+our website. Also, create the limit, so that a user without a paid plan can only generate 1 card
+per month. Also, there will be a promocode "MM33" that gives you a paid plan for free for 3
+months."* Asked which payment provider: *"Crypto, a very popular one. Also, would be good to add
+Apple Pay"*.
+
+**It is committed on `main` but not pushed.** Nothing takes money until the three setup steps below
+are done, and they have to happen in that order. Pushing first would not break exports (see
+*Deploy order* below), but the live site would show a plans page whose buttons answer "Payments are
+not set up yet".
+
+#### What was built
+
+**The payment provider is NOWPayments** — one of the largest crypto gateways (USDT, USDC, BTC, ETH,
+SOL and hundreds more). It is also the answer to Apple Pay: its hosted invoice page takes cards,
+Apple Pay and Google Pay through its fiat partner (Mercuryo), so a single checkout covers both.
+**Apple Pay has to be switched on in the NOWPayments dashboard (fiat payments), and that requires
+their business verification (KYC).** Until it is, customers see crypto only, and the plans page only
+mentions cards and Apple Pay once `VITE_CARD_PAYMENTS=on` is set, so it never promises something
+the checkout does not offer.
+
+Crypto has no automatic monthly billing, so **plans are paid in advance and do not renew**: pay $5.99,
+get a month; pay $12.99, get three. Paying again while a plan runs adds the time to the end of it,
+and the page says so.
+
+**The plans page, `/pricing`** (`src/components/PricingPage.tsx`). Public, so a visitor sees prices
+before signing up. Same look as the editor: the topbar, near-black panels with hairline borders,
+square corners, white as the only accent. Three tiers side by side (stacked on a phone): Free $0,
+Monthly $5.99, 3 months $12.99 with a *Save 28%* badge and "$4.33 a month". Below: the payment
+line, the promo-code box, four short questions and answers. Signed in, it shows your plan ("Free · 1
+of 1 card left this month" or "Unlimited · until 17 Dec 2026"). Signed out, the buttons say *Sign
+in to subscribe*, and after signing in you come back to the plans page instead of the editor. On
+the way back from paying, it keeps checking and says *Waiting for your payment…* → *Payment seen —
+waiting for the network to confirm it* → *Payment received — your plan is active*.
+
+Screenshots: `Desktop\Astra-plans\` — `pricing-desktop.png`, `pricing-phone.png`, `plan-lines.png`
+(the four states of the line under the export buttons), `limit-dialog.png`.
+
+**The limit: one card a month on a free account.** What counts as "a card" had to be decided, and
+the rule is **the numbers and the name on it** — the mode, the trade or period figures, the
+handle/wordmark/footer. Colour, background, frame and export size are not part of it. So a free
+user can export their month's card as PNG, then MP4, then copy it, and restyle it in between,
+without being charged a second card; typing different numbers makes a new card. Without this, a
+failed video export, or downloading and then copying the same card, would have used up the month.
+The month is the calendar month in UTC; it comes back on the 1st.
+
+In the editor:
+- every export — Download PNG, Download MP4, Copy, Share, and Ctrl/⌘+S — asks the database first;
+- a refused export does not render anything and opens a dialog: *"This month's free card is used"*,
+  when it comes back, the price, and *See plans*;
+- a line under the export buttons says where you stand ("1 free card left this month. Exporting
+  uses it on this card." / "This is this month's free card — restyle and export it as often as you
+  like." / "This month's free card is used; a new one comes on 1 Oct 2026." / "Unlimited — Your plan
+  runs until …");
+- the topbar has **Upgrade** (free) or **Plan** (paid), and the profile menu has *Plans & promo codes*.
+
+**Where the limit is enforced: in the database, not the browser.** The app is a bundle anyone can
+read and edit, so a check in JavaScript alone would be a suggestion. `claim_export` in Postgres
+counts and records each export under a per-account lock (two exports at once cannot both take the
+last free card). The tables are read-only to the browser, so an account cannot insert a
+subscription, delete its export history to reset the counter, or list promo codes. One honest
+limit: the card is *drawn* in the browser, so someone who edits the JavaScript can skip the question
+entirely. Stopping that would need server-side rendering, which this app deliberately does not have.
+The limit stops everyone using the site as built.
+
+**MM33.** Stored only in the database (`promo_codes`); it is not in the JavaScript bundle (checked
+by searching the build). Gives 3 months, **once per account**, any letter case, spaces ignored;
+redeeming while already paid adds 3 months to the end. After 10 wrong codes in an hour an account is
+told to wait, so codes cannot be guessed. To add another code later, in the Supabase SQL editor:
+`insert into public.promo_codes (code, months) values ('NEWCODE', 1);` — to switch MM33 off:
+`update public.promo_codes set active = false where code = 'MM33';`.
+
+**Seeing who pays.** Supabase → Table Editor → schema `admin` → `subscribers`: email, name, paid
+until, active or not, whether it came from a payment or a promo, which codes. Raw rows are in
+`public.payments` (every checkout and its NOWPayments status) and `public.card_exports`.
+
+#### Files
+
+| | |
+|---|---|
+| `supabase/schema.sql` | new **billing** section at the end: 7 tables, `plan_status`, `claim_export`, `redeem_promo`, `record_payment`, `admin.subscribers`. Re-runnable like the rest. |
+| `api/checkout.ts` | Vercel function. Checks the Supabase session, takes the price from `billing_plans` (never from the request), creates a `payments` row and a NOWPayments invoice, returns its URL. |
+| `api/nowpayments-ipn.ts` | Vercel function NOWPayments calls on every status change. Rejects anything without a valid HMAC-SHA512 signature, then calls `record_payment`, which grants the months once on `finished` and only if the amount covers the plan. |
+| `src/lib/billing.ts` | prices for display, the card key, the calls to the database and `/api/checkout`, all the wording |
+| `src/components/PricingPage.tsx`, `LimitDialog.tsx`, `PlanNote.tsx` | the page, the dialog, the line under the export buttons |
+| `src/lib/route.ts`, `src/main.tsx`, `vercel.json` | `/` is the studio, `/pricing` the plans; `vercel.json` makes a reload of `/pricing` work on Vercel |
+| `src/App.tsx`, `src/lib/share.ts`, `ProfileMenu.tsx` | every export goes through `gateExport`; copy passes the check *into* the clipboard write, because Safari only allows the write inside the click |
+| `dev/billing.html`, `dev/billing-sql.mjs` | every plan state on one page; the SQL checks below |
+
+#### Setup — in this order
+
+1. **Run the SQL.** Supabase → SQL Editor → New query → paste the whole of `supabase/schema.sql` →
+   Run. It is safe to run again over what is already there.
+2. **NOWPayments.** Make an account at nowpayments.io, add a payout wallet, then in the dashboard:
+   create an **API key**, and under IPN settings generate an **IPN secret**. Optional: apply for
+   **fiat payments** to get cards / Apple Pay / Google Pay. Note that each coin has a minimum
+   payment; $5.99 is above the minimum for USDT (TRC-20) and most stablecoins, but some coins will
+   not be offered at that amount.
+3. **Vercel → Project → Settings → Environment Variables** (Production), then redeploy:
+   - `SUPABASE_SERVICE_ROLE_KEY` — Supabase → Project Settings → API → *service_role*. It skips all
+     row-level security: it must only ever be here, **never** in a `VITE_` variable or in `.env.local`.
+   - `NOWPAYMENTS_API_KEY`, `NOWPAYMENTS_IPN_SECRET`
+   - `SITE_URL` = `https://nexocards.vercel.app` (or the new domain once it is added)
+   - later, once Apple Pay is approved: `VITE_CARD_PAYMENTS` = `on`
+4. **Push** (`git push`). Then buy the monthly plan once yourself and check `admin.subscribers`.
+   To test without real money first, NOWPayments has a sandbox: a separate sandbox account's keys
+   plus `NOWPAYMENTS_API_BASE` = `https://api-sandbox.nowpayments.io/v1`.
+
+**Deploy order.** If the site is pushed before step 1, exports keep working and are simply not
+counted: the database answers "function not found" (`PGRST202`) and only that answer lets an export
+through, with a console warning. It cannot be produced by a user. Any other failure — network down,
+session expired — blocks the export with a message, so blocking the request in the browser does not
+get around the limit.
+
+#### How it was verified
+
+- **The SQL in real Postgres.** No database here has the service key, so `supabase/schema.sql` was
+  run in PGlite (Postgres 18.3 compiled to WebAssembly; Supabase runs 15–17, and nothing used here is newer than 11) with stand-ins for Supabase's `auth` and
+  `storage` schemas and its three roles, then driven as `authenticated` / `anon` / `service_role`
+  (`dev/billing-sql.mjs`). **33 of 33 checks pass**, including: the schema applies twice; first card
+  allowed; the same card again as MP4 allowed and still "1 used"; a different card refused and not
+  recorded; last month's export does not count; direct insert/delete on `card_exports`, insert on
+  `subscriptions`, reading `promo_codes`, calling `extend_subscription` / `record_payment`, and reading
+  `admin.subscribers` are all *permission denied* for a signed-in user; `' mm33 '` gives exactly 3
+  months, a second time says already redeemed; a paid account exports any number of cards without
+  touching the free count; the 11th wrong code in an hour is throttled; one account cannot see
+  another's rows; `waiting` does not credit, `finished` credits, a retried `finished` does not
+  credit twice, a late `waiting` does not overwrite `finished`; the quarterly plan is 3 months; a
+  finished payment below the price is refused; paying while paid extends from the end date.
+- **The API functions** against a mocked Supabase and NOWPayments (`tests/api/billing-api.test.ts`,
+  12 tests): the IPN signature matches NOWPayments' own documented algorithm and rejects a changed
+  body, wrong secret or missing header; a forged call gets 401 and never reaches the database; a
+  signed `finished` call passes every field to `record_payment`; checkout ignores a price sent by
+  the browser, sends NOWPayments exactly the fields above, marks the payment failed on a refusal;
+  no session / bad session / unknown plan / missing keys are refused.
+- **The client logic** (`src/lib/billing.test.ts`, 15 tests): prices, $4.33 and 28%, the card key
+  (restyling keeps it, different numbers or name change it), plan-state wording, payment polling,
+  dates.
+- `npm run typecheck` clean (now also typechecks `api/`); `npx vitest run` **264** tests pass
+  (237 before); `npm run build` succeeds.
+- **Screenshots** from headless Chrome against the dev server (`Desktop\Astra-plans\`). They caught
+  one bug, fixed: dates were written in the browser's language inside English sentences ("1 окт.
+  2026 г..", "сентябрь's"); they are now always English and UTC ("1 Oct 2026").
+
+**Not verified:** a real payment through NOWPayments (needs your account and keys), the functions
+running on Vercel itself, the SQL on the real Supabase project, and the signed-in editor with a real
+account on the free plan. The first real checkout after setup is the test of all four — do the
+monthly plan once, confirm `admin.subscribers` shows it, then try exporting a second different card
+from a fresh free account.
 
 ## Start here (2026-09-16)
 

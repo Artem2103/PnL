@@ -73,6 +73,7 @@ re-runnable, so applying it again after a change is harmless. It creates:
 | `cards` | the card state as JSON, one row per card |
 | `media` | one row per uploaded file — the manifest a second device syncs from |
 | `media` bucket | the bytes, private, partitioned as `<user id>/<file id>` |
+| billing tables | plans, subscriptions, payments, exports, promo codes — see **Plans** |
 
 Every table has row-level security keyed to `auth.uid()`, and the storage policies match on the
 first path segment. That is the entire security model: the anon key in the browser is not a secret,
@@ -98,6 +99,29 @@ local half is simply the whole of it.
 
 Signing out clears this browser's cached card and media. They are safe in the account, and leaving
 one person's uploads in a shared browser's IndexedDB is not worth the download it saves.
+
+## Plans
+
+Accounts are free and make **one card a month**; a plan makes unlimited cards. **Monthly** is
+$5.99, **3 months** is $12.99. The plans page is `/pricing` and is public; the studio links to
+it from the topbar (**Upgrade**), the profile menu, the line under the export buttons, and the
+dialog a refused export opens.
+
+- **What a card is.** The numbers and the name on it — mode, the trade or the period, and the
+  brand strings. Colour, background, frame and export size are not part of it, so the month's
+  free card can be restyled and exported as PNG, MP4, copy or share as often as wanted. The key is
+  a SHA-256 of those fields (`cardKey` in `src/lib/billing.ts`).
+- **Where it is enforced.** In Postgres. Every export calls `claim_export`, which records it and
+  answers yes or no; a refusal costs no rendering. The tables are read-only to the browser, and
+  the functions that grant time cannot be called with a user's session.
+- **Payments.** NOWPayments. `api/checkout.ts` (a Vercel function) creates a hosted invoice at
+  the price in `billing_plans`; the customer pays in crypto — or card / Apple Pay / Google Pay
+  when fiat payments are enabled on the NOWPayments account — and `api/nowpayments-ipn.ts`
+  verifies the signed notification and calls `record_payment`, which grants the months once.
+  Plans are paid in advance and do not renew; paying while a plan runs extends it.
+- **Promo codes** live in `promo_codes` and never reach the bundle. `MM33` gives 3 months, once
+  per account. Add another with `insert into public.promo_codes (code, months) values ('CODE', 1);`.
+- **Local mode** has no plans and no limit.
 
 ## The card
 

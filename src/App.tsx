@@ -25,6 +25,11 @@ import { downloadCardVideo, resolveClip, videoScaleFor, videoSupport } from './l
 import { checkExportMatchesPreview } from './lib/selftest';
 import { useAuth } from './lib/auth';
 import { ProfileMenu } from './components/ProfileMenu';
+import { LimitDialog } from './components/LimitDialog';
+import { PlanNote } from './components/PlanNote';
+import { allowanceFor, cardKey, claimExport, type ExportFormat, type PlanStatus } from './lib/billing';
+import { usePlanStatus } from './lib/usePlanStatus';
+import { navigate } from './lib/route';
 
 type ToastTone = 'info' | 'error';
 
@@ -68,6 +73,11 @@ export default function App() {
   const [progress, setProgress] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const video = useMemo(videoSupport, []);
+  const plan = usePlanStatus(userId, authMode === 'account');
+  const [limitStatus, setLimitStatus] = useState<PlanStatus | null>(null);
+  // The current card's identity for the free limit, so the export bar can say
+  // whether exporting it would use the month's free card.
+  const [currentKey, setCurrentKey] = useState<string | null>(null);
 
   const isVideoBackground = background?.kind === 'video';
   const clip = resolveClip(background?.duration ?? 0, state.artwork.clipStart, state.artwork.clipLength);
@@ -123,6 +133,37 @@ export default function App() {
     };
   }, [state.artwork.imageId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void cardKey(state).then((key) => {
+      if (!cancelled) setCurrentKey(key);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [state]);
+
+  /**
+   * Asks the database whether this export may go ahead, and records it. Never
+   * throws: a refusal opens the plans dialog, a failure says why in a toast,
+   * and either way the caller just stops.
+   */
+  const setPlanStatus = plan.set;
+  const gateExport = useCallback(
+    async (format: ExportFormat): Promise<boolean> => {
+      try {
+        const decision = await claimExport(state, format);
+        if (decision.status) setPlanStatus(decision.status);
+        if (!decision.allowed) setLimitStatus(decision.status);
+        return decision.allowed;
+      } catch (error) {
+        notify(error instanceof Error ? error.message : 'Could not check your plan.', 'error');
+        return false;
+      }
+    },
+    [notify, setPlanStatus, state],
+  );
+
   const setMode = useCallback((mode: CardMode) => setState((prev) => ({ ...prev, mode })), [setState]);
   const patchTrade = useCallback(
     (patch: Partial<TradeState>) => setState((prev) => ({ ...prev, trade: { ...prev.trade, ...patch } })),
@@ -159,6 +200,7 @@ export default function App() {
   const handleDownload = useCallback(async () => {
     setBusy('download');
     try {
+      if (!(await gateExport('png'))) return;
       await downloadCard(state, scale);
       notify('PNG downloaded.');
     } catch (error) {
@@ -166,23 +208,37 @@ export default function App() {
     } finally {
       setBusy(null);
     }
-  }, [notify, scale, state]);
+  }, [gateExport, notify, scale, state]);
 
   const handleCopy = useCallback(async () => {
     setBusy('copy');
+    // Started before anything is awaited: Safari only lets the clipboard be
+    // written from inside the click, so the check rides along inside the write.
+    const allowed = gateExport('copy');
     try {
-      await copyCardToClipboard(state, scale);
+      await copyCardToClipboard(
+        state,
+        scale,
+        allowed.then((ok) => {
+          if (!ok) throw new Error('Export not allowed.');
+        }),
+      );
       notify('Card copied to clipboard.');
     } catch (error) {
-      notify(error instanceof Error ? error.message : 'Copy failed.', 'error');
+      // A refusal has already opened the dialog or said why.
+      if (await allowed) notify(error instanceof Error ? error.message : 'Copy failed.', 'error');
     } finally {
       setBusy(null);
     }
-  }, [notify, scale, state]);
+  }, [gateExport, notify, scale, state]);
 
   const handleDownloadVideo = useCallback(async () => {
     setBusy('video');
     setProgress(0);
+    if (!(await gateExport('mp4'))) {
+      setBusy(null);
+      return;
+    }
     // The export and the preview share one decoder and one GPU. Holding the
     // preview on its current frame while the file is made gives the export
     // the whole machine, and spares the person a stuttering preview next to
@@ -209,11 +265,12 @@ export default function App() {
       setProgress(0);
       setPlaying(wasPlaying);
     }
-  }, [notify, playing, scale, state]);
+  }, [gateExport, notify, playing, scale, state]);
 
   const handleShare = useCallback(async () => {
     setBusy('share');
     try {
+      if (!(await gateExport('share'))) return;
       const outcome = await shareCard(state, scale);
       // Only 'shared' is worth a cheerful toast; the rest each mean something
       // different, and reporting them all as "cancelled" was why a share that
@@ -225,7 +282,7 @@ export default function App() {
     } finally {
       setBusy(null);
     }
-  }, [notify, scale, state]);
+  }, [gateExport, notify, scale, state]);
 
   // Bound once. `handleDownload` is rebuilt on every keystroke, and rebinding a
   // window listener each time is work no keystroke should be paying for.
@@ -286,6 +343,15 @@ export default function App() {
             <span className="syncdot__mark" aria-hidden="true" />
             {SYNC_LABEL[cardStatus]}
           </span>
+          {authMode === 'account' && plan.status ? (
+            <button
+              type="button"
+              className={`btn btn--small ${plan.status.isPaid ? 'btn--ghost' : 'btn--primary'}`}
+              onClick={() => navigate('/pricing')}
+            >
+              {plan.status.isPaid ? 'Plan' : 'Upgrade'}
+            </button>
+          ) : null}
           <button
             type="button"
             className="btn btn--ghost btn--small"
@@ -299,6 +365,7 @@ export default function App() {
           <ProfileMenu
             user={user}
             mode={authMode}
+            onOpenPlans={authMode === 'account' ? () => navigate('/pricing') : undefined}
             onSignOut={() => {
               void signOut().catch((error: unknown) =>
                 notify(error instanceof Error ? error.message : 'Log out failed.', 'error'),
@@ -443,6 +510,10 @@ export default function App() {
               </div>
             </div>
 
+            {plan.status ? (
+              <PlanNote status={plan.status} allowance={allowanceFor(plan.status, currentKey)} />
+            ) : null}
+
             <p className="stage__note">
               {isVideoBackground ? (
                 video.supported ? (
@@ -471,6 +542,17 @@ export default function App() {
           </div>
         </section>
       </main>
+
+      {limitStatus ? (
+        <LimitDialog
+          status={limitStatus}
+          onClose={() => setLimitStatus(null)}
+          onSeePlans={() => {
+            setLimitStatus(null);
+            navigate('/pricing');
+          }}
+        />
+      ) : null}
 
       <div className="toast-area" aria-live="polite">
         {toast ? <div className={`toast toast--${toast.tone}`}>{toast.message}</div> : null}

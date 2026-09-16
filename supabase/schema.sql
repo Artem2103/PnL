@@ -253,3 +253,412 @@ revoke all on admin.uploads from public, anon, authenticated;
 -- Deleting a media row does NOT delete its bytes: Postgres cannot reach into
 -- the storage API. The client deletes the object first and the row second, and
 -- orphaned objects are the failure mode to look for if the two ever disagree.
+
+-- ============================================================== billing
+--
+-- Plans, payments, the free-card limit and promo codes. Anything that could
+-- give an account a plan is written only by the security-definer functions
+-- below, or by the payment webhook with the service-role key; to the browser
+-- these tables are read-only, and only its own rows.
+--
+--   billing_plans      the two paid plans and their prices — what a payment has
+--                      to cover before it counts
+--   subscriptions      one row per account that has ever had a plan: paid_until
+--   payments           one row per checkout, updated by the payment webhook
+--   card_exports       one row per export; the free limit is counted from it
+--   promo_codes        the codes — never readable from the browser
+--   promo_redemptions  one redemption per code per account
+--   promo_attempts     wrong codes, so they cannot be guessed at speed
+
+create table if not exists public.billing_plans (
+  id        text primary key,
+  label     text not null,
+  price_usd numeric(10, 2) not null check (price_usd > 0),
+  months    integer not null check (months > 0)
+);
+
+insert into public.billing_plans (id, label, price_usd, months) values
+  ('monthly',   'Monthly',  5.99,  1),
+  ('quarterly', '3 months', 12.99, 3)
+on conflict (id) do update
+  set label = excluded.label, price_usd = excluded.price_usd, months = excluded.months;
+
+create table if not exists public.subscriptions (
+  user_id     uuid primary key references auth.users (id) on delete cascade,
+  paid_until  timestamptz not null,
+  -- What last extended it: 'payment' or 'promo'.
+  last_source text not null,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create table if not exists public.payments (
+  -- Sent to NOWPayments as order_id, and handed back in every webhook call.
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references auth.users (id) on delete cascade,
+  plan_id       text not null references public.billing_plans (id),
+  price_usd     numeric(10, 2) not null,
+  provider      text not null default 'nowpayments',
+  invoice_id    text,
+  payment_id    text,
+  -- 'created' / 'invoice' from here, then NOWPayments' own: waiting,
+  -- confirming, confirmed, sending, partially_paid, finished, failed,
+  -- refunded, expired. 'amount_mismatch' if a finished payment was short.
+  status        text not null default 'created',
+  pay_currency  text,
+  actually_paid numeric,
+  credited_at   timestamptz,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+
+create index if not exists payments_user_created_idx
+  on public.payments (user_id, created_at desc);
+
+create table if not exists public.card_exports (
+  id         bigint generated always as identity primary key,
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  -- SHA-256 of the card's settings. The same card exported again — PNG, then
+  -- MP4, then a copy — is still one card, not three.
+  card_key   text not null,
+  format     text not null check (format in ('png', 'mp4', 'copy', 'share')),
+  -- Whether the account had a plan at the time. Only free exports count.
+  paid       boolean not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists card_exports_user_created_idx
+  on public.card_exports (user_id, created_at desc);
+
+create table if not exists public.promo_codes (
+  code            text primary key check (code = upper(code)),
+  months          integer not null check (months > 0),
+  active          boolean not null default true,
+  expires_at      timestamptz,
+  -- Across all accounts; null is unlimited. One redemption per account always.
+  max_redemptions integer,
+  created_at      timestamptz not null default now()
+);
+
+insert into public.promo_codes (code, months) values ('MM33', 3)
+on conflict (code) do nothing;
+
+create table if not exists public.promo_redemptions (
+  code        text not null references public.promo_codes (code) on delete cascade,
+  user_id     uuid not null references auth.users (id) on delete cascade,
+  redeemed_at timestamptz not null default now(),
+  primary key (code, user_id)
+);
+
+create table if not exists public.promo_attempts (
+  id         bigint generated always as identity primary key,
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists promo_attempts_user_created_idx
+  on public.promo_attempts (user_id, created_at desc);
+
+drop trigger if exists subscriptions_touch_updated_at on public.subscriptions;
+create trigger subscriptions_touch_updated_at
+  before update on public.subscriptions
+  for each row execute function public.touch_updated_at();
+
+drop trigger if exists payments_touch_updated_at on public.payments;
+create trigger payments_touch_updated_at
+  before update on public.payments
+  for each row execute function public.touch_updated_at();
+
+alter table public.billing_plans     enable row level security;
+alter table public.subscriptions     enable row level security;
+alter table public.payments          enable row level security;
+alter table public.card_exports      enable row level security;
+alter table public.promo_codes       enable row level security;
+alter table public.promo_redemptions enable row level security;
+alter table public.promo_attempts    enable row level security;
+
+-- Supabase grants every API role full rights on new tables; RLS would stop
+-- the writes anyway, and this says so a second time.
+revoke insert, update, delete on
+  public.billing_plans, public.subscriptions, public.payments, public.card_exports,
+  public.promo_codes, public.promo_redemptions, public.promo_attempts
+from anon, authenticated;
+-- The codes are not listable at all, or the page would hand them out.
+revoke select on public.promo_codes, public.promo_attempts from anon, authenticated;
+
+drop policy if exists "plans are public" on public.billing_plans;
+create policy "plans are public" on public.billing_plans
+  for select to anon, authenticated using (true);
+
+drop policy if exists "own subscription is readable" on public.subscriptions;
+create policy "own subscription is readable" on public.subscriptions
+  for select to authenticated using (auth.uid() = user_id);
+
+drop policy if exists "own payments are readable" on public.payments;
+create policy "own payments are readable" on public.payments
+  for select to authenticated using (auth.uid() = user_id);
+
+drop policy if exists "own exports are readable" on public.card_exports;
+create policy "own exports are readable" on public.card_exports
+  for select to authenticated using (auth.uid() = user_id);
+
+drop policy if exists "own redemptions are readable" on public.promo_redemptions;
+create policy "own redemptions are readable" on public.promo_redemptions
+  for select to authenticated using (auth.uid() = user_id);
+
+-- How many different cards a free account may export per calendar month (UTC).
+create or replace function public.free_cards_per_month()
+returns integer
+language sql
+immutable
+as $fn$ select 1 $fn$;
+
+-- Adds months to an account's plan, counted from whichever is later: now, or
+-- the end of the time it already has. Paying or redeeming while paid extends.
+create or replace function public.extend_subscription(p_user uuid, p_months integer, p_source text)
+returns timestamptz
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_until timestamptz;
+begin
+  insert into public.subscriptions as s (user_id, paid_until, last_source)
+  values (p_user, now() + make_interval(months => p_months), p_source)
+  on conflict (user_id) do update
+    set paid_until  = greatest(s.paid_until, now()) + make_interval(months => p_months),
+        last_source = excluded.last_source
+  returning paid_until into v_until;
+  return v_until;
+end;
+$fn$;
+
+-- The signed-in account's plan, and what is left of this month's free card.
+create or replace function public.plan_status()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_uid         uuid := auth.uid();
+  v_until       timestamptz;
+  v_month_start timestamptz := date_trunc('month', now() at time zone 'utc') at time zone 'utc';
+  v_keys        text[];
+begin
+  if v_uid is null then
+    raise exception 'Sign in first.' using errcode = '28000';
+  end if;
+
+  select paid_until into v_until from public.subscriptions where user_id = v_uid;
+
+  select coalesce(array_agg(distinct card_key), '{}') into v_keys
+  from public.card_exports
+  where user_id = v_uid and not paid and created_at >= v_month_start;
+
+  return jsonb_build_object(
+    'paid_until', v_until,
+    'is_paid',    coalesce(v_until > now(), false),
+    'free_limit', public.free_cards_per_month(),
+    'free_used',  coalesce(array_length(v_keys, 1), 0),
+    'free_cards', to_jsonb(v_keys),
+    'resets_at',  v_month_start + interval '1 month'
+  );
+end;
+$fn$;
+
+-- Called by the editor before every export. Records the export and says
+-- whether it may go ahead: always on a paid plan; on the free plan, when this
+-- card is the one the month's allowance already went on, or there is
+-- allowance left.
+create or replace function public.claim_export(p_card_key text, p_format text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_uid         uuid := auth.uid();
+  v_paid        boolean;
+  v_month_start timestamptz := date_trunc('month', now() at time zone 'utc') at time zone 'utc';
+  v_keys        text[];
+begin
+  if v_uid is null then
+    raise exception 'Sign in first.' using errcode = '28000';
+  end if;
+  if p_card_key is null or p_card_key !~ '^[0-9a-f]{64}$' then
+    raise exception 'Bad card key.' using errcode = '22023';
+  end if;
+  if p_format is null or p_format not in ('png', 'mp4', 'copy', 'share') then
+    raise exception 'Bad export format.' using errcode = '22023';
+  end if;
+
+  -- Two exports started at once must not both take the last free card.
+  perform pg_advisory_xact_lock(hashtextextended(v_uid::text, 42));
+
+  select paid_until > now() into v_paid from public.subscriptions where user_id = v_uid;
+  v_paid := coalesce(v_paid, false);
+
+  if not v_paid then
+    select coalesce(array_agg(distinct card_key), '{}') into v_keys
+    from public.card_exports
+    where user_id = v_uid and not paid and created_at >= v_month_start;
+
+    if not (p_card_key = any (v_keys))
+       and coalesce(array_length(v_keys, 1), 0) >= public.free_cards_per_month() then
+      return public.plan_status() || jsonb_build_object('allowed', false);
+    end if;
+  end if;
+
+  insert into public.card_exports (user_id, card_key, format, paid)
+  values (v_uid, p_card_key, p_format, v_paid);
+
+  return public.plan_status() || jsonb_build_object('allowed', true);
+end;
+$fn$;
+
+-- Redeems a promo code for the signed-in account. Returns { ok, reason?,
+-- months?, paid_until? }; reason is invalid, already_redeemed, used_up or
+-- too_many_attempts.
+create or replace function public.redeem_promo(p_code text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_uid   uuid := auth.uid();
+  v_code  text := upper(btrim(coalesce(p_code, '')));
+  v_promo public.promo_codes;
+  v_used  integer;
+  v_until timestamptz;
+begin
+  if v_uid is null then
+    raise exception 'Sign in first.' using errcode = '28000';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(v_uid::text, 43));
+
+  if (select count(*) from public.promo_attempts
+      where user_id = v_uid and created_at > now() - interval '1 hour') >= 10 then
+    return jsonb_build_object('ok', false, 'reason', 'too_many_attempts');
+  end if;
+
+  select * into v_promo from public.promo_codes where code = v_code for update;
+
+  if not found or not v_promo.active
+     or (v_promo.expires_at is not null and v_promo.expires_at <= now()) then
+    insert into public.promo_attempts (user_id) values (v_uid);
+    return jsonb_build_object('ok', false, 'reason', 'invalid');
+  end if;
+
+  if exists (select 1 from public.promo_redemptions where code = v_code and user_id = v_uid) then
+    return jsonb_build_object('ok', false, 'reason', 'already_redeemed');
+  end if;
+
+  if v_promo.max_redemptions is not null then
+    select count(*) into v_used from public.promo_redemptions where code = v_code;
+    if v_used >= v_promo.max_redemptions then
+      return jsonb_build_object('ok', false, 'reason', 'used_up');
+    end if;
+  end if;
+
+  insert into public.promo_redemptions (code, user_id) values (v_code, v_uid);
+  v_until := public.extend_subscription(v_uid, v_promo.months, 'promo');
+
+  return jsonb_build_object('ok', true, 'months', v_promo.months, 'paid_until', v_until);
+end;
+$fn$;
+
+-- Called only by the payment webhook, with the service-role key, with what
+-- NOWPayments reported. Records the status and, on 'finished', grants the
+-- plan's months — once, however often the webhook is retried, and only when
+-- the invoice was for at least the plan's price in USD.
+create or replace function public.record_payment(
+  p_payment        uuid,
+  p_payment_id     text,
+  p_status         text,
+  p_price_amount   numeric,
+  p_price_currency text,
+  p_pay_currency   text,
+  p_actually_paid  numeric
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_row    public.payments;
+  v_months integer;
+  v_until  timestamptz;
+begin
+  select * into v_row from public.payments where id = p_payment for update;
+  if not found then
+    return jsonb_build_object('ok', false, 'reason', 'unknown_payment');
+  end if;
+
+  update public.payments
+    set payment_id    = coalesce(p_payment_id, payment_id),
+        -- A retried 'waiting' arriving late must not overwrite 'finished'.
+        status        = case when credited_at is null then p_status else status end,
+        pay_currency  = coalesce(p_pay_currency, pay_currency),
+        actually_paid = coalesce(p_actually_paid, actually_paid)
+  where id = p_payment;
+
+  if p_status <> 'finished' or v_row.credited_at is not null then
+    return jsonb_build_object('ok', true, 'credited', false);
+  end if;
+
+  if lower(coalesce(p_price_currency, '')) <> 'usd'
+     or coalesce(p_price_amount, 0) < v_row.price_usd then
+    update public.payments set status = 'amount_mismatch' where id = p_payment;
+    return jsonb_build_object('ok', false, 'reason', 'amount_mismatch');
+  end if;
+
+  select months into v_months from public.billing_plans where id = v_row.plan_id;
+  v_until := public.extend_subscription(v_row.user_id, v_months, 'payment');
+  update public.payments set credited_at = now(), status = 'finished' where id = p_payment;
+
+  return jsonb_build_object('ok', true, 'credited', true, 'paid_until', v_until);
+end;
+$fn$;
+
+-- Postgres grants EXECUTE to PUBLIC by default. Two of these hand out months
+-- and must never be callable with the anon key or a user's session.
+revoke execute on function public.extend_subscription(uuid, integer, text)
+  from public, anon, authenticated;
+revoke execute on function public.record_payment(uuid, text, text, numeric, text, text, numeric)
+  from public, anon, authenticated;
+grant execute on function public.record_payment(uuid, text, text, numeric, text, text, numeric)
+  to service_role;
+
+revoke execute on function public.plan_status()            from public, anon;
+revoke execute on function public.claim_export(text, text) from public, anon;
+revoke execute on function public.redeem_promo(text)       from public, anon;
+grant execute on function public.plan_status()             to authenticated;
+grant execute on function public.claim_export(text, text)  to authenticated;
+grant execute on function public.redeem_promo(text)        to authenticated;
+
+-- For the dashboard: who has a plan, until when, and how they got it. Same
+-- reasoning as admin.uploads — its own schema, closed to the API roles.
+create or replace view admin.subscribers as
+select
+  s.paid_until,
+  s.paid_until > now()                                           as active,
+  s.last_source,
+  u.email,
+  coalesce(nullif(u.raw_user_meta_data ->> 'display_name', ''),
+           nullif(p.display_name, ''))                           as name,
+  (select count(*) from public.payments x
+    where x.user_id = s.user_id and x.credited_at is not null)   as paid_payments,
+  (select string_agg(r.code, ', ') from public.promo_redemptions r
+    where r.user_id = s.user_id)                                 as promo_codes,
+  s.user_id
+from public.subscriptions s
+join auth.users u on u.id = s.user_id
+left join public.profiles p on p.id = s.user_id
+order by s.paid_until desc;
+
+revoke all on admin.subscribers from public, anon, authenticated;

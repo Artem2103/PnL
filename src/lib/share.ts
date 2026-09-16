@@ -31,11 +31,19 @@ export function canCopyImage(): boolean {
   );
 }
 
-export async function copyCardToClipboard(state: CardState, scale: number): Promise<void> {
+/**
+ * `before` is awaited ahead of the render — the plan check — without an await
+ * of its own, which would end the click before the ClipboardItem exists.
+ */
+export async function copyCardToClipboard(
+  state: CardState,
+  scale: number,
+  before: Promise<void> = Promise.resolve(),
+): Promise<void> {
   if (!canCopyImage()) throw new Error('This browser cannot copy images to the clipboard.');
   // Safari requires the ClipboardItem to be constructed inside the same user
   // gesture, so the blob is passed as a still-pending promise.
-  const item = new ClipboardItem({ 'image/png': renderCardBlob(state, scale) });
+  const item = new ClipboardItem({ 'image/png': before.then(() => renderCardBlob(state, scale)) });
   await navigator.clipboard.write([item]);
 }
 
