@@ -179,8 +179,15 @@ get around the limit.
   one bug, fixed: dates were written in the browser's language inside English sentences ("1 окт.
   2026 г..", "сентябрь's"); they are now always English and UTC ("1 Oct 2026").
 
+**Deployed.** Pushed as `da53c86` + `0ddcfcc`; <https://nexocards.vercel.app> then served
+`assets/index-DrCilXEc.js`, the same hash as the local `npm run build`. Checked on the live site
+(2026-09-17 04:46): `/pricing` loaded directly answers 200 with the app (so `vercel.json`'s rewrite
+works); `POST /api/checkout` answers 503 *"Payments are not set up yet. Try again later."* and
+`POST /api/nowpayments-ipn` answers 503 *"not configured"* — so Vercel did pick up both functions
+from `api/` and they run; they are only waiting for their keys.
+
 **Not verified:** a real payment through NOWPayments (needs your account and keys), the functions
-running on Vercel itself, the SQL on the real Supabase project, and the signed-in editor with a real
+running on Vercel with keys set, the SQL on the real Supabase project, and the signed-in editor with a real
 account on the free plan. The first real checkout after setup is the test of all four — do the
 monthly plan once, confirm `admin.subscribers` shows it, then try exporting a second different card
 from a fresh free account.
