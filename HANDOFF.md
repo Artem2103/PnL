@@ -96,6 +96,12 @@ follow *Cards* from the front page would have had no way back but the browser bu
 card's wordmark is now a link home, and there is a *What is Astra?* link under the footnote,
 because a link nobody can see is not a way out.
 
+#### Deployed
+
+Pushed as `568f79b`; <https://nexocards.vercel.app> then served `assets/index-D2xGycJD.js`, the same
+hash as the local `npm run build`. Checked on the live site (2026-09-19): `/`, `/cards` and
+`/pricing` all answer 200 when loaded directly, so `vercel.json`'s rewrite covers the new path too.
+
 #### Checked
 
 `npm test` (264 pass — `pageFor`'s case was rewritten for the three paths), `npm run typecheck`,
