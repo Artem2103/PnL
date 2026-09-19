@@ -143,10 +143,14 @@ describe('messages', () => {
 });
 
 describe('pageFor', () => {
-  it('routes /pricing to the plans page and everything else to the studio', () => {
+  it('routes the three paths, and anything unknown to the front page', () => {
     expect(pageFor('/pricing')).toBe('pricing');
     expect(pageFor('/pricing/')).toBe('pricing');
-    expect(pageFor('/')).toBe('studio');
-    expect(pageFor('/anything')).toBe('studio');
+    expect(pageFor('/cards')).toBe('studio');
+    expect(pageFor('/cards/')).toBe('studio');
+    expect(pageFor('/')).toBe('home');
+    // The editor used to live at the root, so a stale bookmark to an unknown
+    // path lands on the page that explains what this is, not on the editor.
+    expect(pageFor('/anything')).toBe('home');
   });
 });

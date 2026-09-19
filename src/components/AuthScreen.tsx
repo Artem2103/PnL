@@ -1,5 +1,6 @@
 import { useId, useState, type FormEvent } from 'react';
 import { useAuth } from '../lib/auth';
+import { HOME_PATH, navigate } from '../lib/route';
 
 type Mode = 'signin' | 'signup';
 
@@ -75,13 +76,24 @@ export function AuthScreen() {
   return (
     <div className="auth">
       <div className="auth__card">
-        <div className="auth__brand">
+        {/* This screen has no topbar, so the wordmark is the only way back out
+            to the front page — without it, someone who followed "Cards" from
+            there is stuck on a form with nothing but the back button. */}
+        <a
+          className="auth__brand auth__brand--link"
+          href={HOME_PATH}
+          onClick={(event) => {
+            if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+            event.preventDefault();
+            navigate(HOME_PATH);
+          }}
+        >
           <span className="brand__mark" aria-hidden="true" />
           <div>
             <h1>Astra</h1>
             <p>Sign in to open the card editor.</p>
           </div>
-        </div>
+        </a>
 
         {configured ? null : (
           <p className="auth__message auth__message--error" role="alert">
@@ -216,6 +228,14 @@ export function AuthScreen() {
         <p className="auth__footnote">
           Your account keeps your card and the images you upload, so they are there on your next
           device. The card itself is still drawn in your browser — nothing is rendered on a server.
+        </p>
+
+        {/* Said out loud as well as carried by the wordmark: a link nobody can
+            see is not a way out. */}
+        <p className="auth__back">
+          <button type="button" className="linkish" onClick={() => navigate(HOME_PATH)}>
+            What is Astra?
+          </button>
         </p>
       </div>
     </div>

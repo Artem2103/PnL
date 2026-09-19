@@ -29,7 +29,8 @@ import { LimitDialog } from './components/LimitDialog';
 import { PlanNote } from './components/PlanNote';
 import { allowanceFor, cardKey, claimExport, type ExportFormat, type PlanStatus } from './lib/billing';
 import { usePlanStatus } from './lib/usePlanStatus';
-import { navigate } from './lib/route';
+import { PRICING_PATH, navigate } from './lib/route';
+import { SiteNav } from './components/SiteNav';
 
 type ToastTone = 'info' | 'error';
 
@@ -331,13 +332,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand">
-          <span className="brand__mark" aria-hidden="true" />
-          <div>
-            <h1>Astra</h1>
-            <p>Share cards, rendered in your browser.</p>
-          </div>
-        </div>
+        <SiteNav current="studio" />
         <div className="topbar__actions">
           <span className={`syncdot syncdot--${cardStatus}`} aria-live="polite">
             <span className="syncdot__mark" aria-hidden="true" />
@@ -347,7 +342,7 @@ export default function App() {
             <button
               type="button"
               className={`btn btn--small ${plan.status.isPaid ? 'btn--ghost' : 'btn--primary'}`}
-              onClick={() => navigate('/pricing')}
+              onClick={() => navigate(PRICING_PATH)}
             >
               {plan.status.isPaid ? 'Plan' : 'Upgrade'}
             </button>
@@ -365,7 +360,7 @@ export default function App() {
           <ProfileMenu
             user={user}
             mode={authMode}
-            onOpenPlans={authMode === 'account' ? () => navigate('/pricing') : undefined}
+            onOpenPlans={authMode === 'account' ? () => navigate(PRICING_PATH) : undefined}
             onSignOut={() => {
               void signOut().catch((error: unknown) =>
                 notify(error instanceof Error ? error.message : 'Log out failed.', 'error'),
@@ -549,7 +544,7 @@ export default function App() {
           onClose={() => setLimitStatus(null)}
           onSeePlans={() => {
             setLimitStatus(null);
-            navigate('/pricing');
+            navigate(PRICING_PATH);
           }}
         />
       ) : null}

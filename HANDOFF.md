@@ -18,11 +18,92 @@ file easier to read:
 | 2026-09-15 | clips with HE-AAC or odd-rate sound no longer fall back to the laggy live recorder | see **Start here (2026-09-15)** |
 | 2026-09-16 | exports made on a phone carry sound (second pass: Safari's magic cookie) | see **Start here (2026-09-16)** |
 | 2026-09-17 | plans page, 1 free card a month, promo code MM33, NOWPayments checkout | pushed; **payments, limit and MM33 wait on setup** — see **Start here (2026-09-17)** and `SETUP-PLANS.txt` |
+| 2026-09-19 | front page at `/`, editor moved to `/cards`, one nav in every topbar | see **Start here (2026-09-19)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-09-19)
+
+### A front page at `/`, the editor moved to `/cards`, and one nav in every topbar
+
+Artem: *"Near the Astra logo on top, make a clickable header title 'Payments' or Subscriptions, or
+smth else you decide. Also, create a front page, that basically explains what Astra is, and has a
+full description of our Plans, what our app can do and etc. Basically the home page. That's why
+there should be a header called 'Cards' that takes you to our main page currently where you
+actually design the PnL card"*.
+
+Nothing about payments changed. `SETUP-PLANS.txt` is still the thing to do, and until it is done
+the live site behaves exactly as **Start here (2026-09-17)** describes.
+
+**The nav is called Plans, not Payments or Subscriptions.** Every other string in the app already
+says *plans* — *See plans*, *Plans & promo codes*, the page's own heading — and a fourth word for
+the same page would have been the only one that had to be learned.
+
+#### The paths
+
+| | | |
+|---|---|---|
+| `/` | front page | public |
+| `/cards` | the studio | behind the sign-in gate, as before |
+| `/pricing` | plans | public, unchanged |
+
+Anything unknown falls through to the front page, not the editor: a stranger who mistypes should
+land on the page that says what this is. `pageFor` in `src/lib/route.ts` is three lines and the
+paths are exported as `HOME_PATH` / `STUDIO_PATH` / `PRICING_PATH`, because the editor's path is
+now the kind of thing that gets typed in several files and must not be spelled twice.
+
+**The editor moved off `/`, so old links to it now open the front page.** That is intended — a
+returning customer sees the pitch once and clicks *Cards* — but it is worth knowing if anyone
+reports the app "not opening".
+
+#### The nav
+
+`src/components/SiteNav.tsx`: the wordmark (the way home) and **Cards** / **Plans**, with the
+current one in white over a hairline. It is the left half of the topbar on all three pages, and it
+replaced the subtitle that used to sit under the wordmark — the nav says which page this is, and
+saying it twice made the bar noisy. Each entry is a real `<a href>` whose plain click is
+intercepted, so ⌘-click, middle-click and *copy link address* still work.
+
+Under 620px the wordmark hides and the mark alone stays: the links are the part someone actually
+needs on a phone.
+
+Two buttons went with it, both duplicates of a nav entry now: *Back to editor* on the plans page,
+and the *Plans* button that was briefly on the front page's topbar.
+
+#### The front page (`src/components/HomePage.tsx`)
+
+Hero, *How it works* in three steps, *What Astra does* in eight, the plans in full, a closing call
+to action, a footer. The plan copy — prices, the saving, the free limit, both feature lists — comes
+from `src/lib/billing.ts`, so the front page and `/pricing` cannot disagree. `FREE_FEATURES` and
+`PAID_FEATURES` moved there from `PricingPage.tsx` for that reason.
+
+**The card in the hero is the real renderer**, not a screenshot: `CardPreview` painting a real
+`CardState`, with the six accent swatches under it wired to the live card. It is the one claim on
+the page worth demonstrating rather than asserting, and with no artwork, avatar or logo there is
+nothing to decode, so it lands in the first frame or two. Its `frameId` is forced to `none` —
+the default pin badge draws its empty-avatar placeholder inside a white pin, which on a front page
+reads as a broken image rather than as "your face goes here".
+
+#### The dead end that had to be fixed with it
+
+`/cards` signed out is the full-screen `AuthScreen`, which has no topbar — so the first person to
+follow *Cards* from the front page would have had no way back but the browser button. The sign-in
+card's wordmark is now a link home, and there is a *What is Astra?* link under the footnote,
+because a link nobody can see is not a way out.
+
+#### Checked
+
+`npm test` (264 pass — `pageFor`'s case was rewritten for the three paths), `npm run typecheck`,
+`npm run build`. Screenshots at 1440px and at a 390×844 phone, taken through CDP with device
+metrics overridden — a maximised window will not resize, and the extension's screenshots of it are
+always desktop-width, which is worth knowing before trying to check a phone layout that way:
+`Desktop\Astra-frontpage\` — `front-desktop.png`, `front-phone.png`, `plans-desktop.png`,
+`plans-phone.png`, `signin-phone.png`.
 
 ---
 
@@ -120,7 +201,7 @@ until, active or not, whether it came from a payment or a promo, which codes. Ra
 | `api/nowpayments-ipn.ts` | Vercel function NOWPayments calls on every status change. Rejects anything without a valid HMAC-SHA512 signature, then calls `record_payment`, which grants the months once on `finished` and only if the amount covers the plan. |
 | `src/lib/billing.ts` | prices for display, the card key, the calls to the database and `/api/checkout`, all the wording |
 | `src/components/PricingPage.tsx`, `LimitDialog.tsx`, `PlanNote.tsx` | the page, the dialog, the line under the export buttons |
-| `src/lib/route.ts`, `src/main.tsx`, `vercel.json` | `/` is the studio, `/pricing` the plans; `vercel.json` makes a reload of `/pricing` work on Vercel |
+| `src/lib/route.ts`, `src/main.tsx`, `vercel.json` | `/` is the studio, `/pricing` the plans; `vercel.json` makes a reload of `/pricing` work on Vercel. **Superseded 2026-09-19:** `/` is the front page and the studio is `/cards` |
 | `src/App.tsx`, `src/lib/share.ts`, `ProfileMenu.tsx` | every export goes through `gateExport`; copy passes the check *into* the clipboard write, because Safari only allows the write inside the click |
 | `dev/billing.html`, `dev/billing-sql.mjs` | every plan state on one page; the SQL checks below |
 
@@ -2514,6 +2595,8 @@ src/
     mp4write.ts          progressive MP4 writer for the WebCodecs output (tested)
     mp4.ts               rewrites the durations and the sound offset
                          MediaRecorder gets wrong (fallback path only)  (tested)
+    route.ts             the three paths, pushState, and where to go after sign-in
+    billing.ts           prices, plan copy, the card key, and the calls that ask
     selftest.ts          preview-vs-export pixel diff (dev only)
     canvas/
       spec.ts            measured geometry — change layout here, not in draw.ts
@@ -2525,6 +2608,9 @@ src/
   components/
     AuthGate.tsx         session? studio : sign-in screen
     AuthScreen.tsx       registration + login form
+    HomePage.tsx         the front page at `/` — pitch, features, plans in full
+    PricingPage.tsx      the plans page at `/pricing` — tiers, checkout, promo box
+    SiteNav.tsx          wordmark + Cards/Plans, the left half of every topbar
     FramePicker.tsx      the avatar-frame tiles, painted by drawAvatarFrame
     ...                  preview, controls, media picker, inputs
 dev/

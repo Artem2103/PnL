@@ -4,6 +4,7 @@ import App from './App';
 import { AuthProvider, useAuth } from './lib/auth';
 import { AuthGate } from './components/AuthGate';
 import { PricingPage } from './components/PricingPage';
+import { HomePage } from './components/HomePage';
 import { navigate, pageFor, takeAfterSignIn, useLocation } from './lib/route';
 import './styles/global.css';
 
@@ -11,8 +12,9 @@ const container = document.getElementById('root');
 if (!container) throw new Error('Root element is missing from index.html.');
 
 /**
- * Two pages. The plans page is public — a visitor can see the prices before
- * making an account — and the studio stays behind the sign-in gate.
+ * Three pages. The front page and the plans page are public — a stranger can
+ * read what this is and what it costs before making an account — and only the
+ * editor sits behind the sign-in gate.
  */
 function Root() {
   const { pathname, search } = useLocation();
@@ -25,7 +27,9 @@ function Root() {
     if (next) navigate(next);
   }, [session]);
 
-  if (pageFor(pathname) === 'pricing') return <PricingPage search={search} />;
+  const page = pageFor(pathname);
+  if (page === 'home') return <HomePage />;
+  if (page === 'pricing') return <PricingPage search={search} />;
   return (
     <AuthGate>
       <App />

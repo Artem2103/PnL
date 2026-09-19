@@ -21,11 +21,28 @@ puts a sign-in screen in front of the studio and starts keeping the card and its
 account, so they are there when you open it somewhere else. Nothing else changes. See
 **Accounts** below.
 
+## Pages
+
+Three of them, and no router — `src/lib/route.ts` reads `location.pathname` and changes it with
+`history.pushState`, which is all three paths need. `vercel.json` sends every path to `index.html`,
+so a reload or a shared link lands on the right one.
+
+| | | |
+|---|---|---|
+| `/` | front page | public: what Astra is, what it does, what the plans cost |
+| `/cards` | the studio | behind the sign-in gate |
+| `/pricing` | plans | public, so prices can be read before making an account |
+
+Anything else falls through to the front page. The editor used to be at `/`; it moved when the
+front page took the root, which is why an unknown path lands there rather than on the editor.
+
+Every topbar carries the same `SiteNav` — the wordmark, which is the way home, and **Cards** and
+**Plans** beside it.
+
 ## Accounts
 
-The app is one page — the studio — behind one gate. `AuthGate` renders the sign-in screen when
-there is no session and the studio when there is; there is no router, because there is nowhere else
-to go.
+`AuthGate` wraps the studio only: it renders the sign-in screen when there is no session and the
+editor when there is. The other two pages are public.
 
 **With no Supabase credentials there is no gate at all.** The studio opens straight away and
 everything is kept in this browser, under the id `local` — the app exactly as it was before accounts
@@ -103,9 +120,11 @@ one person's uploads in a shared browser's IndexedDB is not worth the download i
 ## Plans
 
 Accounts are free and make **one card a month**; a plan makes unlimited cards. **Monthly** is
-$5.99, **3 months** is $12.99. The plans page is `/pricing` and is public; the studio links to
-it from the topbar (**Upgrade**), the profile menu, the line under the export buttons, and the
-dialog a refused export opens.
+$5.99, **3 months** is $12.99. The plans page is `/pricing` and is public; the front page carries
+the same prices and the detail around them, and the studio links to it from the topbar
+(**Upgrade**), the profile menu, the line under the export buttons, and the dialog a refused export
+opens. The prices and the feature bullets come from `src/lib/billing.ts` on both pages, so the two
+cannot drift apart.
 
 - **What a card is.** The numbers and the name on it — mode, the trade or the period, and the
   brand strings. Colour, background, frame and export size are not part of it, so the month's

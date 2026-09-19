@@ -38,6 +38,24 @@ export const FREE_CARDS_PER_MONTH = 1;
  */
 export const CARD_PAYMENTS = import.meta.env.VITE_CARD_PAYMENTS === 'on';
 
+/**
+ * What each plan gets you, as the front page and the plans page both say it.
+ * Kept next to the prices so the two pages cannot drift apart.
+ */
+export const FREE_FEATURES: readonly string[] = [
+  `${FREE_CARDS_PER_MONTH} card a month`,
+  'Restyle and re-export that card as often as you like',
+  'PNG, MP4, copy and share',
+  'Card and media saved to your account',
+];
+
+export const PAID_FEATURES: readonly string[] = [
+  'Unlimited cards',
+  'PNG up to 3×, MP4 over your own clips',
+  'Copy and share straight from the editor',
+  'Card and media saved to your account',
+];
+
 export function monthlyPrice(plan: Plan): number {
   return plan.price / plan.months;
 }

@@ -1,16 +1,28 @@
 import { useEffect, useState } from 'react';
 
 /**
- * The app has two pages now — the studio at `/` and the plans at `/pricing` —
- * which is not enough to be worth a router. The path is read from `location`
- * and changed with `history.pushState`; `vercel.json` sends every path to
- * `index.html` so a reload or a shared link to `/pricing` lands here too.
+ * The app has three pages — the front page at `/`, the editor at `/cards` and
+ * the plans at `/pricing` — which is not enough to be worth a router. The path
+ * is read from `location` and changed with `history.pushState`; `vercel.json`
+ * sends every path to `index.html` so a reload or a shared link to `/cards`
+ * lands here too.
+ *
+ * The editor used to be at `/`. It moved so the front page could have the root,
+ * and an unknown path falls through to the front page rather than the editor —
+ * a stranger who mistypes should land on the page that explains what this is.
  */
 
-export type Page = 'studio' | 'pricing';
+export type Page = 'home' | 'studio' | 'pricing';
+
+export const HOME_PATH = '/';
+export const STUDIO_PATH = '/cards';
+export const PRICING_PATH = '/pricing';
 
 export function pageFor(pathname: string): Page {
-  return pathname.replace(/\/+$/, '') === '/pricing' ? 'pricing' : 'studio';
+  const path = pathname.replace(/\/+$/, '');
+  if (path === PRICING_PATH) return 'pricing';
+  if (path === STUDIO_PATH) return 'studio';
+  return 'home';
 }
 
 const listeners = new Set<() => void>();

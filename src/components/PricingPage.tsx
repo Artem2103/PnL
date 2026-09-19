@@ -2,7 +2,8 @@ import { useEffect, useId, useState, type FormEvent } from 'react';
 import { useAuth } from '../lib/auth';
 import {
   CARD_PAYMENTS,
-  FREE_CARDS_PER_MONTH,
+  FREE_FEATURES,
+  PAID_FEATURES,
   PLANS,
   fetchPayment,
   formatDay,
@@ -18,26 +19,13 @@ import {
   type PaymentRow,
 } from '../lib/billing';
 import { usePlanStatus } from '../lib/usePlanStatus';
-import { navigate, setAfterSignIn } from '../lib/route';
+import { PRICING_PATH, STUDIO_PATH, navigate, setAfterSignIn } from '../lib/route';
 import { ProfileMenu } from './ProfileMenu';
+import { SiteNav } from './SiteNav';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const POLL_MS = 5000;
 const POLL_FOR_MS = 30 * 60 * 1000;
-
-const PAID_FEATURES = [
-  'Unlimited cards',
-  'PNG up to 3×, MP4 over your own clips',
-  'Copy and share straight from the editor',
-  'Card and media saved to your account',
-];
-
-const FREE_FEATURES = [
-  `${FREE_CARDS_PER_MONTH} card a month`,
-  'Restyle and re-export that card as often as you like',
-  'PNG, MP4, copy and share',
-  'Card and media saved to your account',
-];
 
 export function PricingPage({ search }: { search: string }) {
   const { session, user, mode, loading: authLoading, signOut } = useAuth();
@@ -54,8 +42,10 @@ export function PricingPage({ search }: { search: string }) {
   const status = plan.status;
 
   const goSignIn = () => {
-    setAfterSignIn('/pricing');
-    navigate('/');
+    setAfterSignIn(PRICING_PATH);
+    // The sign-in form lives on the editor's path; signing in there sends them
+    // back here.
+    navigate(STUDIO_PATH);
   };
 
   const buy = async (id: PlanId) => {
@@ -74,24 +64,10 @@ export function PricingPage({ search }: { search: string }) {
   return (
     <div className="app">
       <header className="topbar">
-        <a
-          className="brand brand--link"
-          href="/"
-          onClick={(event) => {
-            event.preventDefault();
-            navigate('/');
-          }}
-        >
-          <span className="brand__mark" aria-hidden="true" />
-          <div>
-            <h1>Astra</h1>
-            <p>Plans</p>
-          </div>
-        </a>
+        <SiteNav current="pricing" />
         <div className="topbar__actions">
-          <button type="button" className="btn btn--ghost btn--small" onClick={() => navigate('/')}>
-            Back to editor
-          </button>
+          {/* No "Back to editor" here any more: the nav beside the wordmark
+              has Cards, and two ways to the same place in one bar is noise. */}
           {signedIn || accountsOff ? (
             <ProfileMenu
               user={user}
@@ -182,7 +158,7 @@ export function PricingPage({ search }: { search: string }) {
             <button
               type="button"
               className="btn btn--ghost tier__cta"
-              onClick={() => (signedIn || accountsOff ? navigate('/') : goSignIn())}
+              onClick={() => (signedIn || accountsOff ? navigate(STUDIO_PATH) : goSignIn())}
             >
               {signedIn || accountsOff ? 'Open the editor' : 'Create a free account'}
             </button>
