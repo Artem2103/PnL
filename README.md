@@ -173,12 +173,14 @@ Exported at 1×, 2× or 3× (up to 2520 × 1710).
 - **Nothing goes unreadable.** The big value picks black or white from whichever reads better on
   the block, and the percentage row is lifted or darkened if the accent would otherwise disappear
   into the ground. The block itself always keeps the exact colour that was chosen.
-- **Five built-in backgrounds, drawn rather than downloaded.** *Blade*, *Shards*, *Prism*,
-  *Bullion* and *Tide* are Astra's own artwork, painted by the same canvas renderer as the card:
-  faceted solids under one hard light, each on its own ground. They are polygons, not pictures, so
-  they cost no bytes, stay sharp at 3× and paint identically in the preview, the PNG and every frame
-  of a video. They live in `src/lib/canvas/scenes.ts`; `dev/scenes-shot.html` shows all five and
-  checks each one's export against its preview.
+- **One built-in background, drawn rather than downloaded.** **Astra** is the house sky: a bright
+  four-pointed star over a violet-to-blue field, a galactic band, three lesser sparks and a
+  190-star field. The app's name is the Latin for stars and its mark is a four-pointed spark, so
+  the background is what the name already says. It is painted by the same canvas renderer as the
+  card — polygons and gradients, not a picture — so it costs no bytes, stays sharp at 3× and paints
+  identically in the preview, the PNG and every frame of a video. **A new card starts on it.** It
+  lives in `src/lib/canvas/scenes.ts`; `dev/scenes-shot.html` renders it and checks its export
+  against its preview.
 - **Background: a photo or a clip.** Either fills the card, with a horizontal scrim protecting the
   text column. Placement is yours: zoom, horizontal and vertical pan, or just drag the preview and
   the background follows the cursor. `Recentre` puts it back.
@@ -254,9 +256,8 @@ the colour behaviour above. `dev/layout-shot.html` measures the vertical gaps th
 
 The reference cards' *backgrounds* are not reproduced either, and that is the same decision. They
 are commissioned 3D artwork and an illustration; copying them pixel for pixel would redistribute
-someone else's work in a product. What the built-in scenes take from them is the genre — faceted
-solids under one hard light on a near-black ground — and the lighting, measured off the artwork
-field the way the layout was measured off the ink. The objects are Astra's own.
+someone else's work in a product. The built-in sky is Astra's own picture of Astra's own name, and
+shares nothing with them but the idea of putting something behind the numbers.
 
 The layout is matched; the *branding* is not. The wordmark, logo mark, avatar and the left footer
 string are empty slots you fill with your own. The **right** footer string is the one fixed piece of
@@ -420,8 +421,7 @@ src/
     mp4.ts               container repair for MediaRecorder output      (tested)
     selftest.ts          preview-vs-export pixel diff (dev only)
     canvas/
-      scenes.ts          the five built-in backgrounds, and the little faceted
-                         solid renderer they are drawn with            (tested)
+      scenes.ts          the built-in background: the Astra sky             (tested)
       spec.ts            measured geometry
       placement.ts       cover fit, zoom and pan for the background     (tested)
       primitives.ts      ink-aligned text, tracking, rounded rects

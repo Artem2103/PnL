@@ -1,6 +1,7 @@
 import type { CardState } from '../types';
 import { MAX_CLIP_SECONDS } from './images';
 import { DEFAULT_FRAME_ID } from './frames';
+import { DEFAULT_SCENE_ID } from './canvas/scenes';
 import { DEFAULT_CUSTOM_ACCENT, DEFAULT_THEME_ID } from './themes';
 
 /**
@@ -61,7 +62,9 @@ export function createDefaultState(): CardState {
     },
     artwork: {
       imageId: null,
-      sceneId: null,
+      // A new card opens on the house sky rather than the plain ground: the
+      // first card someone makes should already look like something.
+      sceneId: DEFAULT_SCENE_ID,
       scrim: 0.8,
       zoom: 1,
       offsetX: 0,

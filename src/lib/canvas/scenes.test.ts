@@ -79,8 +79,10 @@ describe('the built-in scenes', () => {
     for (const scene of SCENES) {
       const { ctx, calls } = stubContext();
       expect(() => drawScene(ctx, CARD.width, CARD.height, scene)).not.toThrow();
-      expect(calls.fills).toBeGreaterThan(5);
-      expect(calls.strokes).toBeGreaterThan(0);
+      // The sky is fills all the way down — ground, blooms, band, stars, sparks.
+      // Nothing in it is stroked, so counting strokes would only pin an
+      // implementation detail of whatever is drawn next.
+      expect(calls.fills).toBeGreaterThan(50);
     }
   });
 

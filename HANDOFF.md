@@ -28,11 +28,78 @@ file easier to read:
 | 2026-09-22 | *no code* — **what more to add**: eight additions beyond the seven pieces, and two holes in the plan | see **Start here (2026-09-22)** |
 | 2026-09-22 (b) | **code**: the footer’s right string is fixed and out of card state; three period presets; the "too many settings" answer | see **Start here (2026-09-22 b)** |
 | 2026-09-22 (c) | **code**: five built-in backgrounds, drawn by the renderer — and why the reference ones were not copied | see **Start here (2026-09-22 c)** |
+| 2026-09-22 (d) | **code**: the five scenes became one — the Astra sky, bright, and the background a new card starts on | see **Start here (2026-09-22 d)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-09-22 d) — the five scenes became one: the Astra sky
+
+Artem, on seeing (c): *"they are completely different from the ones I need. Never mind, create only
+1 Default card, like our own designed 'Astra' card background, do it on your own taste, but make it
+definitely more bright than your current ones and the topic is stars."*
+
+He is right and the correction is worth recording rather than quietly applying. The five scenes in
+(c) were built to sit in the *reference cards'* genre — faceted solids, one hard light, near-black
+ground — which was the wrong brief twice over: it aimed the house artwork at someone else's art
+direction, and everything in that genre is dark. A background nobody reaches for is not a default.
+
+**There is now one built-in background, it is called Astra, and it is a sky.** The app's name is
+the Latin for stars and its mark is a four-pointed spark, so the house background is the thing the
+name already says. **A new card starts on it** (`DEFAULT_SCENE_ID` in `scenes.ts`, read by
+`createDefaultState`), which is also the first of the "make the default card already postable"
+points from (b) actually landing.
+
+#### What it is
+
+A violet-to-blue field, brightest under the artwork and falling away across the text column; four
+weak wide blooms (violet, cyan, rose, blue) rather than one strong one, because one colour reads as
+a spotlight and four read as depth; a galactic band across the diagonal; 190 stars, most of them
+small, a few haloed, warm and cool mixed; and four sparks — one large at the card's right-of-centre
+gap, three lesser ones for company.
+
+The whole of `scenes.ts` was rewritten. The faceted-solid renderer from (c) — vertices, camera,
+painter's algorithm, half-Lambert — is **gone**, not kept for later: nothing used it, and dead code
+that once drew five things nobody wants is worse than no code. `git show` on (c) has it if the
+genre ever comes back.
+
+#### Two bugs worth keeping in mind, both about compositing
+
+1. **`destination-out` does not erase only the thing you just drew.** The band's ends were faded
+   with a `destination-out` pass over its own rect, and that erased *everything already painted*
+   inside the rect — ground, blooms, stars. The visible result was two hard diagonal edges across
+   the sky where the erase stopped. It is now an ellipse: scaling the context turns one radial
+   gradient into a soft-edged band, and no second pass is needed at all.
+2. **`globalAlpha` applies to the erase too.** Before that, the same pass ran at the band's own
+   alpha (0.75), so it took away only three quarters of the ends and left a quarter-strength
+   rectangle behind — the same hard edges, fainter. Both were found by zooming into the render, not
+   by reading the code.
+
+Both are the kind of thing that looks fine at a glance and wrong the moment someone looks at the
+card at full size. The rule that fell out of it: **if a piece of the sky needs to fade at its edges,
+give it a shape whose gradient already does that, rather than cutting it out afterwards.**
+
+#### Verified
+
+`dev/scenes-shot.html` renders it as a whole card and runs `checkExportMatchesPreview` — the export
+path builds on an OffscreenCanvas, a different context implementation, so "it looks right on screen"
+is not evidence. `Astra [export matches, maxDelta 0]`, and `Plain` the same. 270 unit tests pass,
+typecheck and build clean. `?wide=1` is 1:1, `?tone=dark` the light card, where the sky is veiled to
+a pastel version that keeps black ink readable.
+
+One test changed with the art: `scenes.test.ts` used to require a stroke per scene, which was true
+of faceted solids and is false of a sky — it is fills all the way down. It now counts fills only.
+
+#### If it needs changing
+
+Everything about the picture is in one `draw` and four small helpers (`ground`, `band`, `spark`,
+`stars`). The star's size and position are the two numbers most likely to want moving:
+`spark(ctx, width * 0.75, height * 0.4, 168, …)` — reach 168 at 0.75/0.4 of the card. The palette
+is the scene's `ground`, `light` and `rim` plus the four bloom colours in `draw`.
 
 ---
 
@@ -3786,8 +3853,7 @@ src/
     billing.ts           prices, plan copy, the card key, and the calls that ask
     selftest.ts          preview-vs-export pixel diff (dev only)
     canvas/
-      scenes.ts          the five built-in backgrounds + the faceted solid
-                         renderer they are drawn with                   (tested)
+      scenes.ts          the built-in background: the Astra sky           (tested)
       spec.ts            measured geometry — change layout here, not in draw.ts
       placement.ts       cover fit, zoom, pan — shared by draw and drag  (tested)
       primitives.ts      ink-aligned text, tracking, cached metrics
@@ -3803,8 +3869,8 @@ src/
     FramePicker.tsx      the avatar-frame tiles, painted by drawAvatarFrame
     ...                  preview, controls, media picker, inputs
 dev/
-  scenes-shot.html       every built-in background as a whole card, each one's
-                         export diffed against its preview               (dev only)
+  scenes-shot.html       the built-in background as a whole card, its export
+                         diffed against its preview                      (dev only)
   start-check.html       browser harness: what happens in the FIRST second of an
                          export — frame-numbered source, file read frame by frame,
                          plus the controls that separated the two causes  (dev only)
