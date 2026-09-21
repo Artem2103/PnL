@@ -47,17 +47,21 @@ export function TextInput({
   placeholder,
   maxLength = 48,
   spellCheck = false,
+  ariaLabel,
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   maxLength?: number;
   spellCheck?: boolean;
+  /** Only for an input that is not wrapped in its own `Field` label. */
+  ariaLabel?: string;
 }) {
   return (
     <input
       className="input"
       type="text"
+      aria-label={ariaLabel}
       value={value}
       placeholder={placeholder}
       maxLength={maxLength}

@@ -154,6 +154,9 @@ Exported at 1×, 2× or 3× (up to 2520 × 1710).
 - **Two modes, one layout.** *Period* takes a title, a start balance and an end balance. *Trade*
   takes symbol, direction, leverage, entry, exit and the profit itself. Both derive the same three
   rows, so the layout never changes shape.
+- **The period title has three presets.** **1D Realized**, **7D Realized** and **30D Realized** sit
+  above the title field and fill it; the field stays, so "August 2026" or "Q3 2026" are still typed
+  in. The presets are `PERIOD_PRESETS` in `src/lib/content.ts`.
 - **Position size is not an input.** It differs by platform — MT5 lots, contracts, base units — and
   only scales the money, never the percentage, which is `price move × leverage` either way. So the
   profit is typed straight in as it reads on your statement, and the editor flags it when the sign
@@ -177,7 +180,8 @@ Exported at 1×, 2× or 3× (up to 2520 × 1710).
   seconds, trimmed with a start point and a length, the clip's own audio kept or dropped. The
   numbers, rows, accent and marks are painted on every frame by the same renderer that makes the
   PNG.
-- **Your own marks**: wordmark, handle, avatar, logo, and both footer strings are yours to set.
+- **Your own marks**: wordmark, handle, avatar, logo and the left footer string are yours to set.
+  The right one is fixed — see below.
 - **Seven avatar frames.** The pin — a pip over a gradient ring — takes any colour, and the whole
   badge is worked out from that one colour: the ring's shading, the pip and its highlight keep the
   relationship the original red has. The tag is the frame the reference cards wear. Gilt is gold;
@@ -242,8 +246,11 @@ the colour behaviour above. `dev/layout-shot.html` measures the vertical gaps th
 
 ### What is deliberately not reproduced
 
-The layout is matched; the *branding* is not. The wordmark, logo mark, avatar and footer strings are
-empty slots you fill with your own. Shipping a generator preloaded with another company's mark and
+The layout is matched; the *branding* is not. The wordmark, logo mark, avatar and the left footer
+string are empty slots you fill with your own. The **right** footer string is the one fixed piece of
+text on the card: it always reads *Save 10% off fees*, there is no input for it, and it is not part
+of card state at all — `FOOTER_SECONDARY` in `src/lib/content.ts` is the only place it exists, so
+changing it is a change to that line and a redeploy. Shipping a generator preloaded with another company's mark and
 domain would make it a tool for producing counterfeit cards attributed to them, which is a different
 product from this one. Put your own mark in and the card is identical in every other respect.
 

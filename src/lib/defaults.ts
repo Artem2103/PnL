@@ -44,7 +44,6 @@ export function createDefaultState(): CardState {
       wordmark: '',
       handle: '@yourhandle',
       footerPrimary: 'yoursite.com',
-      footerSecondary: 'Save 10% off fees',
       currency: 'USD',
     },
     display: {

@@ -7,6 +7,24 @@ import {
   formatSmartPercent,
 } from './format';
 
+/**
+ * The footer's right-hand string, on every card, always.
+ *
+ * It is a constant rather than a field of `BrandState` on purpose: the editor
+ * has no input for it, nothing in the app writes it, and an old save or a
+ * hand-edited `cards` row cannot carry a different one, because there is no
+ * longer a key for it to be carried in. Changing what the card says here is a
+ * change to this line and a redeploy.
+ */
+export const FOOTER_SECONDARY = 'Save 10% off fees';
+
+/**
+ * The three periods the card is usually made for. They fill the title field
+ * rather than replacing it — a month ("August 2026", which is what the
+ * reference card says) still has to be typeable.
+ */
+export const PERIOD_PRESETS: readonly string[] = ['1D Realized', '7D Realized', '30D Realized'];
+
 export interface CardRow {
   label: string;
   value: string;

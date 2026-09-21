@@ -54,7 +54,6 @@ describe('foregroundKey', () => {
     ['wordmark', (s) => ({ ...s, brand: { ...s.brand, wordmark: 'OTHER' } })],
     ['handle', (s) => ({ ...s, brand: { ...s.brand, handle: '@someone' } })],
     ['footer left', (s) => ({ ...s, brand: { ...s.brand, footerPrimary: 'elsewhere.com' } })],
-    ['footer right', (s) => ({ ...s, brand: { ...s.brand, footerSecondary: 'Code: OTHER' } })],
     ['currency', (s) => ({ ...s, brand: { ...s.brand, currency: 'EUR' } })],
     ['theme', (s) => ({ ...s, display: { ...s.display, themeId: 'gold' } })],
     ['text tone', (s) => ({ ...s, display: { ...s.display, textTone: 'dark' } })],

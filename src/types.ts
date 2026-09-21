@@ -40,9 +40,14 @@ export interface BrandState {
   wordmark: string;
   handle: string;
   footerPrimary: string;
-  footerSecondary: string;
   currency: string;
 }
+
+/*
+ * The footer's right-hand string is deliberately *not* here. It is fixed, and
+ * a state field that must never vary is a lie the next reader has to check:
+ * see `FOOTER_SECONDARY` in `lib/content.ts`.
+ */
 
 /**
  * Which of the two inks every string outside the accent block is printed in.

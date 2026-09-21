@@ -19,11 +19,1082 @@ file easier to read:
 | 2026-09-16 | exports made on a phone carry sound (second pass: Safari's magic cookie) | see **Start here (2026-09-16)** |
 | 2026-09-17 | plans page, 1 free card a month, promo code MM33, NOWPayments checkout | pushed; **payments, limit and MM33 wait on setup** — see **Start here (2026-09-17)** and `SETUP-PLANS.txt` |
 | 2026-09-19 | front page at `/`, editor moved to `/cards`, one nav in every topbar | see **Start here (2026-09-19)** |
+| 2026-09-20 | *no code* — where Astra goes next: the journal/social/AI question, answered | see **Start here (2026-09-20)** |
+| 2026-09-20 (b) | *no code* — **visual memory, not a journal**; supersedes most of (a) | see **Start here (2026-09-20 b)** |
+| 2026-09-20 (c) | *no code* — **equipment, not analytics**: beauty + motivation; narrows (a) and (b) | see **Start here (2026-09-20 c)** |
+| 2026-09-20 (d) | *no code* — **the spine**: the clan's proof-of-discipline layer. Read this one first | see **Start here (2026-09-20 d)** |
+| 2026-09-20 (e) | *no code* — **decided**: native iOS, MT5 broker sync, clans and leaderboard | see **Start here (2026-09-20 e)** |
+| 2026-09-20 (f) | *no code* — **the recommendation**: Strava for traders, seven pieces, $15-20/mo | see **Start here (2026-09-20 f)** |
+| 2026-09-22 | *no code* — **what more to add**: eight additions beyond the seven pieces, and two holes in the plan | see **Start here (2026-09-22)** |
+| 2026-09-22 (b) | **code**: the footer’s right string is fixed and out of card state; three period presets; the "too many settings" answer | see **Start here (2026-09-22 b)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-09-22 b) — the fixed footer, the period presets, and the "too many settings" note
+
+Two changes to the editor, and an answer to a piece of user feedback that was explicitly *not* to be
+acted on yet. `npm test` 264 passed, `npm run typecheck` clean, `npm run build` clean.
+
+### 1. "Save 10% off fees" cannot be changed
+
+It used to be `brand.footerSecondary`, a text field in **Identity** called *Footer right*. It is now
+`FOOTER_SECONDARY` in `src/lib/content.ts` and **nothing else**.
+
+The important part is not that the input was removed — it is that **the field was removed from card
+state**. Deleting the control alone would have left the string in `localStorage`, in the account's
+`cards` row and in the state object the bundle hands to the renderer, all three of them editable by
+anyone who wanted to. With no key on `BrandState` there is nowhere for a different value to live, and
+`hydrateState`'s `merge` only copies keys the current model has, so an old save carrying the old
+field drops it on the way in. `src/lib/defaults.test.ts` pins exactly that: hydrate a blob with a
+`footerSecondary` in it, and the string is not anywhere in the result.
+
+| file | what changed |
+|---|---|
+| `src/types.ts` | `footerSecondary` gone from `BrandState`, with a comment saying where it went and why |
+| `src/lib/content.ts` | `FOOTER_SECONDARY` — the one place the string exists |
+| `src/lib/canvas/draw.ts` | `drawFooter` paints the constant; the field is out of `foregroundKey` |
+| `src/lib/defaults.ts` | out of the default brand |
+| `src/components/ControlPanel.tsx` | *Footer right* deleted; *Footer left* is full width and its hint names the fixed string, so the panel still says what the card will read |
+| `src/lib/canvas/draw.test.ts` | the `footer right` key case deleted — there is no control to move the key any more |
+| `dev/align-shot.html` | stops setting it; the harness still renders the same string, from the constant |
+
+**Two consequences worth knowing.**
+
+- `cardIdentity` in `src/lib/billing.ts` hashes `state.brand` whole, so every card's `cardKey`
+  changes with the shape of `BrandState`. A free card exported before this deploy and re-exported
+  after it counts as a *second* card that month. One-off, affects only whoever is mid-month on the
+  free plan, and not worth a migration — but it is the reason the number could move.
+- **`display.showFooter` still hides the whole footer row**, both strings, as it always has. The
+  string cannot be *changed*; it can still be switched off along with the left one. If the intent is
+  that every card carries it, that toggle is the remaining hole and closing it is a separate
+  decision — the honest version is that the right half stops following `showFooter`, which makes the
+  toggle mean something narrower than it says.
+
+### 2. Period: three presets above the title field
+
+`PERIOD_PRESETS` in `src/lib/content.ts` — **1D Realized**, **7D Realized**, **30D Realized** — drawn
+as a `Segmented` above the existing title input. Asked for as *"3 buttons on one level, and the same
+field 'text' that we have now just below it"*, so the field is untouched: the presets write into it,
+a typed title clears the active chip by simply not matching one, and "August 2026" is still typeable.
+The card's title is `period.title` exactly as before; nothing downstream knows a preset happened.
+
+Two details that are not obvious from the diff:
+
+- **The group is a `div.field`, not a `Field`.** `Field` renders a `<label>`, and two controls under
+  one label means clicking the word "Title" presses the first preset. Same class, same styling, a
+  plain `<span class="field__label">`, and the input carries `ariaLabel` (new optional prop on
+  `TextInput`) so it is still named.
+- **`.presets .segmented__item` is tightened** to 11.5px and 5px side padding in `global.css`. These
+  buttons print their whole title, and *"30D Realized"* three times across is about 20px wider than
+  the controls column at its 340px minimum. Tightened there rather than on `.segmented__item`, so the
+  Period/Trade switch above keeps its size.
+
+Verified in `dev/controls.html`: the three fit on one row, a click sets the title and the card, and
+**Identity** now reads Wordmark / Handle / Footer left / Avatar.
+
+### 3. "Too many settings" — suggestions only, nothing done
+
+Artem: *"my friend said there are so many settings it looks a bit complicated and he got really
+tired when he designed his first card. For me it's a pleasure to sit and try out different settings.
+Don't do anything about it now, any suggestions?"*
+
+Both are telling the truth, about different people. Artem is the tinkerer; the friend is a
+first-timer who wanted a card, not a session. The mistake would be to believe the complaint means
+"remove settings" — remove them and the card stops being anyone's, which is the only thing
+separating Astra from a template site. **The fix is layering and arrival, not subtraction.** In
+rough order of how much tiredness each one removes per hour of work:
+
+| | | |
+|---|---|---|
+| 1 | **Looks: the whole style in one click** | A row of five or six complete looks — accent, ink, frame, scrim, hero format, all at once — each tile painted by `drawCard` itself at thumbnail size, so it shows the actual card rather than a colour chip. Turns eight decisions into one and leaves every control exactly where it is for whoever wants it. This is the single highest-leverage change on the list |
+| 2 | **Identity is setup, not a card decision** | Wordmark, handle, avatar, logo, footer left are set once and then true forever. Asking for them inside the card panel makes them feel like part of making *this* card. Moved to a "Your marks" screen, asked once after sign-up, five controls leave the card flow permanently |
+| 3 | **One fold: `Customise`** | First screen: numbers, Looks, background. Behind a disclosure: custom RGB, frame colour, frame picker, scrim, zoom/pan, export scale. Nothing is removed and the panel is half as tall on arrival |
+| 4 | **Make the default card already postable** | It opens flat — `$10.0K` to `$10.0K`, no wordmark, a white pin — which reads as unfinished, and an unfinished card makes the panel feel compulsory. A default that already looks like something makes every setting optional, which is the actual goal |
+| 5 | **Undo** | A lot of what reads as "tiring" is *"I changed something and I can't get back"*. Artem explores freely because he knows the way back; a newcomer does not. One `Ctrl`/`⌘`+`Z` over the card state would change how the panel feels more than deleting controls would |
+| 6 | **Order the panel by how often things are touched** | Title and numbers, then background, then colour, then the rest. Avatar frames and RGB sliders are the rarest controls in the app and currently sit above things used on every card |
+| 7 | **`Surprise me`** | One button that randomises the styling and leaves the numbers alone. Cheap, fun, and it hands a finished look to someone who does not want to make a single aesthetic decision |
+
+Worth saying plainly: **do not decide this from opinion.** Nothing currently records which controls
+people touch, and with accounts on, a saved card is already a row — comparing it against
+`createDefaultState()` says which fields anyone ever changes, from the user's own data, without
+adding a tracker. One week of that beats any amount of arguing about which settings are the
+tiresome ones.
+
+Today's two changes are already small steps in this direction, by accident rather than by plan: the
+panel has one control fewer, and the most common period titles no longer have to be typed.
+
+---
+
+## Start here (2026-09-22) — what more to add, on top of the seven pieces
+
+Artem: *"What more do you think we can add to our project?"* Asked after (f), so this is not another
+survey of the whole product — (a)–(f) already decided the shape. This section holds only what is
+**not** in the seven pieces, plus two holes in the plan that are cheaper to close before they are
+built into.
+
+No code again. `git diff --stat` since 2026-09-19 is `HANDOFF.md` alone.
+
+#### First, the unwelcome answer: three things are already owed, and none of them is a feature
+
+Nothing below is worth starting before these, because two of them mean the shipped product does not
+currently work and the third decides whether the next one can exist at all.
+
+| | | where |
+|---|---|---|
+| 1 | **Production is an open, anonymous editor.** `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` are not set in Vercel, and every deploy of `main` republishes it that way | Open items 9 and 10 |
+| 2 | **Nobody can pay.** The plans page, the free-card limit, `MM33` and the NOWPayments IPN are all written and all waiting on the setup steps | `SETUP-PLANS.txt`, **Start here (2026-09-17)** |
+| 3 | **The MetaApi spike.** One day on a demo MT5 account, and it prices the whole product | (e), build order step 1 |
+
+They are in this section only so that "what can we add" does not quietly become the reason they stay
+open. Everything from here on assumes they are done.
+
+#### The eight, ranked
+
+**1. The screenshot comes back — attached to the synced trade, not instead of it.**
+This is the strongest idea in this section, and it exists because (b) and (e) were both right about
+different halves. Broker sync gives Astra the numbers and cannot give it **the chart** — what the
+trade looked like, and the hand-drawn annotations that are the actual skill here (see the workflow
+in (b): screenshot → Telegram Saved Messages, every trade). So: the trade arrives from the broker
+with symbol, direction, times and result; the trader forwards the screenshot to the Astra bot and it
+**attaches itself to the right trade automatically**, matched on symbol and timestamp. Nothing is
+typed, nothing is classified, and the record page stops being a table of returns and becomes the
+archive they already keep by hand — only searchable, and verified on the numbers side. The screenshot
+mechanic that (e) killed was a way of *getting the numbers*; that is dead and should stay dead. This
+is a different thing wearing the same gesture.
+
+**2. The Telegram bot, because the rejection of a social feed implies it.**
+(f) rules out a feed on the grounds that Telegram already is one. Then the conclusion is not "no
+social surface", it is **go there**: the bot posts the card into the clan's group the moment a trade
+closes, answers `/leaderboard` in-group, and takes the forwarded screenshot from item 1. It is also
+the cheapest distribution this product will ever have — every card posted by the bot carries the
+mark of the app that made it, in the exact room where the next twenty users are. It needs the
+server-side renderer that is already build-order step 4, and no new client.
+
+**3. A verifiable card link, so the card is proof outside the app.**
+Today a card is a picture of numbers somebody typed — the README says so under *Notes and limits*,
+and that does not change when the numbers start arriving from a broker, because the **picture** is
+still just a picture once it is in a Telegram group. Give every card made from a synced trade a
+short URL and a small mark on the card that points at it: a page that says this card came from a
+connected account, sealed on this date, unedited. That single line is the difference between the
+card being decoration and being the receipt the whole product claims to sell — and it is the one
+piece of verification that survives leaving the app. Cards made by hand simply do not get the mark,
+which is also the clearest possible statement of what a plan buys.
+
+**4. Rich link previews from the same renderer.**
+Consequence of 3, nearly free: those card URLs render as image previews in Telegram, X and Discord.
+One `og:image` route, served by the renderer already being built, and every shared link becomes the
+card rather than a grey rectangle.
+
+**5. Clan seasons, and a trophy that stays.**
+A perpetual monthly ladder goes stale the moment the same clan is on top twice, and everyone ranked
+fortieth stops looking. Close the month, name a champion, mint a **season card** for the clan and a
+permanent trophy row on every member's record page, then reset. It costs one table and gives three
+things: a recurring share moment the product creates for itself, a reason for a mid-table clan to
+care about next month, and more of the accumulated history that makes leaving expensive.
+
+**6. The discipline score — the clan's rules, scored from the synced data.**
+(d) called the clan a proof-of-discipline layer and (e) worried, rightly, that ranking on return
+alone pays people to gamble. Both are answered by the same feature: a clan writes its own rules —
+max trades a day, max risk per trade, nothing after a set hour, no revenge trade within an hour of a
+loss — and Astra scores adherence from the trade history it already syncs. Nobody types anything; the
+rule is a setting, the evidence is the feed. Rank the leaderboard on return **and** adherence, and
+the thing being admired changes from the luckiest month to the steadiest one, which is the identity
+the clan was described as having in the first place.
+
+**7. Red cards, made as carefully as the green ones.**
+Every reference card is a profit and the loss colour has never been measured (Open item 2). A
+community that says its identity is discipline needs equipment for the bad month too: the drawdown
+card, the "back to breakeven" card, the honest month. Milestone cards in (f) already catch the
+recovery; what is missing is that the red card should be as beautiful as the green one rather than
+the green one with a minus sign. It is a theme pass in `themes.ts`, and it buys a kind of credibility
+that no amount of verification does.
+
+**8. A vertical card format.**
+The card is 840 × 570 and the places it gets posted are Stories and status — 1080 × 1920 — and square
+feeds. It is reach, not polish. Flagged, not started: it touches `spec.ts` and `draw.ts`, which are
+finished work, so it is Artem's call to open them and it should be a deliberate second layout rather
+than a stretched first one.
+
+#### Two holes in the plan as it stands
+
+**The leaderboard's verification has a demo-account hole.** (e)'s four design choices — percentage
+not dollars, median not total, minimum members, connected accounts only — are all right and none of
+them stops the obvious attack: MetaApi connects a **demo** account exactly like a live one, and a
+$50 account can print 400% in a week without anyone lying about anything. Two more rules, decided now
+rather than after the first disputed season: **live accounts only**, and a **minimum equity floor**
+to be ranked. Consider showing account age too. Without these the ladder is fiction in the second
+month rather than the second week, which is worse, because by then people will have believed it.
+
+**The credential ask is the funnel, and it comes before any value is delivered.** "Type your MT5
+investor password" is a large thing to ask a stranger on the first screen, however read-only it is.
+The fix is order, not copy: let a new account **import a statement** first — already the planned free
+tier, already zero infrastructure — so the record page has their real history in it before the
+connect screen is ever shown. Connecting then upgrades something they can see instead of unlocking
+something they have been told about.
+
+#### Still deliberately out
+
+Everything (f) excluded stays excluded — no AI coach, no signals or copy trading, no in-app feed, no
+manual trade-entry forms, no analytics dashboard. Two additions to that list from this pass: **no
+broker execution, ever** (it is what keeps Astra out of a licensing conversation and out of App
+Review's harder queue), and **no paid-signal storefront on profiles**, which is the failure mode (e)
+predicted for a top-of-leaderboard profile with a Telegram link on it.
+
+#### If only one thing gets built
+
+Item 1. The numbers are the part a broker can hand over; the picture is the part only the trader has,
+and it is the part they are already producing, every trade, by hand, into a chat with themselves.
+
+---
+
+## Start here (2026-09-20 f) — my recommendation, asked for plainly
+
+Artem: *"tell me what YOU think is a good app to build... a list of ideas that make up a total of a
+good and decent app that people will be willing to pay for."* So this is an opinion, not a survey.
+
+#### The pitch, in three words
+
+**Strava for traders.** Verified runs become verified trades, segments become the clan leaderboard,
+and the beautiful shareable card is the one piece he has already built better than anyone in his
+market. It is a proven model, it has never been done for the MT5/TradingView world, and the hardest
+part to copy is the part that already exists.
+
+#### What people actually pay for
+
+Not analytics. One sentence: **"my results are verified, and my clan can see them."** Everything in
+the list below either produces that sentence or supports it.
+
+#### The seven pieces
+
+| | | why it earns its place |
+|---|---|---|
+| 1 | **Read-only broker connect** | the foundation. Without verification nothing else is worth money, because every number is claimable |
+| 2 | **Automatic PnL cards** | trade closes, card appears, he posts it. Zero effort. The existing crown jewel, now automatic — and it is also the entire marketing budget |
+| 3 | **The record page** | permanent profile: verified return, streaks, best trades, social links. The thing that **accumulates**, which is the thing that makes leaving expensive |
+| 4 | **Clans and the leaderboard** | median-based, verified-only. The retention engine. Competing with your brothers is the reason to open it on an ordinary Tuesday |
+| 5 | **Steps and streaks as the daily pulse** | HealthKit steps plus a rule streak. A non-trading reason to open the app every day, and true to a community whose identity is discipline, not charts |
+| 6 | **Milestone cards** | the app catches the moment: first green month, back to breakeven after a drawdown, 100 trades, one year in. Share moments the product *creates* instead of waiting for |
+| 7 | **Year in Review** | once a year, enormous organic spread in a Telegram-native region, no ongoing cost |
+
+#### What to deliberately leave out
+
+Worth as much as the list above, and all of it was considered and rejected across (a)–(e):
+
+- no AI coach
+- no signals, no copy trading
+- no social feed — Telegram already is the feed
+- no manual trade-entry forms
+- no analytics dashboards nobody opens
+
+#### Pricing
+
+**$15–20/mo, not $5.99.** The old price was set for a card generator with no marginal cost; broker
+sync bills per account per month, and the thing being sold is identity and competition rather than a
+picture. Free tier: manual cards and statement import, no live sync, not eligible for the
+leaderboard — which makes the paywall the same line as the verification.
+
+#### The one risk that matters
+
+This lives or dies on **broker sync working reliably**, not on design. If MT5 connectivity is flaky
+or expensive per account, every one of the seven pieces degrades at once. That is why the MetaApi
+spike in (e) is the first and cheapest thing to do, and why nothing should be designed around a
+price until it is measured.
+
+---
+
+## Start here (2026-09-20 e) — decided: native iOS, broker sync, clans
+
+Artem made the call. This section is the spec that follows from it, plus the four things that will
+bite and are cheaper to know now. It replaces the *delivery* questions left open in (d); the spine
+in (d) still stands, the shape of it changed.
+
+Still no code. `git diff --stat` all week is `HANDOFF.md` alone — nothing under `src/`, nothing in
+the video compiler or the cards page.
+
+#### What he asked for
+
+> *"Actually I want it to be a real iOS app, and I want the PnL cards to be like TradeZella. Not by
+> sending a screenshot from MT5, but by my app connecting to the broker and doing the PnL card
+> itself. Steps? Just take from a health app. Also I want it to be possible to make Leaderboard of
+> Clans, like which clan is more UP this month in PnL. And every profile has their own social media
+> links, so that way you can connect with other top traders from other clans."*
+
+Five decisions, all of them consistent with each other:
+
+| | decision | consequence |
+|---|---|---|
+| 1 | native iOS app | HealthKit becomes trivial; App Store review and IAP become real |
+| 2 | broker connection, not screenshots | the cards become **verified by construction** — this is the big one |
+| 3 | steps straight from HealthKit | needs the native app, which he now has. Settled |
+| 4 | clan leaderboard by monthly PnL | the retention engine, and the thing that needs designing carefully |
+| 5 | profiles with social links | the cross-clan growth loop |
+
+The screenshot mechanic from (c)/(d) is dead, and he is right that it was the lesser version — it
+was a workaround for not having broker access. With a broker connection the cards fill themselves,
+the leaderboard means something, and the "no typing" requirement is satisfied completely rather than
+cleverly.
+
+#### The one thing that decides the whole project: MT5 connectivity
+
+He said the market is TradingView + MT5. So "connect to the broker" means **MT5**, not Binance or
+Bybit, and that is a different and harder problem than crypto exchange APIs.
+
+The credential that matters: **MT5 has an investor password — read-only by design.** It can view the
+account and its history and it cannot trade or withdraw. That is the right thing to ask for, and
+making that limitation loud is the difference between people connecting and people not.
+
+Routes, honestly:
+
+| route | what it is | verdict |
+|---|---|---|
+| **MetaApi** (metaapi.cloud) | commercial cloud API that connects to MT4/MT5 accounts via investor password. What most journals in this space actually use | **start here.** Fastest path to a working sync. Priced **per connected account per month** — check current pricing, it is the whole unit-economics question below |
+| self-hosted MT5 terminal farm | run MT5 terminals server-side, one per account | cheaper at scale, heavy and fragile to operate. A later optimisation, never a starting point |
+| MT5 Manager / Web API | the official server-side API | **not available to third parties** — brokers only. Rule it out |
+| broker REST APIs | some brokers expose one | most CIS/offshore brokers don't. Opportunistic at best |
+| statement import (HTML/XLSX export) | the user exports a report and uploads it | not live, but **zero infrastructure and zero cost.** Keep as the fallback for unsupported brokers — it will cover a real tail |
+
+**Spike this before anything else.** Open a demo MT5 account, connect it through MetaApi, pull the
+trade history, and see what the data actually looks like. It is a day of work and it decides whether
+the product exists in this shape.
+
+#### The finding that changes the business: per-account cost meets $5.99
+
+Every plan so far assumed the marginal cost of a user was ~zero. Broker sync breaks that. A hosted
+MT5 connection is billed **per account per month**, continuously, whether or not the user opens the
+app — and at $5.99/mo that is the difference between a healthy margin and none.
+
+Three levers, and he will probably need all three:
+
+- **Price above it.** TradeZella is ~$29/mo and this is the same cost structure. $5.99 was priced
+  for a card generator with no variable cost; a broker-synced journal is a different product and can
+  carry a higher number.
+- **Only connected accounts cost money.** Free tier = statement import and manual cards, no live
+  sync. Live sync is the paid feature, which is also the cleanest paywall this product has ever had.
+- **Sync on a schedule, not continuously.** Poll a few times a day rather than streaming; disconnect
+  dormant accounts and reconnect on demand.
+
+This is the single most consequential thing in this section. It should be settled before the app is
+designed around a price that cannot work.
+
+#### The clan leaderboard, and the incentive problem in it
+
+Ranking clans by "who is most up this month" rewards, precisely and mechanically, **maximum risk** —
+and a clan leaderboard adds peer pressure to gamble on the clan's behalf. The winner each month is
+whoever got luckiest with the most leverage, and that account is also the one most likely to be gone
+by spring.
+
+That is his call to make and the feature is worth building. But four design choices decide whether
+it survives contact with its own users, and they cost nothing to get right up front:
+
+| choice | why |
+|---|---|
+| **percentage return, never absolute dollars** | otherwise the biggest account wins forever and nobody else bothers |
+| **rank on the clan's *median* member, not its total** | on a total, one degenerate with 100× leverage carries the whole clan. On a median, a clan wins by **everyone** being decent — which is both a better game and much closer to the brotherhood identity the clan is actually built on |
+| **minimum verified members and minimum trades to appear** | a two-man clan wins every month on variance alone |
+| **connected accounts only** | an unverified leaderboard is fiction inside a week. This is why decision 2 above is load-bearing for decision 4 |
+
+Optional and worth considering: show **max drawdown beside the return**. It stops nothing, but it
+changes what gets admired, and admiration is the actual product here.
+
+#### Profiles and social links — the growth loop, with one thing to decide on purpose
+
+Links out to Telegram, Instagram and X are what make climbing the leaderboard worth anything, and
+cross-clan connection is a genuine reason to open the app. Keep it.
+
+The thing to decide deliberately rather than discover: **a top-of-leaderboard profile with a
+Telegram link is a signal-channel funnel.** It will happen on its own, and it is the exact thing he
+rejected on day one. Either that is fine and it is part of the ecosystem, or the rules say something
+about it. Better chosen now than litigated after the first paid-signals scandal inside a clan.
+
+#### Four things about shipping on iOS that change plans already made
+
+**1. Apple takes a cut and requires IAP — the NOWPayments checkout does not work inside the app.**
+`api/checkout.ts` opens a NOWPayments hosted invoice in the browser. Apple requires In-App Purchase
+for digital subscriptions, so the iOS app needs **StoreKit**, and Apple takes 30% (15% under the
+Small Business Program, which he will qualify for). The web checkout stays and keeps serving web
+users at full margin. `SETUP-PLANS.txt` is still worth finishing — it just stops being the only
+payment path. Plan for two.
+
+**2. Review latency replaces instant deploys.** Every iteration now costs a TestFlight build and a
+review queue instead of a `git push`. That is a fact to plan around, not an argument against the
+decision — but it is why keeping a web surface for fast iteration is worth something even after the
+app ships.
+
+**3. Trading apps get extra scrutiny.** Astra never executes trades and never touches funds, which
+is the thing that keeps this simple — it is read-only analytics. Expect questions anyway, keep the
+HealthKit purpose strings honest, and don't let any marketing copy imply investment advice or
+promise returns.
+
+**4. Credentials are now the security surface.** Investor passwords must be encrypted at rest, never
+in the app bundle, never in logs, never reachable from the client. This is the first part of Astra
+where a mistake is not a bug but an incident.
+
+#### Stack, and the one piece of luck
+
+The card renderer in `src/lib/canvas/` is good, finished, and off-limits — and it does not have to
+be rewritten for any of this. **Render cards on the server.** The app asks for a card and displays a
+PNG; the existing canvas code runs headless behind an endpoint. That keeps every pixel of the work
+already done, serves the app, the web and any future bot from one renderer, and touches nothing.
+
+For the app itself:
+
+| | |
+|---|---|
+| **Expo / React Native** *(recommended)* | reuses his TypeScript, HealthKit via `react-native-health`, and Android comes almost free later. Cards arrive as server-rendered images, so nothing needs porting |
+| Swift / SwiftUI | best feel and the best App Store citizen, but it is a second codebase in a language the project doesn't use, and Android would be a full rewrite |
+
+The video export stays exactly where it is: web, client-side, untouched.
+
+#### Build order
+
+| | | why here |
+|---|---|---|
+| 1 | **MetaApi spike on a demo MT5 account** | one day, and it decides everything. Nothing else starts first |
+| 2 | settle pricing against the measured per-account cost | designing the app around $5.99 before knowing this is the expensive mistake |
+| 3 | schema: `broker_accounts`, `trades`, `clans`, `clan_members`, `leaderboard_snapshots` | RLS keyed to `auth.uid()` like everything already there |
+| 4 | server-side card rendering endpoint | unblocks every client, changes no existing file |
+| 5 | Expo app: auth, HealthKit steps, profile + social links | the shell, and the part with no unknowns in it |
+| 6 | auto-generated cards from synced trades | the moment the product becomes what he described |
+| 7 | clans, membership, the leaderboard | median-based, verified-only, per the table above |
+| 8 | StoreKit subscriptions | last, and only once there is something worth subscribing to |
+
+Realistic scope: this is months, not weeks — a native app, broker infrastructure and a social layer
+are each substantial on their own. The order above is arranged so the two things that can kill it
+(steps 1 and 2) are answered in the first week, for almost nothing.
+
+---
+
+## Start here (2026-09-20 d) — the spine, and what the clan actually is
+
+This is the synthesis of four days of direction-finding, and the section to read if you only read
+one. (a), (b) and (c) are the working; this is the conclusion. Still no code — nothing under `src/`,
+the video compiler or the cards page has been touched all week (`git diff --stat` is `HANDOFF.md`
+alone).
+
+#### The thing Artem said last, which reframes everything before it
+
+> *"My idea was based on our community. We have a shared channel about mentality, high frequency,
+> manifestation and all that. We also have a StepUp app that calculates our steps every day from the
+> health app. And we like compete who walks more. So I thought making like an improvement sector...
+> maybe making like a Threads/X social media line where every member of the clan posts their
+> everyday life, but we have a Telegram chat where we talk, so no need for that probably."*
+
+**His community is not a trading community. It is a self-improvement brotherhood that happens to
+trade.** Mentality, discipline, manifestation, and a step-count competition. Trading is one
+expression of a wider identity: a group of men competing to become better versions of themselves and
+proving it to each other.
+
+That is not a pivot away from the four days before it. It is the thing that makes them fit together:
+
+- Trading well, the way he describes it, **is a discipline sport.** The edge is not in analysis, it
+  is in doing the same disciplined thing over and over. That is precisely why every analysis feature
+  proposed this week was rejected — the bottleneck was never analysis.
+- The step competition and the trading are **the same game**: did you do the thing today, and can
+  you prove it to your brothers.
+- A PnL card and a step count are **the same object**: proof of doing, made beautiful, witnessed by
+  peers.
+
+So Astra is not a trading app with a fitness feature bolted on. It is **the clan's proof-of-
+discipline layer, where trading is the first and best-looking domain.** That answers *"I don't want
+it to be just a card PnL thing"* properly: the card stops being the product and becomes the
+primitive.
+
+#### One mechanic, many domains
+
+**Screenshot the proof → get a beautiful card → your clan sees it.**
+
+That is the whole engine, and Astra already does the hardest third of it. It generalises without a
+single new integration: an MT5 PnL screenshot, a step count from the health app, a gym session, a
+finished book. Same gesture the community already performs a dozen times a day, same renderer, same
+share surface.
+
+It also quietly solves the steps problem. A Telegram Mini App cannot read Apple HealthKit — that
+needs a native app. But it does not have to: **a screenshot of the step count is proof**, and it is
+the identical mechanic to the MT5 screenshot. No HealthKit, no App Store, no native build. If step
+sync ever justifies a native app, that is a later decision made on evidence, not a blocker now.
+
+#### "That's mostly for mobile" is not the obstacle he thinks it is
+
+This was his one stated objection and it dissolves. The step data is on the phone, the community
+lives in Telegram, Telegram is a phone app, and the screenshots come from phones — **the product is
+already mobile.** What he does not need is a *native* app.
+
+**Telegram Mini Apps** are the answer, and they are the native format of this region: a web app that
+runs inside Telegram, launched from a bot, no App Store, no install, no download friction, and
+shareable by link into the chat the clan is already sitting in.
+
+The technical fit is unusually good. This repo is React 19 + Vite, which is exactly what a Mini App
+is built from, and the card renderer draws to a canvas that works fine in a Telegram webview. The
+existing card pipeline is reusable **as-is** — to be clear, that means reused, not modified: the
+renderer, the exporter and the cards page stay untouched per the standing rule, and a Mini App shell
+would sit beside them.
+
+#### He was right to kill the feed
+
+*"We have a Telegram chat where we talk, so no need for that probably."* Correct, and for the right
+reason. Never build a social feed that competes with an incumbent habit inside your own community —
+it will lose to the chat, and a feed without critical mass is a ghost town that makes the whole
+product look dead. **Post into the Telegram chat; don't try to replace it.** The bot should push
+cards, streaks and weekly results into the existing chat, which also means every piece of content
+the product makes lands where the audience already is.
+
+#### The strategic fork, and a recommendation
+
+There are two businesses here and they look similar from the inside:
+
+| | what it is | verdict |
+|---|---|---|
+| **individual-first** | a self-improvement tracker one person uses | **no.** Crowded, no moat, no distribution, and habit trackers are a graveyard |
+| **clan-first** | the operating system for a small brotherhood — any group creates its own clan | **yes.** The unit of virality is a group, not a person, and CIS Telegram is full of exactly these groups: trading chats, prop squads, improvement communities |
+
+Clan-first is the recommendation, and strongly. It makes the group leader the customer, the members
+the content, and the group itself the thing that spreads. It also folds in the channel-template idea
+from (c) — a clan has a brand, its cards carry it, and every member posting a result markets the
+clan.
+
+#### Commitment → proof → witness
+
+The manifestation and mentality side is not something to be embarrassed about; it is a real
+mechanic, and it is the one his group already runs informally in chat:
+
+1. **you declare** what you'll do
+2. **you post proof** you did it
+3. **the clan sees** both
+
+Worth noting: this is the sealed-commitment idea from (a), which was the right mechanic pointed at
+the wrong target. Applied to trading judgement it was an insult to people who trade well. Applied to
+discipline it is exactly right, because there the point was never analysis — it is accountability.
+
+#### The danger has changed
+
+For three days the worry was *not big enough*. It isn't any more. There are now four products on the
+table — trading cards, visual memory, step and discipline tracking, a clan layer — and the risk is
+straightforwardly **scope drift**. Picking one spine now matters more than any individual idea in
+these four sections.
+
+The test to judge every feature against, and it is unforgiving: **what does a member do on a
+Tuesday?** Not after a big win — on an ordinary Tuesday. A PnL card alone has no answer; that is the
+real reason cards-only feels thin. Steps, a streak and a clan leaderboard have one.
+
+#### The spine
+
+> **Astra is the clan's proof-of-discipline layer. One mechanic — proof becomes a beautiful card the
+> clan witnesses. Trading is the hero domain; steps and habits are the daily pulse. It lives as a
+> Telegram Mini App and posts into the chat that already exists. The clan, not the person, is the
+> unit of growth.**
+
+#### The smallest test, using the community he already has
+
+Put a bot in the existing clan chat that does two things: turns an MT5 screenshot into a card, and
+posts a weekly clan table combining trades logged and steps walked. Nothing else.
+
+**If his own clan uses it daily for a month, this is real.** If they don't, no amount of further
+building fixes it — and he will have learned that for the price of a bot and a leaderboard, with the
+one group on earth most likely to use it. Everything in (a), (b) and (c) waits behind that result.
+
+Unchanged and still first: `SETUP-PLANS.txt`.
+
+---
+
+## Start here (2026-09-20 c) — direction, corrected a second time
+
+Short note, written before Artem's own idea landed; the fuller version follows once it has. Read it
+ahead of (b) and (a), both of which are now partly wrong in the same way.
+
+#### The correction
+
+> *"It's like me trying to make AI do the analysis of post-trade instead of people. But trading is a
+> skill that we all do by ourselves. So my product should be something that makes it more beautiful
+> (as pnl cards), and only amplifies your motivation and skill to do it."*
+
+Three rejections in three days, and they are one rejection: a vague AI coach (a), signals, and now
+AI post-trade analysis (b). The through-line is **anything that moves the thinking out of the
+trader's head is a worse product for people who already trade well.** His users are not looking for
+a crutch. They want the doing to feel better.
+
+So the category is not analytics. It is closer to **equipment** — the thing a craftsman buys that
+makes the craft look and feel better and keeps them coming back to it.
+
+What survives from (b) is the part that trains rather than concludes: recall ("have I seen this?")
+and drill mode put the judgement back in the trader's hands. What dies is everything that hands him
+a verdict. And even the survivors are now *depth*, not the centre.
+
+#### The two things Artem said and undervalued
+
+**1. Strava is the model, and he has already built its card.** Strava does not run for you and does
+not meaningfully coach you. It makes the output of your effort beautiful, makes it witnessed, keeps
+a record that accumulates into an identity, and adds light competition. It is a very large company
+built on "make the thing you already do look good and be seen doing it." That is exactly the product
+he is describing, and he built the card without building the rest of it.
+
+**2. The CIS market observation is the asset, not an aside.** *"In CIS region we only have
+TradingView + MetaTrader 5... All the pnls are just screenshots from MT5, which look pretty basic.
+Entry - Exit, pnl. Black/white background and that's it."* He took the card idea from Axiom and
+Pump.fun — US, crypto-native.
+
+The gap that describes: those beautiful cards exist **only inside the platforms that made them.**
+MT5 and TradingView have an enormous user base, a Telegram-native trading culture that posts results
+constantly, and nothing but ugly grey screenshots to post. Nobody has built the beautiful-result
+layer for that world. That is not "PnL cards as a feature." That is the output layer of a region's
+trading culture.
+
+#### Why cards-alone actually feels thin — and it isn't the beauty
+
+The real defect is that **a card has nowhere to live.** You make one, you post it, you are done.
+Nothing accumulates, and there is no reason to open Astra on a day you didn't have a big win. One
+card is a flex; two hundred cards would be a career, except that today they are two hundred orphans.
+
+That also settles the business argument: a tool used occasionally is hard to charge $5.99/mo for; an
+identity built up over a year is easy to.
+
+#### Ideas along his axis — beauty and motivation, no thinking outsourced
+
+| | idea | why it fits |
+|---|---|---|
+| **1** | **MT5 / TradingView screenshot → card, in one step.** Forward the ugly screenshot, Astra reads symbol, volume, entry, exit and profit off it and returns the beautiful card | the bridge from what they do now to what Astra makes, and it removes the last typing in the product. MT5's layout is rigid, so this reads reliably. AI used as transcription, never as judgement — which is exactly the line he drew |
+| **2** | **A profile: the body of work.** A permanent, beautiful public page of everything you've made. Not a dashboard — a portfolio | accumulation is the missing piece. Value compounds with use, and it is the thing that is hard to walk away from |
+| **3** | **Streaks and consistency objects.** *14 days following your own rules. 31 trades logged. Longest green week.* | motivation, not analysis. Counts things you **did**, tells you nothing you didn't know |
+| **4** | **Milestone cards.** Astra notices the moment and offers the card: first $10k month, one year trading, **back to breakeven after a drawdown** | today a card only happens after a big win. Recovery is a better story than a win and nobody celebrates it. Creates share moments instead of waiting for them |
+| **5** | **Year in Review.** Wrapped, for your trading year | once-a-year organic distribution, entirely visual, in a region that lives in Telegram |
+| **6** | **Channel templates.** A Telegram channel gets its own branded Astra template; every member posting a result markets the channel | B2B revenue and viral distribution in one, aimed straight at the CIS Telegram trading economy where channel owners already pay for this kind of thing |
+| **7** | **Treat the aesthetic as the moat, not the decoration** | Axiom's cards spread because they look expensive. In a market of black-and-white MT5 screenshots, being the best-looking thing is defensible far longer than people expect — design is copyable in theory and rarely copied well |
+
+#### On "it is like inventing"
+
+He isn't starting from nothing. He has a market observation that is specific and true, a community
+that already behaves the way the product needs, and the best-looking artefact in that market. The
+invention required is small and it is one sentence: **give the cards somewhere to live.**
+
+---
+
+## Start here (2026-09-20 b)
+
+### Visual memory, not a journal — this supersedes most of the section below it
+
+No code in this pass either. Read this one before **Start here (2026-09-20)**: Artem described how
+he and his community actually trade, and it invalidates the stat-coaching spine in that section. The
+parts of it still worth keeping are named at the end here; the rest should be treated as a dead end
+that was explored and closed.
+
+#### What he said, because everything follows from it
+
+> *"Me and my community don't trade by 'setups' like robots. There is no 'blueprint'... one of the
+> most important things is 'visual'. Visual is when you see the very similar chart, as you saw a few
+> months ago a few times already. You immediately know what to do... when you see a setup that you
+> saw 1000 times, you are confident to put money on the line. That's why I don't like journals,
+> because you have to type in every stat yourself, like risk-to-reward, risk-per-trade, long/short,
+> all of this bullshit. How we do it, is we just send a screenshot of every trade to our 'Telegram
+> Saved' messages and that's it. You just look at the picture of a chart, which has some drawing on
+> it that you did and you just memorise it with time."*
+
+Three things in that are worth stating outright, because they are the entire product brief:
+
+1. **The skill being trained is recognition, not analysis.** This is chunking — the same mechanism
+   that lets a chess player glance at a board and know the move. It is built by repeated exposure to
+   examples, not by reading statistics about yourself. No stat journal touches it, which is exactly
+   why he doesn't like them and why the previous section was wrong.
+2. **The workflow already exists and works.** Screenshot → Telegram Saved Messages. It is one
+   gesture, zero typing, and his community is profitable doing it. Any product that asks them to
+   change this habit has already lost.
+3. **The archive is write-only.** That is the bug. Everything below is a consequence of it.
+
+#### Why the screenshot pile fails, even though the method works
+
+The method is sound. The storage is not. A folder of images in Telegram has three specific failures,
+and each one is a feature:
+
+| failure | what it means | the feature it implies |
+|---|---|---|
+| **you cannot search it** | images aren't searchable, so you scroll. The memory lives in your head; the archive only holds what you already remember. It never *tells* you anything | search by shape — "have I seen this?" |
+| **repetition is accidental** | you re-see whatever you happen to scroll past. Nothing makes you review the patterns you read worst | deliberate, spaced re-exposure |
+| **outcomes aren't attached** | **recognition memory forms whether or not the pattern is profitable.** You can be 1000-reps confident in a shape that loses money, and there is no way to notice from inside your own head | outcome paired to the image |
+
+The third is the dangerous one and it is the strongest single argument for the product. He is right
+that his community is profitable and adaptive — but "I've seen this 1000 times" is a statement about
+exposure, not about edge, and nothing in the current method can tell the two apart.
+
+#### The thing nobody noticed: the drawings are free labels
+
+*"a picture of a chart, which has some drawing on it that you did."*
+
+Those drawings are the highest-signal part of every image. They are his annotation of what he saw,
+made at the moment of the trade, with no extra effort — a trendline, a box, an arrow, a level. It is
+supervised labelling of what mattered in the frame, already done, sitting in Telegram by the
+thousand. A vision model can read them.
+
+Two things fall out of that for free: the annotation usually marks the decision point, so the drill
+mode below can crop there automatically; and two charts are "similar" in the way *he* means it when
+the drawings agree, not just when the candles do.
+
+#### The three layers
+
+**Layer 1 — Recall. "Have I seen this before?"**
+
+You are looking at a live chart. Screenshot it, drop it in, and Astra returns the twelve most
+visually similar charts *from your own archive*, each with what happened next, plus the tally:
+**you've taken this shape 23 times, 17 worked.**
+
+This is precisely what his brain already does, with perfect recall and a real count instead of a
+feeling. It doesn't replace the intuition — it confirms it when he's right and argues when his
+memory is flattering him. And it is categorically not a signal: it is his own history, his own
+patterns, his own hand-drawn reads. Nobody else's opinion enters.
+
+"You've seen this 23 times" is the whole product in four words. It is probably the tagline.
+
+**Layer 2 — Discover. Let the clusters name themselves.**
+
+His own suggestion was folders, or an AI that files trades into them, and he's right that it's
+basic — foldering only ever sorts into categories you already decided on. Invert it. Cluster the
+archive by visual similarity and show him the groups that fall out:
+
+> *Here are 34 charts that look like each other. You've never named this. It's 31% of your trades
+> and your best-performing group.*
+
+He names it whatever his community calls it. The taxonomy emerges from his own trading rather than
+from a textbook — which is the only version compatible with "there is no blueprint." Imposing
+Investopedia tags on these people would be the fastest way to lose them.
+
+And then the finding that only this product can produce: **the cluster you are confident about that
+loses money.** High reps, high conviction, negative expectancy. Invisible from inside your own head,
+obvious from outside it, and delivered entirely in pictures — no stats typed, none read.
+
+**Layer 3 — Train. Drill mode.** *This is the one that makes it a product rather than a tool.*
+
+Take a chart from his own archive. Crop it at the decision point — everything to the right of the
+entry hidden. Show it. He calls it: long, short, or no trade. Reveal what actually happened.
+
+- pure visual, one tap, exactly the way he says the skill is built
+- it is spaced repetition over his own archive, which fixes the accidental-exposure problem
+- it makes a write-only pile readable
+- it produces a real number that no journal can produce: **your recognition accuracy on your own
+  patterns**, per cluster. *"You read continuations at 78% and reversals at 41%."*
+- it works on the losers, which is where the learning actually is
+
+He described the method as *"you just memorise it with time."* This is that, deliberately, at ten
+times the rate. It's a gym for the one skill he says matters, and the reason nobody has built it is
+that everybody went and built stat journals instead.
+
+#### Getting the outcome in without asking him to type
+
+Layers 2 and 3 both need to know what happened. He will not type R:R or risk-per-trade, and he
+shouldn't have to. Cheapest first:
+
+| | cost to him | notes |
+|---|---|---|
+| **one swipe** on the closed trade — worked / didn't | one gesture | the baseline. Enough for drills and clustering |
+| **a second screenshot** at exit | one screenshot, the habit he already has | the model can see where price went. Richer, still no typing |
+| **the PnL card he already makes** | none | it already carries the number. But **only winners get cards** — selection bias, so it can't be the only channel |
+| read-only exchange sync | setup ceremony | exact and automatic, but it's the heaviest option and clashes with the no-ceremony spirit. Later, if ever |
+
+Design constraint worth writing down: **do not depend on reading exact prices off a screenshot.**
+Vision models describe chart structure well and read small axis numbers unreliably. Structure from
+the image, outcome from the swipe.
+
+#### Distribution: be a Telegram bot, not a website
+
+He forwards screenshots to Saved Messages today. So the product's front door is a bot he forwards to
+instead — or better, adds to the group. Zero new habit. A web app that asks for uploads is asking a
+profitable trader to change a workflow that already works, which he won't do, and neither will
+anyone he tells about it.
+
+Two consequences that matter a lot:
+
+- **The cold start is already solved.** Years of screenshots are sitting in Saved Messages right
+  now. Bulk-import that and the product is useful on day one instead of in six months. Almost
+  nothing launches already full; this can.
+- **His community is the beachhead.** There is an existing group of profitable traders who all
+  already do this. That is the hardest thing to acquire and he has it.
+
+#### The social layer, now that it finally makes sense
+
+He ruled out signals because copying doesn't build skill. Drills are the exact inverse:
+
+- **Same chart, everyone calls it.** One real chart a day, cropped at the decision point, posted to
+  the group. Everyone commits blind and simultaneously, then the reveal shows the distribution:
+  *you said long, 71% said short, it went short.* Copying is structurally impossible — nobody can
+  see anyone else's answer until all are locked — and you get a mirror for your read instead of a
+  tip.
+- **Pattern libraries as the shareable object.** A cluster with forty examples and their outcomes is
+  genuinely valuable to a newer trader, and what it transfers is *reps*, not signals. This is the
+  honest version of social trading, and it's a product a mentor would pay for.
+- **The mentor view.** Hand an experienced trader a junior's clustered archive and he sees in ten
+  seconds what a stat table hides for months: *you keep taking this one shape and it loses.*
+
+#### Where the risk actually is
+
+One technical risk dominates everything: **does visual similarity work on real chart screenshots?**
+Off-the-shelf image embeddings latch onto theme, broker chrome, colour and indicator panels — not
+price structure. Different timeframes, different platforms, and his own drawings all confound it.
+The plan is a hybrid: embed the image *and* have Claude produce a structured description at ingest
+(trend, structure, where price sits in the prior range, the approach shape, what the drawing marks),
+then rank on both. The description also gives explainability — *similar because both are a third
+touch after a sweep* — which matters, because a similarity result he can't see the logic of is one
+he won't trust.
+
+That question is answerable in a weekend against a few hundred of his real screenshots, and it
+decides whether this product exists. Nothing else should be built first.
+
+Smaller risks, worth tracking, not worth blocking on:
+
+- **Selection bias.** Everything depends on losers being screenshotted too. He says *every* trade —
+  confirm it, because if only wins get saved the archive is poison and the clusters lie.
+- **Small n.** A personal archive is hundreds, not millions. Fine for drills (n=20 is plenty of
+  reps); not fine for confident claims about expectancy. Don't let the copy oversell the statistics.
+- **Privacy.** A trader's full archive is sensitive. The existing private per-user `media` bucket
+  with its RLS policies is already the right shape; sharing must stay explicit and per-cluster.
+
+#### What it costs to run
+
+Ingest is the only model cost. A chart screenshot resizes to roughly 1568×880, which is about 1.8K
+input tokens; with the description prompt and ~300 output tokens, on Claude Opus 5 at $5/$25 per
+million that is **about $0.018 per chart**. So a 1000-image backfill of someone's Telegram history
+is a **one-time ~$18**, and a few trades a day afterwards is pennies a month. Similarity search and
+drill mode cost nothing after ingest — no model call in the loop.
+
+That is cheap enough that the backfill can be the free hook: *forward your archive, get your patterns
+back.*
+
+#### Build order
+
+| | | why here |
+|---|---|---|
+| 1 | **similarity spike on ~300 of his real screenshots** | the whole product rests on it. Nothing else until it's answered |
+| 2 | Telegram bot: forward in, bulk-import Saved Messages | the front door and the cold-start fix, in one piece of work |
+| 3 | Layer 1 — "have I seen this?" search + what happened next | the first thing that is useful alone |
+| 4 | swipe outcome + clustering → Layer 2, clusters he names | needs a filled archive, so it comes after ingest |
+| 5 | Layer 3 — drill mode, recognition accuracy | the retention engine and the real differentiator |
+| 6 | group drills, shared pattern libraries, the mentor view | last, and it lands straight into his existing Telegram group |
+
+#### What survives from the previous section
+
+Not much, and it should be read with this one in front of it:
+
+- **The card is still the share object and still the reason people show up.** A drill streak or a
+  pattern's record is a new thing worth a card.
+- **Payments still have to be finished first** (`SETUP-PLANS.txt`), unchanged.
+- **The server-side architecture note still applies**, more so — ingest, embedding, the Claude call
+  and the bot all need server functions and a key. This is no longer a static site with a database.
+- **The "compute in code, let the model write the sentence" rule still holds** wherever a finding is
+  narrated.
+
+Dead: the typed-stat journal, the stats page as a destination, conditional splits on risk-per-trade
+and R-multiple, and the coach built on them. He told us plainly that this is the part he dislikes
+about every existing product, and building it would have made Astra the fourth-best version of
+something his own community avoids.
+
+---
+
+## Start here (2026-09-20)
+
+### Where Astra goes next — ideas, not code
+
+Nothing was built in this pass and nothing in `src/` was touched. Artem asked a product question and
+this section is the answer, written here because it is the kind of thing that has to survive the
+conversation it came out of.
+
+The question, in his words: *"Except for the payment, our project is done. However, I don't want it
+to be just a card pnl thing. I want it to be something bigger."* A competitor — someone already in
+the trading industry — has shipped a journal: winrate, PnL, balance, trade frequency, a friend
+system, and an AI wrapper that reads the statistics back to you. Artem's read on it: *"very vague
+and it really isn't that helpful for trading."* His own follow-up ruled out the obvious pivot:
+*"maybe... social trading. However, that will be also not that interesting because taking signals
+from someone means not improving on your own skill."*
+
+That instinct is right, and it is the whole opening.
+
+#### The two dead ends, and the gap between them
+
+| | what it does | why it doesn't make you better |
+|---|---|---|
+| a journal | **describes** — here is your winrate, here is your equity curve | a mirror has no counterfactual. Knowing you win 43% tells you nothing you can *change* |
+| signals / copy trading | **substitutes** — someone else decides, you follow | the skill stays with the person you're copying. Stop paying and you're back where you started |
+
+Nobody sits in the gap. The gap is a product that is **prescriptive and skill-building**: it names
+one thing you are doing wrong, in your own numbers, and then holds you to fixing it. Other traders
+appear in it — but as a mirror, a benchmark and a source of pressure, never as a signal.
+
+Positioning line to aim at: *the journal tells you what happened. Astra tells you what to stop
+doing, and makes you prove you stopped.*
+
+#### The asset the competitor cannot copy
+
+It is not that Astra's cards are prettier — though Artem is right that they are, and that is the
+reason there's a fight worth having at all. It is what the card *is* structurally.
+
+A journal's hard problem is data entry. It has to nag people into logging trades, and people don't,
+so most journals are half-empty and their statistics are a lie of omission. Astra has the opposite
+problem already solved: **a trader opens Astra voluntarily, at the emotional peak right after a
+trade, and types in the symbol, direction, leverage, entry, exit and PnL — because that is the price
+of getting the card.** The card is a consent moment for trade data that nobody has to be nagged into.
+
+That data is already being stored. `public.cards` is one row per card with the whole `CardState` as
+`jsonb`, and `TradeState` in `src/types.ts` already carries symbol, direction, leverage, entry
+price, exit price and PnL. What is missing is a *when* (the trade's own timestamp, not the row's),
+a stop, and a table that treats these as trades rather than as drafts of a picture.
+
+**So the card is the trojan horse.** Every card already made is a logged trade. Build the journal
+underneath the card and it fills itself.
+
+#### Seven ideas, best first
+
+**1. Sealed plans — the one that actually builds skill.** Every journal is post-hoc, which is why
+every journal is a mirror. The loop that works in every other skill domain is: commit to the plan
+*before*, compare to the outcome *after*. So: before entering, the trader spends twenty seconds on a
+**plan card** — symbol, direction, intended entry, stop, target, size, and one sentence of reasoning
+(*"H4 supply retest, expecting rejection"*). Same visual language as the PnL card, same editor.
+When the trade closes, Astra pairs the plan against what actually happened.
+
+That pairing is the only way to compute the questions that matter, and none of them are answerable
+from outcome statistics:
+
+- Did you take your stop, or move it?
+- Did you size as planned, or double down?
+- Did you cut winners before target while letting losers run past the stop?
+- How many trades had no plan at all? (the boredom trades — usually the expensive ones)
+- **What is your win rate grouped by the reason you yourself wrote down?**
+
+The last one is the feature. *"Your 'breakout retest' trades: 61% over 34. Your 'it's pumping'
+trades: 22% over 18. You took eleven of the second kind last month."* It turns the trader's own
+vocabulary into a measurable variable. No competitor has it, because it requires capturing intent
+before the trade, which requires a reason to open the app before a trade — and Astra is the only one
+of these products that already has a reason people open it.
+
+**Sealed** is the important half of the word. A plan posted publicly before a trade resolves is just
+a signal again, with the same problem Artem identified. So a plan is committed privately and only
+unseals when the trade closes. That is a commit-reveal: it proves the plan wasn't edited in
+hindsight, it cannot be followed as a tip, and it is the honest version of "social trading."
+
+**2. Verified cards — the keystone.** Everything social in trading dies on fake numbers. Manual
+entry means everyone has a 90% win rate. Connect a read-only exchange API key (Bybit, Binance, OKX)
+or import an MT5 statement, and trades arrive by themselves — and a card built from an imported
+trade earns a ✓ that a hand-typed card does not.
+
+Look at what that single badge does at once:
+
+- it solves the journal's data-entry problem completely, without ever asking anyone to "log a trade"
+- it makes the ✓ the status symbol, so connecting is *aspirational* rather than a chore
+- it makes the card product itself better, which protects the thing Astra is already best at
+- it is unglamorous infrastructure the competitor hasn't built, so it is a real moat
+
+**3. A coach that finds edges instead of narrating statistics.** The reason the competitor's AI is
+vague is architectural, not a matter of prompt polish. It is handed a table of aggregates — winrate,
+PnL, frequency — and asked for advice. Aggregates contain no counterfactual, so the model has
+nothing to say and says it beautifully. That failure mode is unfixable from the prompt side.
+
+The fix is to invert who does the analysis. **Compute the findings in code; let the model only write
+the sentence.** Run conditional splits over the trader's own trades — for each candidate segment,
+win rate and expectancy inside the group against outside it, gated on sample size, ranked by dollar
+impact:
+
+| segment | why it's worth splitting on |
+|---|---|
+| hour of day, day of week | most retail traders have one session that is quietly negative |
+| hold duration bucket | separates the plan from the panic |
+| leverage bucket, risk as % of balance | the blow-up variable |
+| symbol / asset class | people have one coin they cannot trade and won't admit it |
+| trade index within the session | the 4th trade of a day is a different animal from the 1st |
+| **minutes since the last loss** | tilt. Needs ordered trades with timestamps, which is why a stats dashboard can't see it |
+| plan vs no plan, stop honoured vs moved | from idea 1 — the discipline variables |
+
+Take the top three by `|impact| × confidence`, hand Claude the raw numbers, and require every
+sentence to cite one of the numbers it was given. The output is not "work on your entries." It is
+*"in your last 40 trades, entering within 30 minutes of closing a loser won 28% against 61%
+otherwise. That one pattern cost you $1,840 this quarter."* Deterministic, checkable, and it names
+an action.
+
+**4. Rules — the loop that keeps the subscription alive.** A finding becomes a switch: *no trades
+within 30 minutes of a loss.* Once it's on, incoming trades are checked against it. *"You broke it
+twice this week; those two trades lost $310."* The competitor's AI writes a paragraph you read once.
+A rule generates a reason to open the app every week, forever, and it is the part that actually
+changes behaviour.
+
+**5. The hook: one number.** After connecting an account, one line: *Astra found the habit costing
+you the most — $1,840 this quarter.* Computed, not claimed. That is the conversion moment, and it is
+also the entire marketing campaign.
+
+**6. Social, with no signals in it.** Three primitives, none of which is a tip:
+
+- **Benchmarks, not a PnL leaderboard.** A leaderboard ranked by return rewards exactly the
+  behaviour that empties accounts, and it makes everyone below the top ten churn. Rank on a
+  *discipline* score — plan adherence, stop discipline, risk consistency, drawdown control — and show
+  it as a percentile against traders with similar account size. It is more honest, it is defensible
+  in marketing, and it's the one leaderboard where a losing month can still be a good month.
+- **Accountability groups of three to eight.** You see each other's rule adherence and unsealed
+  plans after close — never live entries. A weekly digest to the group. Pressure, not signal.
+- **Structured post-mortems.** A card can be opened for critique, but the commenter answers a fixed
+  prompt — *what would you have done differently at entry, at exit* — rather than a free comment box
+  that fills up with rocket emojis.
+
+**7. The card as a case study, not a brag.** Today a card is a screenshot of a number. Let a public
+card open into the trade behind it: hold time, leverage, size relative to account, the unsealed
+plan. The flex is the hook that makes people post; the data underneath is what makes the feed worth
+reading. Again — only possible because the card came first.
+
+#### What I would actually build, in order
+
+The temptation is to start with the social layer because it looks like the big idea. It isn't; it's
+the part that only works once there is honest data to be social about.
+
+| | | why here |
+|---|---|---|
+| 0 | finish `SETUP-PLANS.txt` | there is no point pricing a coach on a checkout that isn't live |
+| 1 | `trades` table + CSV/manual import + a stats page | this is the table-stakes journal. It has to exist before anything below has inputs |
+| 2 | **the coach, on whatever data exists** | the cheapest possible test of the whole thesis. No exchange work needed. If the findings aren't sharply better than the competitor's horoscope, the rest isn't worth building |
+| 3 | card auto-fill from a real trade | small once `trades` exists, and it makes the journal immediately pay for itself inside the product that already works |
+| 4 | read-only exchange import (**one** exchange first) + the ✓ | the moat, and the end of data entry |
+| 5 | sealed plans and rules | the skill-building loop, now that it has verified outcomes to pair against |
+| 6 | groups, benchmarks, the feed | last, on top of verified data |
+
+Step 2 before step 4 is the deliberate part. The coach is the only piece that decides whether this
+product has a reason to exist, and it can be tested on a hundred hand-typed trades. Building the
+exchange integrations first would mean spending the hardest month of work before learning anything.
+
+#### What it costs to run
+
+Worth settling now, because "good AI is expensive" is the wrong reason to end up shipping the vague
+kind. A weekly coach report is one call: roughly 3–5K input tokens (the system prompt plus the
+precomputed findings as JSON) and 600–900 output tokens. On Claude Opus 5 at $5 / $25 per million
+that is about **$0.04–0.05 a report — call it $0.20 per paying user per month** at weekly cadence,
+against $5.99. Caching the system prompt takes it lower.
+
+So the competitor's vagueness was never a cost problem. It is a design problem, and design problems
+are the good kind to inherit.
+
+#### What this breaks, architecturally
+
+Astra today is a browser app talking straight to Supabase, protected by row-level security, with
+exactly two server functions (`api/checkout.ts`, `api/nowpayments-ipn.ts`). Two things in the plan
+above do not fit inside that model, and both are in step 4 or later:
+
+- **Exchange API keys can never touch the browser.** Even read-only, they need to be encrypted at
+  rest and used by a scheduled server-side sync. That means a real cron function and a secret store
+  — the first genuine departure from "no server."
+- **The coach call needs an Anthropic key**, so it is server-side too: a function that reads the
+  precomputed findings, calls the API and writes the report back to a `coach_reports` table.
+
+Both are ordinary work. They are noted because they are the first time this project stops being a
+static site with a database behind it, and that is worth deciding on purpose rather than discovering.
+
+One more thing to keep an eye on rather than worry about: as long as Astra never publishes
+actionable live positions and never touches anyone's funds, it stays an analytics tool. The
+sealed-until-close rule in idea 1 is what keeps it there, which is a second reason to build plans
+that way.
+
+#### Scope, honestly
+
+This is months of work, not a weekend, and the competitor has already shipped. The counter is that
+they shipped the easy half — statistics anyone can compute and an AI wrapper over them — and the
+half they skipped (verified data, captured intent, findings instead of descriptions) is both the
+hard part and the part that makes the product work. Astra also starts with the one thing they can't
+retrofit quickly, which is a card people actually want to post.
+
+Step 2 is the decision point. Everything before it is cheap, and everything after it should wait on
+what it shows.
 
 ---
 
@@ -2450,6 +3521,11 @@ costs nothing.
     and `dev/start-check.html` cannot measure a `clipStart` under 2 s without measuring the
     synthetic source's own start-up freeze — a source written through `mp4write.ts` from WebCodecs
     would fix that, and would be the first use of the writer outside the exporter.
+19. **The fixed footer string can still be switched off (2026-09-22).** *Save 10% off fees* can no
+    longer be *changed* — it is a constant and not part of card state — but `display.showFooter`
+    hides the whole footer row, both halves, as it always has. If every card is meant to carry it,
+    the fix is that the right half stops following `showFooter`; that narrows what the toggle means,
+    so it is a decision rather than a bug. See **Start here (2026-09-22 b)**.
 
 ## Environment notes
 

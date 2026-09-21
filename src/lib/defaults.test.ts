@@ -137,3 +137,16 @@ describe('hydrateState and the clip length', () => {
     expect(hydrateState({ artwork: { clipLength: 6 } }).artwork.clipLength).toBe(6);
   });
 });
+
+describe('the fixed footer string', () => {
+  it('cannot be carried in by a save or a hand-edited row', () => {
+    // The editor has no input for it, so the only way one could arrive is an
+    // older save or a `cards` row someone wrote by hand. `merge` copies only
+    // the keys the current model has, and this is the guarantee that matters:
+    // there is no key for it, so it cannot ride in.
+    const state = hydrateState({ brand: { handle: '@kept', footerSecondary: 'Code: OTHER' } });
+    expect(state.brand.handle).toBe('@kept');
+    expect(Object.keys(state.brand)).not.toContain('footerSecondary');
+    expect(JSON.stringify(state)).not.toContain('Code: OTHER');
+  });
+});

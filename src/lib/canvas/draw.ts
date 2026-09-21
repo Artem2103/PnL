@@ -1,5 +1,5 @@
 import type { BackgroundMedia, CardState, RenderAssets } from '../../types';
-import type { CardContent } from '../content';
+import { FOOTER_SECONDARY, type CardContent } from '../content';
 import type { PnlResult } from '../pnl';
 import { ensureContrast, readableOn, withAlpha } from '../color';
 import { resolveTheme, type Theme } from '../themes';
@@ -108,7 +108,6 @@ export function foregroundKey(input: DrawInput): string {
     state.brand.wordmark,
     state.brand.handle,
     state.brand.footerPrimary,
-    state.brand.footerSecondary,
     d.themeId,
     // Only meaningful for the custom slot, but cheap and unconditional beats a
     // branch that has to stay in step with `resolveTheme`.
@@ -408,7 +407,10 @@ function drawFooter(ctx: Ctx2D, input: DrawInput, ink: string): void {
   const { brand } = input.state;
   const { icon, x, baseline, size, weight, tracking, gap, maxWidth } = SPEC.footer;
   const primary = brand.footerPrimary.trim();
-  const secondary = brand.footerSecondary.trim();
+  // Fixed, and not read from state — see `FOOTER_SECONDARY`. So the footer row
+  // is never empty, and the early return below only survives for the reader:
+  // `drawFooter` is still the one place that decides there is nothing to paint.
+  const secondary = FOOTER_SECONDARY;
   if (!primary && !secondary) return;
 
   let cursor: number = x;

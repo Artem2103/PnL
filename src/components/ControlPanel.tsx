@@ -14,7 +14,7 @@ import { frameById } from '../lib/frames';
 import { GROUND, PALETTE } from '../lib/canvas/spec';
 import { FramePicker } from './FramePicker';
 import { approximateLiquidationPrice, computeCard, signsDisagree } from '../lib/pnl';
-import { buildContent } from '../lib/content';
+import { buildContent, FOOTER_SECONDARY, PERIOD_PRESETS } from '../lib/content';
 import { formatPrice } from '../lib/format';
 import { MAX_CLIP_SECONDS, MAX_SOURCE_SECONDS } from '../lib/images';
 import { resolveClip } from '../lib/video';
@@ -106,14 +106,31 @@ export function ControlPanel({
 
         {state.mode === 'period' ? (
           <>
-            <Field label="Title" hint="the heading above the block">
+            {/*
+              Not a `Field`: two controls under one <label> would make a click
+              on the word "Title" press the first preset. Same markup, same
+              styling, a plain <span> for the label.
+            */}
+            <div className="field">
+              <span className="field__label">
+                Title<em>the heading above the block</em>
+              </span>
+              <div className="presets">
+                <Segmented
+                  ariaLabel="Period preset"
+                  value={period.title}
+                  onChange={(title) => patchPeriod({ title })}
+                  options={PERIOD_PRESETS.map((preset) => ({ value: preset, label: preset }))}
+                />
+              </div>
               <TextInput
+                ariaLabel="Title"
                 value={period.title}
                 onChange={(title) => patchPeriod({ title })}
                 placeholder="August 2026"
                 maxLength={28}
               />
-            </Field>
+            </div>
             <div className="grid grid--2">
               <Field label="Start balance">
                 <NumberInput
@@ -436,24 +453,14 @@ export function ControlPanel({
             maxLength={24}
           />
         </Field>
-        <div className="grid grid--2">
-          <Field label="Footer left">
-            <TextInput
-              value={brand.footerPrimary}
-              onChange={(footerPrimary) => patchBrand({ footerPrimary })}
-              placeholder="yoursite.com"
-              maxLength={28}
-            />
-          </Field>
-          <Field label="Footer right">
-            <TextInput
-              value={brand.footerSecondary}
-              onChange={(footerSecondary) => patchBrand({ footerSecondary })}
-              placeholder="Save 10% off fees"
-              maxLength={32}
-            />
-          </Field>
-        </div>
+        <Field label="Footer left" hint={`beside it, always: “${FOOTER_SECONDARY}”`}>
+          <TextInput
+            value={brand.footerPrimary}
+            onChange={(footerPrimary) => patchBrand({ footerPrimary })}
+            placeholder="yoursite.com"
+            maxLength={28}
+          />
+        </Field>
 
         <Field label="Avatar">
           <ImagePicker
