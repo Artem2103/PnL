@@ -83,6 +83,12 @@ export interface DisplayState {
 export interface ArtworkState {
   /** Media library id (photo or clip), or null for the plain themed background. */
   imageId: string | null;
+  /**
+   * A built-in background from `canvas/scenes.ts`, or null for none. It and
+   * `imageId` are alternatives — the editor clears one when the other is
+   * picked — and an upload wins if both are somehow set.
+   */
+  sceneId: string | null;
   /** Strength of the dark scrim over the text column, 0..1. */
   scrim: number;
   /** 1..3 zoom on top of the cover fit. */

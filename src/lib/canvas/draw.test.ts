@@ -109,6 +109,7 @@ describe('foregroundKey', () => {
     ['horizontal pan', (s) => ({ ...s, artwork: { ...s.artwork, offsetX: -0.7 } })],
     ['vertical pan', (s) => ({ ...s, artwork: { ...s.artwork, offsetY: 0.7 } })],
     ['chosen background', (s) => ({ ...s, artwork: { ...s.artwork, imageId: 'other' } })],
+    ['built-in scene', (s) => ({ ...s, artwork: { ...s.artwork, sceneId: 'bullion' } })],
     ['clip start', (s) => ({ ...s, artwork: { ...s.artwork, clipStart: 4 } })],
     ['clip length', (s) => ({ ...s, artwork: { ...s.artwork, clipLength: 6 } })],
   ];

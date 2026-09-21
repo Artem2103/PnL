@@ -6,6 +6,7 @@ import { resolveTheme, type Theme } from '../themes';
 import { CARD, GROUND, PALETTE, SPEC } from './spec';
 import { drawAvatarFrame } from './avatarFrames';
 import { placeCover } from './placement';
+import { drawScene, sceneById } from './scenes';
 import {
   FONT_DISPLAY,
   cachedGradient,
@@ -153,6 +154,26 @@ function drawBackground(ctx: Ctx2D, input: DrawInput, theme: Theme): void {
   const showArtwork = Boolean(
     state.artwork.imageId && media && media.width > 0 && media.height > 0 && isPaintable(media),
   );
+  // An upload wins: picking one clears the scene in the editor, and if a saved
+  // card somehow carries both, the file someone chose is the stronger signal.
+  const scene = showArtwork ? null : sceneById(state.artwork.sceneId);
+
+  if (scene) {
+    drawScene(ctx, width, height, scene);
+    if (light) {
+      // The scenes are built for the dark card. Under black ink they are veiled
+      // to a pale tint across the *whole* card, not just the text column: the
+      // wordmark and the footer's right end sit out where the scrim's ramp has
+      // already fallen to zero, and black on a near-black solid is not a card
+      // anyone would post.
+      ctx.save();
+      ctx.fillStyle = 'rgba(253, 253, 255, 0.66)';
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
+    }
+    drawScrim(ctx, state.artwork.scrim, light);
+    return;
+  }
 
   ctx.save();
   if (showArtwork) {
@@ -205,7 +226,15 @@ function drawBackground(ctx: Ctx2D, input: DrawInput, theme: Theme): void {
   // that leaves the artwork on the right untouched. It veils the photo *away*
   // from the ink: near-black under light text, near-white under dark, so the
   // slider means the same thing — "make the text readable" — in both.
-  const scrim = state.artwork.scrim;
+  drawScrim(ctx, state.artwork.scrim, light);
+}
+
+/**
+ * The veil over the text column, shared by the uploaded background and the
+ * built-in scenes so the slider cannot come to mean two different things.
+ */
+function drawScrim(ctx: Ctx2D, scrim: number, light: boolean): void {
+  const { width, height } = CARD;
   const veil = light ? '253, 253, 255' : '1, 1, 3';
   ctx.save();
   ctx.fillStyle = cachedGradient(ctx, `scrim:${veil}:${scrim}`, (target) => {

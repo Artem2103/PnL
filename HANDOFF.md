@@ -27,11 +27,116 @@ file easier to read:
 | 2026-09-20 (f) | *no code* — **the recommendation**: Strava for traders, seven pieces, $15-20/mo | see **Start here (2026-09-20 f)** |
 | 2026-09-22 | *no code* — **what more to add**: eight additions beyond the seven pieces, and two holes in the plan | see **Start here (2026-09-22)** |
 | 2026-09-22 (b) | **code**: the footer’s right string is fixed and out of card state; three period presets; the "too many settings" answer | see **Start here (2026-09-22 b)** |
+| 2026-09-22 (c) | **code**: five built-in backgrounds, drawn by the renderer — and why the reference ones were not copied | see **Start here (2026-09-22 c)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-09-22 c) — five built-in backgrounds, drawn rather than shipped
+
+Artem asked where the default backgrounds went, and the answer was that there had never been any:
+no image has ever been tracked in this repo, there is no `public/`, and nothing seeds the media
+library. What he remembered is the plain themed ground — the six accents' ambient glow — which is
+under **Colour**, not under **Background**.
+
+He then asked for the five `reference/monthly-calendar-pnl*.png` backgrounds to be replicated
+identically and shipped as defaults. **That was declined and it should stay declined**: those five
+are commissioned artwork on Axiom's cards — a blue blade with crystal shards, a white-blue spear, a
+dark faceted cube with cyan and pink shards, a gold polyhedron and an illustrated serpent on a stone
+pyramid. Copying them into a product Astra sells is the thing `.gitignore` and the README's *What is
+deliberately not reproduced* already refuse for the wordmark and the logo. The offer instead was
+three-way — upload them yourself for your own cards, replicate the measured *lighting*, or build
+original artwork in the same genre — and Artem chose the third.
+
+So: **five scenes, drawn by the renderer, in `src/lib/canvas/scenes.ts`.**
+
+| | what it is | ground / light |
+|---|---|---|
+| **Blade** | a long crystal blade with a lit core, shards around it | `#05060B` / `#42509D` |
+| **Shards** | pale splinters around a stretched octahedron | `#020405` / `#8694D9` |
+| **Prism** | a near-black cube read by its edges, cyan and pink rims | `#08080B` / `#536380` |
+| **Bullion** | a gold cube under one hard light | `#0A0903` / `#B9AC69` |
+| **Tide** | a tall monolith in cold water light | `#001D30` / `#52F0FF` |
+
+The palettes are not invented: they were measured off each reference's artwork field (x>430, below
+the wordmark row) with PIL — the field's own dark, its lit edges, its peak. That is the part of
+those cards that is fair to take, and it is why the five look like they belong to the same family
+as the originals without being them.
+
+#### How they are drawn
+
+A very small faceted-solid renderer, about a hundred lines: vertices in object space, one shared
+camera (yaw 0.62, pitch 0.42, weak perspective) so all five look like one set, painter's algorithm
+over convex solids, and a half-Lambert term per face against one light direction. A cube and an
+octahedron are the only two shapes; stretching the octahedron on Y is the blade, stretching a cube
+is the monolith. Each scene then composes that with a ground, a bloom, some 2D splinters, a light
+streak and a seeded scatter of motes.
+
+Four things in there are load-bearing and are commented as such at the top of the file:
+
+- **No `shadowBlur`, ever.** Canvas shadows are not scaled by the current transform, so a glow tuned
+  in the preview would come out a third of the size in a 3× export — and preview-equals-export is
+  the one invariant this renderer has. All glow is gradients.
+- **The left third stays quiet.** Every subject sits right of x≈430 and the ground carries the text
+  column, which is why these need no scrim to stay readable.
+- **The scatter is a seeded LCG, not `Math.random`.** A background that redrew itself differently
+  per frame would strobe through a video export. `scenes.test.ts` pins that two paints of the same
+  scene issue the same calls.
+- **The ground is a flat dark plus a pool of colour on the right**, not a corner-to-corner ramp. The
+  ramp was the first version and it put a third of its colour under the title — the gold scene
+  turned the whole card olive. That is the single change that fixed all five at once.
+
+#### Verified
+
+`dev/scenes-shot.html` renders all five as whole cards through the real renderer and, per scene,
+runs `checkExportMatchesPreview` — the export path builds on an **OffscreenCanvas**, a different
+context implementation, so "it looks right on screen" is not evidence. Result:
+
+```
+Plain    [export matches, maxDelta 0]      Bullion  [export matches, maxDelta 0]
+Blade    [export matches, maxDelta 0]      Tide     [export matches, maxDelta 0]
+Shards   [export matches, maxDelta 0]      Prism    [export matches, maxDelta 0]
+```
+
+`?wide=1` gives one card per row at 1:1, `?tone=dark` the light card. 270 unit tests pass,
+typecheck and build clean.
+
+#### Wiring
+
+- **`artwork.sceneId`** joins `artwork.imageId` in card state. They are alternatives: each picker
+  clears the other, and if a saved card somehow carries both, the upload wins — someone choosing a
+  file is the stronger signal. An unknown id (a scene removed in a later version) falls back to the
+  plain ground rather than to a blank card.
+- **`ScenePicker`** paints each tile with the scene itself at the card's aspect ratio, the way
+  `FramePicker` paints frames. There is no second drawing of anything to keep in step.
+- **The scrim slider now covers both** — it used to appear only with an upload — and `drawScrim` was
+  pulled out of the media branch so the two paths cannot drift.
+- **`sceneId` is background-only**, and `draw.test.ts` pins that it does not move `foregroundKey`.
+  Get that wrong and a card over a clip would rebuild its whole text layer every frame.
+
+#### The one compromise, and it is visible
+
+The scenes are built for the dark card. Under **black** ink they are veiled to a pale tint across
+the *whole* card, not just the text column: the wordmark and the right end of the footer sit out
+where the scrim's ramp has already fallen to zero, and black on a near-black solid is not a card
+anyone would post. It reads as a deliberate pale variant rather than a broken one — but it is a
+veil, not artwork designed for a light ground, and if the light card matters, five light-ground
+scenes are the honest fix rather than a stronger veil.
+
+#### What would make this better, in order
+
+1. **Two or three more scenes**, once these have been looked at for a week. The renderer is there;
+   a new one is a palette and about twenty lines.
+2. **Accent-tinted variants.** Every scene has a fixed palette today. Deriving one from the card's
+   accent would multiply five scenes by six accents, and the machinery (`mix`, one `light` colour)
+   already exists.
+3. **Motion.** A scene is a still. Slowly rotating a solid through a video export would cost one
+   parameter — a time argument to `draw` — and is the obvious thing to try once someone asks why the
+   background is static behind a moving card.
 
 ---
 
@@ -3681,6 +3786,8 @@ src/
     billing.ts           prices, plan copy, the card key, and the calls that ask
     selftest.ts          preview-vs-export pixel diff (dev only)
     canvas/
+      scenes.ts          the five built-in backgrounds + the faceted solid
+                         renderer they are drawn with                   (tested)
       spec.ts            measured geometry — change layout here, not in draw.ts
       placement.ts       cover fit, zoom, pan — shared by draw and drag  (tested)
       primitives.ts      ink-aligned text, tracking, cached metrics
@@ -3696,6 +3803,8 @@ src/
     FramePicker.tsx      the avatar-frame tiles, painted by drawAvatarFrame
     ...                  preview, controls, media picker, inputs
 dev/
+  scenes-shot.html       every built-in background as a whole card, each one's
+                         export diffed against its preview               (dev only)
   start-check.html       browser harness: what happens in the FIRST second of an
                          export — frame-numbered source, file read frame by frame,
                          plus the controls that separated the two causes  (dev only)

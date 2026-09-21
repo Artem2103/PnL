@@ -13,6 +13,7 @@ import { ensureContrast } from '../lib/color';
 import { frameById } from '../lib/frames';
 import { GROUND, PALETTE } from '../lib/canvas/spec';
 import { FramePicker } from './FramePicker';
+import { ScenePicker } from './ScenePicker';
 import { approximateLiquidationPrice, computeCard, signsDisagree } from '../lib/pnl';
 import { buildContent, FOOTER_SECONDARY, PERIOD_PRESETS } from '../lib/content';
 import { formatPrice } from '../lib/format';
@@ -84,8 +85,14 @@ export function ControlPanel({
   );
 
   // Stable identity, so the memoised pickers sit out every unrelated re-render.
+  // Each picker clears the other's choice: the card has one background, and
+  // leaving a scene set under an upload would make picking None jump back to it.
   const selectArtwork = useCallback(
-    (imageId: string | null) => patchArtwork({ imageId }),
+    (imageId: string | null) => patchArtwork(imageId ? { imageId, sceneId: null } : { imageId }),
+    [patchArtwork],
+  );
+  const selectScene = useCallback(
+    (sceneId: string | null) => patchArtwork(sceneId ? { sceneId, imageId: null } : { sceneId }),
     [patchArtwork],
   );
 
@@ -319,29 +326,35 @@ export function ControlPanel({
         </p>
       </Section>
 
-      <Section title="Background" hint="A photo or a clip. Saved to your account.">
-        <ImagePicker
-          role="artwork"
-          selectedId={artwork.imageId}
-          onSelect={selectArtwork}
-          onError={onError}
-          emptyLabel="None"
-          hint={ARTWORK_HINT}
-        />
+      <Section title="Background" hint="One of ours, or a photo or clip of yours.">
+        <Field label="Built in" hint="drawn by the app, no upload">
+          <ScenePicker value={artwork.sceneId} onChange={selectScene} />
+        </Field>
+        <Field label="Yours">
+          <ImagePicker
+            role="artwork"
+            selectedId={artwork.imageId}
+            onSelect={selectArtwork}
+            onError={onError}
+            emptyLabel="None"
+            hint={ARTWORK_HINT}
+          />
+        </Field>
+        {artwork.imageId || artwork.sceneId ? (
+          <div className="sliders">
+            <Slider
+              label="Text scrim"
+              value={artwork.scrim}
+              min={0}
+              max={1}
+              step={0.01}
+              format={(v) => `${Math.round(v * 100)}%`}
+              onChange={(scrim) => patchArtwork({ scrim })}
+            />
+          </div>
+        ) : null}
         {artwork.imageId ? (
           <>
-            <div className="sliders">
-              <Slider
-                label="Text scrim"
-                value={artwork.scrim}
-                min={0}
-                max={1}
-                step={0.01}
-                format={(v) => `${Math.round(v * 100)}%`}
-                onChange={(scrim) => patchArtwork({ scrim })}
-              />
-            </div>
-
             <div className="subsection">
               <div className="subsection__head">
                 <h3>Placement</h3>

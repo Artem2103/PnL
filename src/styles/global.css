@@ -765,6 +765,60 @@ kbd {
   font-weight: 600;
 }
 
+/* ------------------------------------------------------- Built-in scenes */
+
+.scene-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.scene-swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 4px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-muted);
+  transition: transform 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.scene-swatch:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.scene-swatch.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  color: var(--text);
+}
+
+/* The tile is the card's own aspect ratio, so the grid has to let it shrink
+   with the column rather than forcing a horizontal scroll at 340px. */
+.scene-swatch__tile,
+.scene-swatch__none {
+  display: block;
+  max-width: 100%;
+  border-radius: 2px;
+}
+
+.scene-swatch__none {
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--border-strong);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.scene-swatch__name {
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
 /* ---------------------------------------------------------------- Themes */
 
 .theme-grid {

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Scenes shot</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body { background: #0b0d12; color: #eaedff; font: 13px/1.6 ui-monospace, monospace; padding: 20px; margin: 0; }
+      h1 { font-size: 14px; font-weight: 600; margin: 0 0 14px; }
+      .row { display: flex; flex-wrap: wrap; gap: 18px; }
+      figure { margin: 0; }
+      figcaption { padding-top: 6px; color: #8b93a7; }
+      canvas { display: block; width: 560px; height: 380px; border: 1px solid #222; }
+      .wide canvas { width: 840px; height: 570px; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Dev-only. Every built-in background in `lib/canvas/scenes.ts`, painted as a
+      whole card by the real renderer, so what is on this page is what an export
+      paints. No collector and no POST: look at it, or screenshot it.
+
+      ?wide=1   one card per row at 1:1
+      ?tone=dark   the light card, to check a scene under black ink
+    -->
+    <h1 id="head">Scenes</h1>
+    <div class="row" id="sheet"></div>
+    <script type="module">
+      const params = new URLSearchParams(location.search);
+      if (params.get('wide')) document.body.classList.add('wide');
+      const sheet = document.getElementById('sheet');
+
+      (async () => {
+        const [render, defaults, scenes, selftest] = await Promise.all([
+          import('/src/lib/render.ts'),
+          import('/src/lib/defaults.ts'),
+          import('/src/lib/canvas/scenes.ts'),
+          import('/src/lib/selftest.ts'),
+        ]);
+        await Promise.all(
+          ['300 24px Inter', '400 24px Inter', '800 64px Inter'].map((f) =>
+            document.fonts.load(f, 'August 2026'),
+          ),
+        );
+        await document.fonts.ready;
+
+        const base = defaults.createDefaultState();
+        const state = {
+          ...base,
+          period: { title: '30D Realized', startBalance: 10680, endBalance: 20800 },
+          brand: { ...base.brand, wordmark: 'ASTRA', handle: '@aquagoat', footerPrimary: 'astra.cards' },
+          display: {
+            ...base.display,
+            textTone: params.get('tone') === 'dark' ? 'dark' : 'light',
+          },
+        };
+
+        const assets = await render.prepareAssets(state);
+        for (const scene of [{ id: null, name: 'Plain', blurb: 'no scene' }, ...scenes.SCENES]) {
+          const figure = document.createElement('figure');
+          const canvas = document.createElement('canvas');
+          figure.append(canvas);
+          const caption = document.createElement('figcaption');
+          caption.textContent = `${scene.name} — ${scene.blurb}`;
+          figure.append(caption);
+          sheet.append(figure);
+          const scened = { ...state, artwork: { ...state.artwork, sceneId: scene.id, scrim: 0.8 } };
+          render.renderToCanvas(canvas, scened, assets, 2);
+          // The whole point of drawing the artwork rather than shipping it as a
+          // file is that the export is the preview. Prove it per scene: the
+          // export path renders on an OffscreenCanvas, which is a different
+          // context implementation, so "it looks right on screen" is not enough.
+          const check = await selftest.checkExportMatchesPreview(scened, canvas);
+          caption.textContent =
+            `${scene.name} — ${scene.blurb}  [export ${check.ok ? 'matches' : 'DIFFERS'},` +
+            ` maxDelta ${check.maxDelta}${check.note ? ', ' + check.note : ''}]`;
+        }
+        document.getElementById('head').textContent =
+          `Scenes — ${scenes.SCENES.length} built in, ${params.get('tone') === 'dark' ? 'light card' : 'dark card'}`;
+      })();
+    </script>
+  </body>
+</html>

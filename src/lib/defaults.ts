@@ -61,6 +61,7 @@ export function createDefaultState(): CardState {
     },
     artwork: {
       imageId: null,
+      sceneId: null,
       scrim: 0.8,
       zoom: 1,
       offsetX: 0,
