@@ -5,6 +5,7 @@ import { CARD } from './canvas/spec';
 import { ensureFonts } from './fonts';
 import { loadImageElement, loadMedia, peekImageElement, peekMedia } from './images';
 import { computeCard } from './pnl';
+import logoMarkUrl from '../assets/tradingview-mark.png';
 
 /** Browsers cap canvas dimensions; 8192 is the safe floor across engines. */
 const MAX_CANVAS_EDGE = 8192;
@@ -20,6 +21,26 @@ export function clampScale(scale: number): number {
 async function resolve(id: string | null): Promise<HTMLImageElement | null> {
   if (!id) return null;
   return peekImageElement(id) ?? (await loadImageElement(id));
+}
+
+/**
+ * The top-left logo mark is always the TradingView mark; it ships with the
+ * app rather than coming from the image library. The card can hide it
+ * (`display.showLogo`) but not swap it.
+ */
+let logoMark: Promise<HTMLImageElement | null> | null = null;
+
+function loadLogoMark(): Promise<HTMLImageElement | null> {
+  logoMark ??= new Promise((done) => {
+    const img = new Image();
+    img.onload = () => done(img);
+    img.onerror = () => {
+      logoMark = null;
+      done(null);
+    };
+    img.src = logoMarkUrl;
+  });
+  return logoMark;
 }
 
 async function resolveBackground(id: string | null): Promise<BackgroundMedia | null> {
@@ -45,7 +66,7 @@ export async function prepareAssets(state: CardState): Promise<RenderAssets> {
   const [artwork, avatar, logo] = await Promise.all([
     resolveBackground(state.artwork.imageId),
     resolve(state.avatarId),
-    resolve(state.logoId),
+    loadLogoMark(),
   ]);
   return { artwork, avatar, logo };
 }

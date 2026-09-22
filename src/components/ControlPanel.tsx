@@ -47,7 +47,6 @@ export interface ControlPanelProps {
   patchDisplay: (patch: Partial<DisplayState>) => void;
   patchArtwork: (patch: Partial<ArtworkState>) => void;
   setAvatarId: (id: string | null) => void;
-  setLogoId: (id: string | null) => void;
   onError: (message: string) => void;
 }
 
@@ -61,7 +60,6 @@ export function ControlPanel({
   patchDisplay,
   patchArtwork,
   setAvatarId,
-  setLogoId,
   onError,
 }: ControlPanelProps) {
   const { trade, period, brand, display, artwork } = state;
@@ -506,16 +504,6 @@ export function ControlPanel({
             </p>
           </div>
         ) : null}
-        <Field label="Logo mark" hint="top left">
-          <ImagePicker
-            role="logo"
-            selectedId={state.logoId}
-            onSelect={setLogoId}
-            onError={onError}
-            emptyLabel="None"
-          />
-        </Field>
-
         <div className="toggles">
           <Toggle
             label="Wordmark"

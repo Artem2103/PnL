@@ -114,8 +114,6 @@ export interface CardState {
   artwork: ArtworkState;
   /** Image library id for the avatar beside the handle. */
   avatarId: string | null;
-  /** Image library id for the top-left logo mark. */
-  logoId: string | null;
 }
 
 /**

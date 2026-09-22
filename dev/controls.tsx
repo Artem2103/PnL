@@ -61,7 +61,6 @@ function Playground() {
       patchArtwork: (patch: Partial<CardState['artwork']>) =>
         setState((s) => ({ ...s, artwork: { ...s.artwork, ...patch } })),
       setAvatarId: (avatarId: string | null) => setState((s) => ({ ...s, avatarId })),
-      setLogoId: (logoId: string | null) => setState((s) => ({ ...s, logoId })),
       onError: (message: string) => console.warn('[controls]', message),
     }),
     [],

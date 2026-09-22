@@ -29,11 +29,46 @@ file easier to read:
 | 2026-09-22 (b) | **code**: the footer’s right string is fixed and out of card state; three period presets; the "too many settings" answer | see **Start here (2026-09-22 b)** |
 | 2026-09-22 (c) | **code**: five built-in backgrounds, drawn by the renderer — and why the reference ones were not copied | see **Start here (2026-09-22 c)** |
 | 2026-09-22 (d) | **code**: the five scenes became one — the Astra sky, bright, and the background a new card starts on | see **Start here (2026-09-22 d)** |
+| 2026-09-23 | **code**: the logo mark is fixed to the TradingView mark — no picker, only the on/off toggle | see **Start here (2026-09-23)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-09-23) — the logo mark is always the TradingView mark
+
+Asked for: the TradingView mark (`reference/tradingview.png`) is the logo mark, and it cannot be
+changed any more — only removed.
+
+**What changed**
+- `src/assets/tradingview-mark.png` — a copy of `reference/tradingview.png` (white mark on
+  transparency, 1582×799). It had to be copied: `reference/` is gitignored, so the build cannot see
+  it. This file *is* committed, so the TradingView mark is now in the repo.
+- `src/lib/render.ts` — `prepareAssets` loads that bundled image (once, cached) instead of looking a
+  `logoId` up in the image library. Preview, PNG and both video paths all go through
+  `prepareAssets`, so every output gets the same mark.
+- The *Logo mark* picker is gone from the Identity section (`ControlPanel.tsx`). The *Logo mark*
+  toggle stays — that is the "remove it". `display.showLogo` still defaults to on.
+- `logoId` removed from `CardState` (`types.ts`), `defaults.ts`, `App.tsx`, `CardPreview.tsx`,
+  `dev/controls.tsx`. Saved and cloud cards that still carry a `logoId` are harmless: the merge in
+  `defaults.ts` just no longer reads it.
+- Front-page copy: "wordmark, logo and footer" → "wordmark and footer".
+- Left alone: the `'logo'` role in `images.ts`/`remote/media.ts`. Logos people already uploaded
+  stay in their library, unused. Removing the role would need a DB/storage cleanup; not worth it now.
+- The old `dev/*-shot.html` pages still pass `logoId` / upload logos — they will no longer show the
+  uploaded logo. Dev only.
+
+**Placement.** The mark sits in the existing `SPEC.logo` slot (x35 y34, max 49×41). The mark is
+about 2:1, so it draws 49 wide × ~25 tall, centred vertically in the slot.
+
+**Verified.** `tsc` clean, 270/270 tests. Isolated Chrome, local mode (`localhost:5174/cards`):
+mark shows top left on the Astra sky; the *Logo mark* toggle off removes it; no picker left in the
+panel. Screenshots: `Desktop\tradingview-logo\` (`1-logo-on.png`, `2-logo-off.png`).
+
+**Not done.** Pushed to `main`; not checked on the live site.
 
 ---
 

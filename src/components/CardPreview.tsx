@@ -214,7 +214,7 @@ export function CardPreview({
     return () => {
       cancelled = true;
     };
-  }, [state.artwork.imageId, state.avatarId, state.logoId, request]);
+  }, [state.artwork.imageId, state.avatarId, request]);
 
   // Anything else about the card changed: repaint, without touching assets.
   useEffect(request);

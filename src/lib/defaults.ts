@@ -74,7 +74,6 @@ export function createDefaultState(): CardState {
       muteAudio: false,
     },
     avatarId: null,
-    logoId: null,
   };
 }
 
@@ -120,7 +119,6 @@ export function hydrateState(raw: unknown): CardState {
         ? { ...artwork, clipLength: MAX_CLIP_SECONDS }
         : artwork,
     avatarId: saved.avatarId ?? base.avatarId,
-    logoId: saved.logoId ?? base.logoId,
   };
 }
 

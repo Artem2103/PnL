@@ -57,7 +57,7 @@ const STEPS = [
     title: 'Make it yours',
     body:
       'Pick the accent, drop in a photo or a clip, set the scrim so the text stays readable, frame ' +
-      'your avatar, add your handle, wordmark, logo and footer. Hide anything you do not want on it.',
+      'your avatar, add your handle, wordmark and footer. Hide anything you do not want on it.',
   },
   {
     n: '03',

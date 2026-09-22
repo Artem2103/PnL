@@ -193,10 +193,6 @@ export default function App() {
     (avatarId: string | null) => setState((prev) => ({ ...prev, avatarId })),
     [setState],
   );
-  const setLogoId = useCallback(
-    (logoId: string | null) => setState((prev) => ({ ...prev, logoId })),
-    [setState],
-  );
 
   const handleDownload = useCallback(async () => {
     setBusy('download');
@@ -395,7 +391,6 @@ export default function App() {
             patchDisplay={patchDisplay}
             patchArtwork={patchArtwork}
             setAvatarId={setAvatarId}
-            setLogoId={setLogoId}
             onError={(message) => notify(message, 'error')}
           />
         </aside>
