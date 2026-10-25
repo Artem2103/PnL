@@ -33,11 +33,88 @@ file easier to read:
 | 2026-10-25 | *no code* — `claude doctor` run: no installation issues; one failed auto-update | see **Claude Code health check (2026-10-25)** at the end |
 | 2026-10-25 (b) | **code**: the trading journal — profile modal, PnL calendar, add/edit trades, journal share cards; **needs the SQL run** | see **Start here (2026-10-25 b)** |
 | 2026-10-25 (c) | **code**: the journal matched to the Axiom screens — measured off the screenshots, checked by overlay | see **Start here (2026-10-25 c)** |
+| 2026-10-25 (d) | **code**: share sheet = editor: Axiom Customize, photos/clips split, fixed card over a movable clip, 16:9/4:3/1:1, added audio | see **Start here (2026-10-25 d)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-10-25 d) — the share sheet becomes the editor: Customize, photos, video, sound
+
+Asked for, from `PrtSc5`–`PrtSc7` and three follow-up messages:
+- Axiom's **Customize** dialog.
+- **Every editor feature back inside the profile's share sheet.** No sending people to the cards page.
+- **Video** with vertical clips you can move, and an **Advanced** section.
+
+The follow-ups narrowed it:
+- **Videos only on the Video side, photos only on the Image side.**
+- **The statistics must not move.** Only the photo or video behind them moves.
+- **Advanced stays simple:** the resolution, and your own audio.
+- **Uploading photos and videos had stopped working.**
+
+**Not committed yet.** Screenshots: **`Desktop\Astra share studio\`**.
+
+### What the share sheet does now
+
+- **Image side.** The card with photo backgrounds only: the Astra sky plus your uploaded photos. You can:
+  - **drag** the card to move the photo, as in the editor;
+  - **scroll** over it to zoom;
+  - pick **1× / 2× / 3×** resolution;
+  - **Download**, **Copy** or **Share**.
+
+  A card whose saved background is a clip shows the sky here instead. Uploading a clip here is refused with a message.
+- **Video side.** Only your clips, one clip per video.
+  - The card sits **fixed** in the middle of the frame; it can't be dragged. **Drag** to move the clip behind it and **scroll** to zoom. This is how a vertical clip is placed.
+  - Under the player is a short row: **Start at**, **Length** and **Clip sound**.
+  - 🗑 removes the clip.
+  - Uploading a photo here is refused.
+- **Advanced** has two things only:
+  - **Resolution:** Card 1680×1140, 16:9 1920×1080, 4:3 1440×1080, 1:1 1080×1080.
+  - **Audio (n/10):** add or drop files. Each has *Starts at* (where in the video), *From* (where in the file), *Length* and *Volume*.
+- **Customize** is Axiom's dialog:
+  - Main text colour; positive and negative PnL colours (swatch, hex and reset).
+  - Switches: bold font weight, text shadows, coloured PnL rectangle, token image.
+  - Rectangle text colour.
+  - Continue.
+
+  Under it, **More settings** opens the editor's own panel: colour themes, text tone, scrim, zoom and placement, avatar, frame, frame colour, wordmark, handle, footer and the show/hide toggles. The numbers come from the journal, and backgrounds are picked in the strip, so neither appears there.
+- **Uploading.** Photo and clip thumbnails have a **×** to delete them. The upload tile used to switch itself off silently once the library held 12 items, which is the likely reason uploads seemed to stop. It now always responds; when full, it says so and points to the ×.
+
+### How it is built
+
+- **Your design is the account's card** (`useCloudCard`). A change made in the share sheet is the card the editor shows, and the reverse. The editor and the journal can be open at once, so the hook now hands each edit to every other copy in the page; neither can save a stale card over the other. This was checked: Customize changes made in the journal showed in the editor after a reload.
+- **Customize options** are new fields on the card: `textColor`, `profitColor`, `lossColor`, `blockTextColor` (null means "follow the theme"), plus `boldText`, `textShadow`, `showBlock` and `showTokenImage`.
+  - `draw.ts` reads them, and `foregroundKey` includes them so a playing clip repaints.
+  - An old save gets the defaults, so existing cards look exactly as before.
+  - The editor's own panel gained a **Style** section with the same options.
+  - The token image is the trade's logo from `/logos`, drawn before the title on trade cards.
+- **Video frames** (`src/lib/studio/frame.ts`): one painter for preview and export. It draws the clip covering the frame, then the card's own foreground (the same `drawCardForeground`) fitted and centred. In "Card" size it is the card itself with the clip behind, exactly as the editor makes it.
+- **Video export** (`src/lib/studio/compose.ts`):
+  - A clip in the Card size with no added audio still goes through the editor's exact exporter, unchanged.
+  - Anything else uses a new path built the same way: every frame in the window is decoded with WebCodecs, painted once and encoded at its own timestamp.
+  - The sound is the clip's own at its volume, mixed with the added tracks by an `OfflineAudioContext`. The mix is turned down if it would clip, then encoded to AAC 48 kHz.
+- **Added audio** lives in this browser (`src/lib/studio/sounds.ts`, IndexedDB), not in the account. The media table only knows photos and clips. A track added on another device shows as "not in this browser". Moving audio into the account needs a schema change; say if you want it.
+
+### Verified
+
+- `npm test` **304/304**: 16 new tests for the frame, saved-studio loading and the Customize options. Both typechecks are clean, and `vite build` passes.
+- **In Chrome, local mode,** with the clip in `dev/tmp-clip60.mp4`:
+  - Uploaded a clip on the Video side and a photo on the Image side; each refuses the other kind.
+  - The clip plays behind a fixed card at 16:9 and 1:1; dragging and scrolling move only the clip.
+  - The Customize switches and colours repaint the card live.
+- **Exports,** read back in memory rather than saved to disk:
+  - 1:1 → **1080×1080, 5.01 s, 150 frames.**
+  - 16:9 → **1920×1080, 5.01 s.**
+  - With a 440 Hz test tone added at 80%, the tone measures **0.178** in the file; without the track, **0.004**. So the added audio is really mixed in.
+  - A frame from the 1:1 file shows the card over the clip as on screen.
+- **Fixed on the way:**
+  - The new exporter's decoder could stall at the end of a clip (frames waiting to be painted while it flushed). It now paints while flushing.
+  - The video preview overlapped the panel under it when Advanced was open.
+  - The share sheet's backdrop was too light.
+- **Not verified:** the signed-in path (the SQL is still not run, and I don't sign in with your account); a real phone; a clip with HE-AAC sound in the new exporter. The video download through the button wasn't clicked, because it would save a file to your disk; it uses the same exporter tested above.
 
 ---
 

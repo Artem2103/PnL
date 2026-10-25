@@ -62,7 +62,27 @@ export function drawCardBackground(ctx: Ctx2D, input: DrawInput): void {
  * the difference between a dark card and a light one.
  */
 function inkFor(state: CardState): string {
-  return state.display.textTone === 'dark' ? PALETTE.textDark : PALETTE.text;
+  return state.display.textColor ?? (state.display.textTone === 'dark' ? PALETTE.textDark : PALETTE.text);
+}
+
+/** The block and percentage colour: the theme's, unless Customize set one. */
+function accentFor(state: CardState, theme: Theme, isProfit: boolean): string {
+  const d = state.display;
+  return isProfit ? (d.profitColor ?? theme.accent) : (d.lossColor ?? theme.loss);
+}
+
+/**
+ * The Customize options that change how every string is set: heavier weights
+ * and a soft shadow. Kept here so every `drawText` call reads the same two.
+ */
+function weightFor(state: CardState, base: number): number {
+  return state.display.boldText ? Math.min(800, base + 200) : base;
+}
+
+const TEXT_SHADOW = { color: 'rgba(0, 0, 0, 0.55)', blur: 10, offsetY: 2 } as const;
+
+function shadowFor(state: CardState): { glow?: typeof TEXT_SHADOW } {
+  return state.display.textShadow ? { glow: TEXT_SHADOW } : {};
 }
 
 /** The three-stop ramp the ink and the accent row have to read against. */
@@ -74,7 +94,7 @@ function groundFor(state: CardState): (typeof GROUND)['dark'] {
 export function drawCardForeground(ctx: Ctx2D, input: DrawInput): void {
   const { state } = input;
   const theme = resolveTheme(state.display);
-  const accent = input.result.isProfit ? theme.accent : theme.loss;
+  const accent = accentFor(state, theme, input.result.isProfit);
   const ink = inkFor(state);
   // On the block the accent is a fill and anything goes. On the percentage row
   // it is ink, and there it has to clear the ground behind it — a dark custom
@@ -86,7 +106,7 @@ export function drawCardForeground(ctx: Ctx2D, input: DrawInput): void {
   if (state.display.showLogo) drawLogo(ctx, input);
   if (state.display.showWordmark) drawWordmark(ctx, input, ink);
   drawTitle(ctx, input, ink);
-  drawHeroBlock(ctx, input, accent);
+  drawHeroBlock(ctx, input, accent, accentInk);
   if (state.display.showRows) drawRows(ctx, input, accentInk, ink);
   if (state.display.showHandle) drawHandle(ctx, input, ink, accentInk);
   if (state.display.showFooter) drawFooter(ctx, input, ink);
@@ -123,8 +143,17 @@ export function foregroundKey(input: DrawInput): string {
     d.showRows ? 1 : 0,
     d.showHandle ? 1 : 0,
     d.showFooter ? 1 : 0,
+    d.textColor ?? '',
+    d.profitColor ?? '',
+    d.lossColor ?? '',
+    d.blockTextColor ?? '',
+    d.boldText ? 1 : 0,
+    d.textShadow ? 1 : 0,
+    d.showBlock ? 1 : 0,
+    d.showTokenImage ? 1 : 0,
     assets.avatar?.src ?? '',
     assets.logo?.src ?? '',
+    assets.token?.src ?? '',
   ].join('\u0000');
 }
 
@@ -268,8 +297,9 @@ function drawWordmark(ctx: Ctx2D, input: DrawInput, ink: string): void {
   if (!text) return;
   const { right, baseline, size, weight, tracking } = SPEC.wordmark;
   drawText(ctx, text, right, baseline, {
+    ...shadowFor(input.state),
     size,
-    weight,
+    weight: weightFor(input.state, weight),
     tracking,
     align: 'right',
     inkAlign: true,
@@ -284,14 +314,29 @@ function drawTitle(ctx: Ctx2D, input: DrawInput, ink: string): void {
   const text = input.content.title.trim();
   if (!text) return;
   const { x, baseline, size, weight, tracking, maxWidth } = SPEC.title;
-  drawText(ctx, text, x, baseline, {
+  // The instrument's logo, a cap-and-a-bit tall, sits before the title and
+  // pushes it right by its own width.
+  const token = input.state.mode === 'trade' && input.state.display.showTokenImage ? input.assets.token : null;
+  let left: number = x;
+  if (token && token.width > 0 && token.height > 0) {
+    const side = 40;
+    ctx.save();
+    roundRectPath(ctx, x, baseline - 34.5, side, side, 8);
+    ctx.clip();
+    const rect = coverRect(token.width, token.height, side, side);
+    ctx.drawImage(token, x + rect.x, baseline - 34.5 + rect.y, rect.w, rect.h);
+    ctx.restore();
+    left = x + side + 12;
+  }
+  drawText(ctx, text, left, baseline, {
+    ...shadowFor(input.state),
     size,
-    weight,
+    weight: weightFor(input.state, weight),
     tracking,
     inkAlign: true,
     baseline: 'alphabetic',
     color: ink,
-    maxWidth,
+    maxWidth: maxWidth - (left - x),
     minSize: size * 0.55,
   });
 }
@@ -300,7 +345,8 @@ function drawTitle(ctx: Ctx2D, input: DrawInput, ink: string): void {
 /* Hero block                                                          */
 /* ------------------------------------------------------------------ */
 
-function drawHeroBlock(ctx: Ctx2D, input: DrawInput, accent: string): void {
+function drawHeroBlock(ctx: Ctx2D, input: DrawInput, accent: string, accentInk: string): void {
+  const { display } = input.state;
   const { x, y, width, height, textInset, textSize, textWeight, textTracking, textBaseline } =
     SPEC.block;
   const text = input.content.hero;
@@ -311,21 +357,27 @@ function drawHeroBlock(ctx: Ctx2D, input: DrawInput, accent: string): void {
   // value would otherwise run past the right inset.
   const blockWidth = Math.max(width, textWidth + textInset * 2);
 
-  ctx.save();
-  ctx.fillStyle = accent;
-  ctx.fillRect(x, y, blockWidth, height);
-  ctx.restore();
+  if (display.showBlock) {
+    ctx.save();
+    ctx.fillStyle = accent;
+    ctx.fillRect(x, y, blockWidth, height);
+    ctx.restore();
+  }
 
   // Chosen from the accent rather than fixed. Every accent the card had before
   // cherry was light enough for near-black; cherry is not, and a custom colour
   // can be anything, so the higher-contrast of the two inks wins.
-  drawText(ctx, text, x + textInset, textBaseline, {
+  // Without the block the value stands on the background in the accent, held
+  // to the same left edge as the title rather than the block's inset.
+  const blockInk = display.blockTextColor ?? readableOn(accent, PALETTE.onAccent, PALETTE.onAccentLight);
+  drawText(ctx, text, display.showBlock ? x + textInset : x, textBaseline, {
+    ...(display.showBlock ? {} : shadowFor(input.state)),
     size: textSize,
     weight: textWeight,
     tracking: textTracking,
     inkAlign: true,
     baseline: 'alphabetic',
-    color: readableOn(accent, PALETTE.onAccent, PALETTE.onAccentLight),
+    color: display.showBlock ? blockInk : accentInk,
     // Never let the value spill past the block it sits in.
     maxWidth: CARD.width - x - textInset * 2,
     minSize: textSize * 0.5,
@@ -343,8 +395,9 @@ function drawRows(ctx: Ctx2D, input: DrawInput, accent: string, ink: string): vo
   input.content.rows.slice(0, baselines.length).forEach((row, index) => {
     const baseline = baselines[index]!;
     drawText(ctx, row.label, labelX, baseline, {
+      ...shadowFor(input.state),
       size,
-      weight,
+      weight: weightFor(input.state, weight),
       tracking,
       inkAlign: true,
       baseline: 'alphabetic',
@@ -353,8 +406,9 @@ function drawRows(ctx: Ctx2D, input: DrawInput, accent: string, ink: string): vo
       minSize: size * 0.7,
     });
     drawText(ctx, row.value, valueX, baseline, {
+      ...shadowFor(input.state),
       size,
-      weight,
+      weight: weightFor(input.state, weight),
       tracking,
       inkAlign: true,
       baseline: 'alphabetic',
@@ -399,8 +453,9 @@ function drawHandle(ctx: Ctx2D, input: DrawInput, ink: string, accent: string): 
   const handle = state.brand.handle.trim();
   if (!handle) return;
   drawText(ctx, handle, SPEC.handle.x, SPEC.handle.baseline, {
+    ...shadowFor(state),
     size: SPEC.handle.size,
-    weight: SPEC.handle.weight,
+    weight: weightFor(state, SPEC.handle.weight),
     tracking: SPEC.handle.tracking,
     inkAlign: true,
     baseline: 'alphabetic',
@@ -446,8 +501,9 @@ function drawFooter(ctx: Ctx2D, input: DrawInput, ink: string): void {
   if (primary) {
     drawGlobeIcon(ctx, icon.x, icon.y, icon.width, icon.height, ink);
     const width = drawText(ctx, primary, cursor, baseline, {
+      ...shadowFor(input.state),
       size,
-      weight,
+      weight: weightFor(input.state, weight),
       tracking,
       inkAlign: true,
       baseline: 'alphabetic',
@@ -462,8 +518,9 @@ function drawFooter(ctx: Ctx2D, input: DrawInput, ink: string): void {
 
   if (secondary) {
     drawText(ctx, secondary, cursor, baseline, {
+      ...shadowFor(input.state),
       size,
-      weight,
+      weight: weightFor(input.state, weight),
       tracking,
       inkAlign: true,
       baseline: 'alphabetic',

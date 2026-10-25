@@ -48,6 +48,46 @@ export interface ControlPanelProps {
   patchArtwork: (patch: Partial<ArtworkState>) => void;
   setAvatarId: (id: string | null) => void;
   onError: (message: string) => void;
+  /**
+   * Leaves out the Numbers section. The journal fills the numbers from a
+   * trade or a month, so there they are not the person's to type.
+   */
+  hideNumbers?: boolean;
+  /** Leaves out the Style section, where a host shows those options its own way. */
+  hideStyle?: boolean;
+  /** Leaves out the background pickers, where a host lists backgrounds itself. */
+  hideBackgroundPicker?: boolean;
+}
+
+/**
+ * A colour that follows the theme until it is set. The well shows the colour
+ * the card is using right now; "Theme" puts it back to following.
+ */
+function OverrideColour({
+  label,
+  value,
+  fallback,
+  onChange,
+}: {
+  label: string;
+  value: string | null;
+  fallback: string;
+  onChange: (hex: string | null) => void;
+}) {
+  return (
+    <div className="override">
+      <RgbPicker label={label} value={value ?? fallback} onChange={(hex) => onChange(hex)} />
+      <button
+        type="button"
+        className="btn btn--ghost btn--small"
+        onClick={() => onChange(null)}
+        disabled={value === null}
+        title="Follow the theme again"
+      >
+        Theme
+      </button>
+    </div>
+  );
 }
 
 export function ControlPanel({
@@ -61,6 +101,9 @@ export function ControlPanel({
   patchArtwork,
   setAvatarId,
   onError,
+  hideNumbers = false,
+  hideStyle = false,
+  hideBackgroundPicker = false,
 }: ControlPanelProps) {
   const { trade, period, brand, display, artwork } = state;
   const result = useMemo(() => computeCard(state), [state]);
@@ -96,6 +139,7 @@ export function ControlPanel({
 
   return (
     <div className="controls">
+      {hideNumbers ? null : (
       <Section title="Numbers" hint="What the card is about.">
         <Field label="Card">
           <Segmented
@@ -264,6 +308,7 @@ export function ControlPanel({
           </p>
         ) : null}
       </Section>
+      )}
 
       <Section title="Colour" hint="The block, the percentage and the ink.">
         <div className="theme-grid">
@@ -324,20 +369,71 @@ export function ControlPanel({
         </p>
       </Section>
 
-      <Section title="Background" hint="One of ours, or a photo or clip of yours.">
-        <Field label="Built in" hint="drawn by the app, no upload">
-          <ScenePicker value={artwork.sceneId} onChange={selectScene} />
-        </Field>
-        <Field label="Yours">
-          <ImagePicker
-            role="artwork"
-            selectedId={artwork.imageId}
-            onSelect={selectArtwork}
-            onError={onError}
-            emptyLabel="None"
-            hint={ARTWORK_HINT}
+      {hideStyle ? null : (
+      <Section title="Style" hint="Text and PnL colours, weight, shadow, the block.">
+        <OverrideColour
+          label="Main text"
+          value={display.textColor}
+          fallback={tileInk}
+          onChange={(textColor) => patchDisplay({ textColor })}
+        />
+        <OverrideColour
+          label="Positive PnL"
+          value={display.profitColor}
+          fallback={theme.accent}
+          onChange={(profitColor) => patchDisplay({ profitColor })}
+        />
+        <OverrideColour
+          label="Negative PnL"
+          value={display.lossColor}
+          fallback={theme.loss}
+          onChange={(lossColor) => patchDisplay({ lossColor })}
+        />
+        <OverrideColour
+          label="Block text"
+          value={display.blockTextColor}
+          fallback={PALETTE.onAccent}
+          onChange={(blockTextColor) => patchDisplay({ blockTextColor })}
+        />
+        <div className="toggles">
+          <Toggle label="Bold text" checked={display.boldText} onChange={(boldText) => patchDisplay({ boldText })} />
+          <Toggle
+            label="Text shadows"
+            checked={display.textShadow}
+            onChange={(textShadow) => patchDisplay({ textShadow })}
           />
-        </Field>
+          <Toggle
+            label="Coloured PnL block"
+            checked={display.showBlock}
+            onChange={(showBlock) => patchDisplay({ showBlock })}
+          />
+          <Toggle
+            label="Instrument logo (trade cards)"
+            checked={display.showTokenImage}
+            onChange={(showTokenImage) => patchDisplay({ showTokenImage })}
+          />
+        </div>
+      </Section>
+      )}
+
+      <Section title="Background" hint="One of ours, or a photo or clip of yours.">
+        {hideBackgroundPicker ? null : (
+          <>
+            <Field label="Built in" hint="drawn by the app, no upload">
+              <ScenePicker value={artwork.sceneId} onChange={selectScene} />
+            </Field>
+            <Field label="Yours">
+              <ImagePicker
+                role="artwork"
+                selectedId={artwork.imageId}
+                onSelect={selectArtwork}
+                onError={onError}
+                emptyLabel="None"
+                hint={ARTWORK_HINT}
+              />
+            </Field>
+          </>
+        )}
         {artwork.imageId || artwork.sceneId ? (
           <div className="sliders">
             <Slider

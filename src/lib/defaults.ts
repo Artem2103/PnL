@@ -1,4 +1,4 @@
-import type { CardState } from '../types';
+import type { CardState, StudioClip, StudioState, StudioTrack } from '../types';
 import { MAX_CLIP_SECONDS } from './images';
 import { DEFAULT_FRAME_ID } from './frames';
 import { DEFAULT_SCENE_ID } from './canvas/scenes';
@@ -59,6 +59,14 @@ export function createDefaultState(): CardState {
       compactHero: true,
       frameId: DEFAULT_FRAME_ID,
       frameColor: DEFAULT_SAMPLE_FRAME_COLOR,
+      textColor: null,
+      profitColor: null,
+      lossColor: null,
+      blockTextColor: null,
+      boldText: false,
+      textShadow: false,
+      showBlock: true,
+      showTokenImage: false,
     },
     artwork: {
       imageId: null,
@@ -74,6 +82,52 @@ export function createDefaultState(): CardState {
       muteAudio: false,
     },
     avatarId: null,
+    studio: createDefaultStudio(),
+  };
+}
+
+export function createDefaultStudio(): StudioState {
+  return { aspect: '16:9', clips: [], tracks: [] };
+}
+
+/** Saved studio, field by field, so a malformed save cannot break the editor. */
+function hydrateStudio(saved: unknown): StudioState {
+  const base = createDefaultStudio();
+  if (!saved || typeof saved !== 'object') return base;
+  const s = saved as Partial<StudioState>;
+  const num = (v: unknown, fallback: number, lo: number, hi: number) =>
+    typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback;
+  const aspects: StudioState['aspect'][] = ['card', '16:9', '4:3', '1:1'];
+  return {
+    aspect: aspects.includes(s.aspect as StudioState['aspect']) ? (s.aspect as StudioState['aspect']) : base.aspect,
+    clips: Array.isArray(s.clips)
+      ? s.clips
+          .filter((c): c is StudioClip => !!c && typeof c === 'object' && typeof c.mediaId === 'string')
+          .map((c) => ({
+            id: typeof c.id === 'string' ? c.id : c.mediaId,
+            mediaId: c.mediaId,
+            start: num(c.start, 0, 0, 1e6),
+            length: num(c.length, MAX_CLIP_SECONDS, 0.1, 1e6),
+            volume: num(c.volume, 1, 0, 1),
+            zoom: num(c.zoom, 1, 1, 3),
+            offsetX: num(c.offsetX, 0, -1, 1),
+            offsetY: num(c.offsetY, 0, -1, 1),
+          }))
+      : [],
+    tracks: Array.isArray(s.tracks)
+      ? s.tracks
+          .filter((t): t is StudioTrack => !!t && typeof t === 'object' && typeof t.soundId === 'string')
+          .map((t) => ({
+            id: typeof t.id === 'string' ? t.id : t.soundId,
+            soundId: t.soundId,
+            name: typeof t.name === 'string' ? t.name : 'Sound',
+            at: num(t.at, 0, 0, 1e6),
+            start: num(t.start, 0, 0, 1e6),
+            length: num(t.length, 10, 0.1, 1e6),
+            volume: num(t.volume, 1, 0, 1),
+          }))
+          .slice(0, 10)
+      : [],
   };
 }
 
@@ -119,6 +173,7 @@ export function hydrateState(raw: unknown): CardState {
         ? { ...artwork, clipLength: MAX_CLIP_SECONDS }
         : artwork,
     avatarId: saved.avatarId ?? base.avatarId,
+    studio: hydrateStudio(saved.studio),
   };
 }
 

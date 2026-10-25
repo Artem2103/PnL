@@ -874,6 +874,14 @@ kbd {
   gap: 12px;
 }
 
+/* A colour that can follow the theme: the picker, and a button to let go. */
+.override {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: 10px;
+}
+
 .rgb__row {
   display: flex;
   align-items: center;

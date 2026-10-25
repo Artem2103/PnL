@@ -214,7 +214,15 @@ export function CardPreview({
     return () => {
       cancelled = true;
     };
-  }, [state.artwork.imageId, state.avatarId, request]);
+  }, [
+    state.artwork.imageId,
+    state.avatarId,
+    // The instrument logo is an asset too, loaded only while the card shows it.
+    state.mode,
+    state.display.showTokenImage,
+    state.trade.logoUrl,
+    request,
+  ]);
 
   // Anything else about the card changed: repaint, without touching assets.
   useEffect(request);

@@ -163,6 +163,13 @@ async function resolveCard(userId: string, local: CardSnapshot): Promise<Resolve
   return promise;
 }
 
+/**
+ * Every mounted copy of the hook, per account. The card editor and the
+ * journal's share studio can be open at once; an edit in one is handed to the
+ * other straight away, so neither can later save a stale copy over it.
+ */
+const peers = new Map<string, Set<(state: CardState) => void>>();
+
 export interface CloudCard {
   state: CardState;
   setState: Dispatch<SetStateAction<CardState>>;
@@ -281,10 +288,31 @@ export function useCloudCard(userId: string): CloudCard {
     return () => clearTimeout(timer);
   }, [persistLocal, state, userId]);
 
-  const setState = useCallback<Dispatch<SetStateAction<CardState>>>((action) => {
-    dirtyRef.current = true;
-    setStateInner(action);
-  }, []);
+  const receive = useCallback((next: CardState) => setStateInner(next), []);
+  useEffect(() => {
+    let set = peers.get(userId);
+    if (!set) peers.set(userId, (set = new Set()));
+    set.add(receive);
+    return () => {
+      set.delete(receive);
+    };
+  }, [receive, userId]);
+
+  const setState = useCallback<Dispatch<SetStateAction<CardState>>>(
+    (action) => {
+      dirtyRef.current = true;
+      setStateInner((prev) => {
+        const next = typeof action === 'function' ? action(prev) : action;
+        // Told after the update, never during it: the other copy only shows
+        // the card; this one, which made the edit, saves it.
+        queueMicrotask(() => {
+          for (const peer of peers.get(userId) ?? []) if (peer !== receive) peer(next);
+        });
+        return next;
+      });
+    },
+    [receive, userId],
+  );
 
   return { state, setState, status, error };
 }

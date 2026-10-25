@@ -43,6 +43,27 @@ function loadLogoMark(): Promise<HTMLImageElement | null> {
   return logoMark;
 }
 
+/** Instrument logos by URL, loaded once each. They ship with the app (`/logos`). */
+const tokens = new Map<string, Promise<HTMLImageElement | null>>();
+
+function loadToken(url: string | null | undefined): Promise<HTMLImageElement | null> {
+  if (!url) return Promise.resolve(null);
+  let pending = tokens.get(url);
+  if (!pending) {
+    pending = new Promise((done) => {
+      const img = new Image();
+      img.onload = () => done(img);
+      img.onerror = () => {
+        tokens.delete(url);
+        done(null);
+      };
+      img.src = url;
+    });
+    tokens.set(url, pending);
+  }
+  return pending;
+}
+
 async function resolveBackground(id: string | null): Promise<BackgroundMedia | null> {
   if (!id) return null;
   const media = peekMedia(id) ?? (await loadMedia(id));
@@ -63,12 +84,14 @@ async function resolveBackground(id: string | null): Promise<BackgroundMedia | n
  */
 export async function prepareAssets(state: CardState): Promise<RenderAssets> {
   await ensureFonts();
-  const [artwork, avatar, logo] = await Promise.all([
+  const wantsToken = state.mode === 'trade' && state.display.showTokenImage;
+  const [artwork, avatar, logo, token] = await Promise.all([
     resolveBackground(state.artwork.imageId),
     resolve(state.avatarId),
     loadLogoMark(),
+    loadToken(wantsToken ? state.trade.logoUrl : null),
   ]);
-  return { artwork, avatar, logo };
+  return { artwork, avatar, logo, token };
 }
 
 /* ------------------------------------------------------------------ */

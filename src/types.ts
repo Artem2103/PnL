@@ -30,6 +30,8 @@ export interface TradeState {
    * prices and leverage cannot reproduce for a lot-sized position.
    */
   pnlPct?: number | null;
+  /** The instrument's logo, for `showTokenImage`. Set by the journal from /logos. */
+  logoUrl?: string | null;
   /** Show "Long 20×" after the symbol in the title. */
   showDirectionInTitle: boolean;
 }
@@ -84,6 +86,26 @@ export interface DisplayState {
    * even while another frame is chosen, so switching back does not lose it.
    */
   frameColor: string;
+  /*
+   * The "Customize" options. Each colour is null while it follows the theme,
+   * so a card that never touched them looks exactly as it always did.
+   */
+  /** Every string outside the block. */
+  textColor: string | null;
+  /** The block and the percentage when the result is up. */
+  profitColor: string | null;
+  /** The same when it is down. */
+  lossColor: string | null;
+  /** The value inside the block; null picks black or white for contrast. */
+  blockTextColor: string | null;
+  /** Heavier weights for the title, rows, handle and footer. */
+  boldText: boolean;
+  /** A soft shadow under every string, for busy backgrounds. */
+  textShadow: boolean;
+  /** The coloured rectangle behind the big value. Off prints the value in colour instead. */
+  showBlock: boolean;
+  /** The instrument's logo before the title, on a trade card. */
+  showTokenImage: boolean;
 }
 
 export interface ArtworkState {
@@ -111,6 +133,50 @@ export interface ArtworkState {
   muteAudio: boolean;
 }
 
+/** The frame a composed video is exported in. `card` is the card itself, clip behind it. */
+export type StudioAspect = 'card' | '16:9' | '4:3' | '1:1';
+
+/** One clip on the video timeline. Clips play one after another. */
+export interface StudioClip {
+  /** This placement's own id: the same file can be on the timeline twice. */
+  id: string;
+  /** Media library id of the clip. */
+  mediaId: string;
+  /** Seconds into the file. */
+  start: number;
+  /** Seconds used. */
+  length: number;
+  /** 0..1. */
+  volume: number;
+  /** Placement of the clip in the frame, as for the card's background. */
+  zoom: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+/** A sound laid under the timeline: music, a voice-over. */
+export interface StudioTrack {
+  id: string;
+  /** Id in the browser's sound store (`lib/studio/sounds.ts`). */
+  soundId: string;
+  name: string;
+  /** Where it starts on the timeline, seconds. */
+  at: number;
+  /** Seconds into the file. */
+  start: number;
+  /** Seconds used. */
+  length: number;
+  volume: number;
+}
+
+export interface StudioState {
+  /** The size of the exported video. The card sits fixed in it; only the clip moves. */
+  aspect: StudioAspect;
+  /** The clip behind the card: one, as the share sheet makes it. */
+  clips: StudioClip[];
+  tracks: StudioTrack[];
+}
+
 export interface CardState {
   mode: CardMode;
   trade: TradeState;
@@ -120,6 +186,8 @@ export interface CardState {
   artwork: ArtworkState;
   /** Image library id for the avatar beside the handle. */
   avatarId: string | null;
+  /** The video studio: frame, timeline and sounds. */
+  studio: StudioState;
 }
 
 /**
@@ -146,4 +214,6 @@ export interface RenderAssets {
   artwork: BackgroundMedia | null;
   avatar: HTMLImageElement | null;
   logo: HTMLImageElement | null;
+  /** The instrument's logo, when the card shows one. */
+  token?: HTMLImageElement | null;
 }

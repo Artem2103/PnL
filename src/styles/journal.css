@@ -1572,7 +1572,7 @@
 /* ----------------------------------------------------- share card */
 
 .jx-backdrop:has(> .jx-share) {
-  background: rgba(0, 0, 0, 0.62);
+  background: rgba(0, 0, 0, 0.72);
 }
 
 .jx-share {

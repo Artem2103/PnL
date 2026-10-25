@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../lib/auth';
-import { STUDIO_PATH, navigate } from '../../lib/route';
 import { addTrades, useJournal } from '../store';
 import { demoTrades } from '../demo';
 import {
@@ -28,6 +27,7 @@ import { CalendarModal } from './CalendarModal';
 import { ShareCardModal } from './ShareCardModal';
 import { monthLabel } from './format';
 import '../../styles/journal.css';
+import '../../styles/journal-studio.css';
 
 export function JournalModal({
   name,
@@ -215,10 +215,6 @@ export function JournalModal({
           subject={share}
           currency={currency}
           onClose={() => setShare(null)}
-          onCustomize={() => {
-            onClose();
-            navigate(STUDIO_PATH);
-          }}
         />
       ) : null}
     </Overlay>

@@ -9,7 +9,7 @@ import { loadLocalCard } from '../lib/defaults';
 import { fetchLatestCard } from '../lib/remote/cards';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { LOCAL_USER_ID } from '../lib/auth';
-import { displaySymbol } from './symbols';
+import { displaySymbol, LOGOS, normalizeSymbol } from './symbols';
 import type { Period, Trade } from './types';
 
 export type ShareSubject =
@@ -44,6 +44,7 @@ export function journalCardState(design: CardState, subject: ShareSubject, curre
       exitPrice: trade.closePrice ?? trade.entryPrice,
       pnl: trade.pnl,
       pnlPct: pct,
+      logoUrl: LOGOS.get(normalizeSymbol(trade.symbol)) ?? null,
       showDirectionInTitle: true,
     },
   };
