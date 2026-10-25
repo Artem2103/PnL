@@ -1,7 +1,7 @@
 import type { CardState, StudioClip, StudioState, StudioTrack } from '../types';
 import { MAX_CLIP_SECONDS } from './images';
 import { DEFAULT_FRAME_ID } from './frames';
-import { DEFAULT_SCENE_ID } from './canvas/scenes';
+import { DEFAULT_SCENE_ID, NO_SCENE, sceneById } from './canvas/scenes';
 import { DEFAULT_CUSTOM_ACCENT, DEFAULT_THEME_ID } from './themes';
 
 /**
@@ -161,7 +161,12 @@ export function hydrateState(raw: unknown): CardState {
   const base = createDefaultState();
   if (!raw || typeof raw !== 'object') return base;
   const saved = raw as Partial<CardState>;
-  const artwork = merge(base.artwork, saved.artwork);
+  const merged = merge(base.artwork, saved.artwork);
+  // A card saved on a drawn background that is gone opens on the default photo.
+  const artwork =
+    merged.sceneId && merged.sceneId !== NO_SCENE && !sceneById(merged.sceneId)
+      ? { ...merged, sceneId: DEFAULT_SCENE_ID }
+      : merged;
   return {
     mode: saved.mode === 'trade' || saved.mode === 'period' ? saved.mode : base.mode,
     trade: merge(base.trade, saved.trade),

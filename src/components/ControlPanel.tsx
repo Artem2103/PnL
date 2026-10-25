@@ -419,7 +419,7 @@ export function ControlPanel({
       <Section title="Background" hint="One of ours, or a photo or clip of yours.">
         {hideBackgroundPicker ? null : (
           <>
-            <Field label="Built in" hint="drawn by the app, no upload">
+            <Field label="Built in" hint="comes with the app, no upload">
               <ScenePicker value={artwork.sceneId} onChange={selectScene} />
             </Field>
             <Field label="Yours">
@@ -447,7 +447,7 @@ export function ControlPanel({
             />
           </div>
         ) : null}
-        {artwork.imageId ? (
+        {artwork.imageId || artwork.sceneId ? (
           <>
             <div className="subsection">
               <div className="subsection__head">

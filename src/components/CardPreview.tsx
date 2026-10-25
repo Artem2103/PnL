@@ -216,6 +216,7 @@ export function CardPreview({
     };
   }, [
     state.artwork.imageId,
+    state.artwork.sceneId,
     state.avatarId,
     // The instrument logo is an asset too, loaded only while the card shows it.
     state.mode,
@@ -262,7 +263,7 @@ export function CardPreview({
   /* Dragging the background                                         */
   /* -------------------------------------------------------------- */
 
-  const canPan = Boolean(state.artwork.imageId && patchArtwork);
+  const canPan = Boolean((state.artwork.imageId || state.artwork.sceneId) && patchArtwork);
 
   const onPointerDown = useCallback(
     (event: React.PointerEvent<HTMLCanvasElement>) => {

@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ArtworkState, BrandState, CardState, DisplayState, StudioClip, StudioState } from '../../types';
 import { CardPreview } from '../../components/CardPreview';
 import { LimitDialog } from '../../components/LimitDialog';
@@ -17,7 +17,7 @@ import { downloadCardVideo, videoSupport } from '../../lib/video';
 import { claimExport, type ExportFormat, type PlanStatus } from '../../lib/billing';
 import { PRICING_PATH, navigate } from '../../lib/route';
 import { CARD } from '../../lib/render';
-import { DEFAULT_SCENE_ID, SCENES, drawScene, sceneById } from '../../lib/canvas/scenes';
+import { DEFAULT_SCENE_ID, SCENES } from '../../lib/canvas/scenes';
 import { slugify } from '../../lib/format';
 import { useAuth } from '../../lib/auth';
 import { useCloudCard } from '../../lib/useCloudCard';
@@ -47,8 +47,6 @@ import {
 const SCALES = [1, 2, 3] as const;
 /** The Video side takes clips only, the Image side photos only. */
 const ACCEPT_VIDEO = 'video/mp4,video/quicktime,video/webm';
-const THUMB_W = 118;
-const THUMB_H = 80;
 
 function megabytes(bytes: number): string {
   return `${Math.round(bytes / (1024 * 1024))}MB`;
@@ -59,25 +57,6 @@ function newId(): string {
     ? crypto.randomUUID()
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
-
-/** A built-in background, painted by the scene itself and cropped like a photo tile. */
-const SceneThumb = memo(function SceneThumb({ sceneId }: { sceneId: string }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const canvas = ref.current;
-    const scene = sceneById(sceneId);
-    if (!canvas || !scene) return;
-    const dpr = Math.min(3, window.devicePixelRatio || 1);
-    canvas.width = THUMB_W * dpr;
-    canvas.height = THUMB_H * dpr;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const scale = Math.max(THUMB_W / CARD.width, THUMB_H / CARD.height) * dpr;
-    ctx.setTransform(scale, 0, 0, scale, (THUMB_W * dpr - CARD.width * scale) / 2, (THUMB_H * dpr - CARD.height * scale) / 2);
-    drawScene(ctx, CARD.width, CARD.height, scene);
-  }, [sceneId]);
-  return <canvas ref={ref} style={{ width: THUMB_W, height: THUMB_H }} aria-hidden="true" />;
-});
 
 /** A clip placed on the timeline from the library, all of it up to 30 s. */
 function clipFrom(item: Pick<MediaSummary, 'id' | 'duration'>, from?: Partial<StudioClip>): StudioClip {
@@ -591,7 +570,7 @@ export function ShareCardModal({
                   aria-pressed={isSceneSelected(scene.id)}
                   title={scene.name}
                 >
-                  <SceneThumb sceneId={scene.id} />
+                  <img src={scene.url} alt="" loading="lazy" />
                 </button>
               ))}
               {images.map((item) => (

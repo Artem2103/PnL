@@ -5,6 +5,7 @@ import { CARD } from './canvas/spec';
 import { ensureFonts } from './fonts';
 import { loadImageElement, loadMedia, peekImageElement, peekMedia } from './images';
 import { computeCard } from './pnl';
+import { loadScene, sceneById } from './canvas/scenes';
 import logoMarkUrl from '../assets/tradingview-mark.png';
 
 /** Browsers cap canvas dimensions; 8192 is the safe floor across engines. */
@@ -64,8 +65,13 @@ function loadToken(url: string | null | undefined): Promise<HTMLImageElement | n
   return pending;
 }
 
-async function resolveBackground(id: string | null): Promise<BackgroundMedia | null> {
-  if (!id) return null;
+async function resolveBackground(id: string | null, sceneId: string | null): Promise<BackgroundMedia | null> {
+  if (!id) {
+    // No upload: the built-in background, if one is chosen.
+    const scene = sceneById(sceneId);
+    const img = scene ? await loadScene(scene) : null;
+    return img ? { kind: 'image', element: img, width: img.naturalWidth, height: img.naturalHeight, duration: 0 } : null;
+  }
   const media = peekMedia(id) ?? (await loadMedia(id));
   if (!media) return null;
   return {
@@ -86,7 +92,7 @@ export async function prepareAssets(state: CardState): Promise<RenderAssets> {
   await ensureFonts();
   const wantsToken = state.mode === 'trade' && state.display.showTokenImage;
   const [artwork, avatar, logo, token] = await Promise.all([
-    resolveBackground(state.artwork.imageId),
+    resolveBackground(state.artwork.imageId, state.artwork.sceneId),
     resolve(state.avatarId),
     loadLogoMark(),
     loadToken(wantsToken ? state.trade.logoUrl : null),

@@ -1,99 +1,36 @@
 import { describe, expect, it } from 'vitest';
-import { NO_SCENE, SCENES, drawScene, sceneById } from './scenes';
-import { CARD } from './spec';
-import type { Ctx2D } from './primitives';
+import { DEFAULT_SCENE_ID, NO_SCENE, SCENES, sceneById } from './scenes';
+import { createDefaultState, hydrateState } from '../defaults';
 
-/**
- * A canvas that records nothing and refuses nothing. The scenes are drawing
- * code with no return value, so what a unit test can prove is narrow but worth
- * having: every scene paints, end to end, without throwing — a bad index into a
- * face list or a colour the mixer cannot parse would otherwise only show up as
- * a blank card in front of someone.
- *
- * What it cannot tell you is whether the picture is any good. That is
- * `dev/scenes-shot.html`, and there is no substitute for looking.
- */
-function stubContext(): { ctx: Ctx2D; calls: { fills: number; strokes: number } } {
-  const calls = { fills: 0, strokes: 0 };
-  const gradient = { addColorStop: () => {} };
-  const ctx = {
-    save: () => {},
-    restore: () => {},
-    beginPath: () => {},
-    closePath: () => {},
-    moveTo: () => {},
-    lineTo: () => {},
-    arc: () => {},
-    rect: () => {},
-    translate: () => {},
-    rotate: () => {},
-    scale: () => {},
-    clip: () => {},
-    fill: () => {
-      calls.fills += 1;
-    },
-    stroke: () => {
-      calls.strokes += 1;
-    },
-    fillRect: () => {
-      calls.fills += 1;
-    },
-    createLinearGradient: () => gradient,
-    createRadialGradient: () => gradient,
-    globalAlpha: 1,
-    globalCompositeOperation: 'source-over',
-    fillStyle: '',
-    strokeStyle: '',
-    lineWidth: 1,
-  } as unknown as Ctx2D;
-  return { ctx, calls };
-}
-
-describe('the built-in scenes', () => {
-  it('has a unique id for every scene', () => {
+describe('built-in backgrounds', () => {
+  it('are five photos with their own ids', () => {
     const ids = SCENES.map((scene) => scene.id);
+    expect(ids).toHaveLength(5);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).not.toContain(NO_SCENE);
-  });
-
-  it('gives every scene a name, a blurb and three colours', () => {
     for (const scene of SCENES) {
-      expect(scene.name.length).toBeGreaterThan(0);
-      expect(scene.blurb.length).toBeGreaterThan(0);
-      for (const colour of [scene.ground[0], scene.ground[1], scene.light, scene.rim]) {
-        expect(colour).toMatch(/^#[0-9A-Fa-f]{6}$/);
-      }
+      expect(scene.name).toBeTruthy();
+      expect(scene.url).toMatch(/\.jpg/);
     }
   });
 
-  it('resolves an id, and nothing else', () => {
+  it('are found by id, and nothing else is', () => {
     for (const scene of SCENES) expect(sceneById(scene.id)).toBe(scene);
     expect(sceneById(null)).toBeNull();
     expect(sceneById(NO_SCENE)).toBeNull();
-    // A card saved with a scene that was later removed falls back to the plain
-    // ground rather than to a blank card.
-    expect(sceneById('no-such-scene')).toBeNull();
+    expect(sceneById('astra')).toBeNull();
   });
 
-  it('paints every scene without throwing, and paints something', () => {
-    for (const scene of SCENES) {
-      const { ctx, calls } = stubContext();
-      expect(() => drawScene(ctx, CARD.width, CARD.height, scene)).not.toThrow();
-      // The sky is fills all the way down — ground, blooms, band, stars, sparks.
-      // Nothing in it is stroked, so counting strokes would only pin an
-      // implementation detail of whatever is drawn next.
-      expect(calls.fills).toBeGreaterThan(50);
-    }
+  it('start a new card on the default', () => {
+    expect(sceneById(DEFAULT_SCENE_ID)).not.toBeNull();
+    expect(createDefaultState().artwork.sceneId).toBe(DEFAULT_SCENE_ID);
   });
 
-  it('is the same picture every time it paints', () => {
-    // The scatter of motes runs off a seeded generator, not Math.random: the
-    // preview, the PNG and every frame of a video export have to agree.
-    const [first, second] = [stubContext(), stubContext()];
-    const scene = SCENES[0];
-    if (!scene) throw new Error('no scenes');
-    drawScene(first.ctx, CARD.width, CARD.height, scene);
-    drawScene(second.ctx, CARD.width, CARD.height, scene);
-    expect(first.calls).toEqual(second.calls);
+  it('take over from the drawn backgrounds an old card was saved on', () => {
+    expect(hydrateState({ artwork: { sceneId: 'astra' } }).artwork.sceneId).toBe(DEFAULT_SCENE_ID);
+    expect(hydrateState({ artwork: { sceneId: 'blade' } }).artwork.sceneId).toBe(DEFAULT_SCENE_ID);
+    // "None" stays none, and a current one stays itself.
+    expect(hydrateState({ artwork: { sceneId: null } }).artwork.sceneId).toBeNull();
+    expect(hydrateState({ artwork: { sceneId: 'vanish' } }).artwork.sceneId).toBe('vanish');
   });
 });

@@ -6,7 +6,7 @@ import { resolveTheme, type Theme } from '../themes';
 import { CARD, GROUND, PALETTE, SPEC } from './spec';
 import { drawAvatarFrame } from './avatarFrames';
 import { placeCover } from './placement';
-import { drawScene, sceneById } from './scenes';
+import { sceneById } from './scenes';
 import {
   FONT_DISPLAY,
   cachedGradient,
@@ -180,29 +180,11 @@ function drawBackground(ctx: Ctx2D, input: DrawInput, theme: Theme): void {
   const ground = groundFor(state);
 
   const media = assets.artwork;
-  const showArtwork = Boolean(
-    state.artwork.imageId && media && media.width > 0 && media.height > 0 && isPaintable(media),
-  );
-  // An upload wins: picking one clears the scene in the editor, and if a saved
-  // card somehow carries both, the file someone chose is the stronger signal.
-  const scene = showArtwork ? null : sceneById(state.artwork.sceneId);
-
-  if (scene) {
-    drawScene(ctx, width, height, scene);
-    if (light) {
-      // The scenes are built for the dark card. Under black ink they are veiled
-      // to a pale tint across the *whole* card, not just the text column: the
-      // wordmark and the footer's right end sit out where the scrim's ramp has
-      // already fallen to zero, and black on a near-black solid is not a card
-      // anyone would post.
-      ctx.save();
-      ctx.fillStyle = 'rgba(253, 253, 255, 0.66)';
-      ctx.fillRect(0, 0, width, height);
-      ctx.restore();
-    }
-    drawScrim(ctx, state.artwork.scrim, light);
-    return;
-  }
+  // An upload wins: picking one clears the built-in background in the editor,
+  // and if a saved card somehow carries both, the file someone chose is the
+  // stronger signal. A built-in one is a photo too, loaded by `render.ts`.
+  const chosen = Boolean(state.artwork.imageId || sceneById(state.artwork.sceneId));
+  const showArtwork = Boolean(chosen && media && media.width > 0 && media.height > 0 && isPaintable(media));
 
   ctx.save();
   if (showArtwork) {
