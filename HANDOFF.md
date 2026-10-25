@@ -47,7 +47,9 @@ Asked for: make the journal look *exactly* like the references in `design-refs/`
 full-screen captures `PrtSc1`–`PrtSc4`. Only two things may differ: the **+ Add trade** button,
 and how a trade row is shown. The number of trades in each calendar day stays.
 
-**Not committed**, like (b) below. Side-by-side pictures (reference left, Astra right) are in
+**Committed and pushed** to `main` as `f4ed2f0`, together with (b) below. `design-refs/` and `dev/refs/`
+(your screenshots and the crops made from them) are left uncommitted on purpose: they are
+Axiom's screens and your own browser tabs. The overlay page needs `dev/refs/` locally. Side-by-side pictures (reference left, Astra right) are in
 **`Desktop\Astra journal - matched to Axiom\`**.
 
 ### How it was matched — measured, not eyeballed
@@ -144,7 +146,7 @@ Asked for: turn the card app into a trading journal, laid out like the screensho
 trade entry only, and a data layer that MT5 sync can write into later without UI changes. The
 existing share card was to be reused, not rebuilt.
 
-**Not committed.** Everything below is in the working tree, uncommitted.
+**Committed** in `f4ed2f0` with (c) above.
 
 ### What you have to do
 
