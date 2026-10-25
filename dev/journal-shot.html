@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Journal shot</title>
+    <style>
+      html, body { margin: 0; background: #000; overflow: hidden; }
+      #stage { position: relative; transform-origin: 0 0; }
+      iframe { border: 0; display: block; }
+      #ref { position: absolute; inset: 0; pointer-events: none; display: none; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Dev-only. Shows the app at an exact CSS viewport — ?w=1536&h=738 is the
+      reference screenshots' own viewport (1920×922 physical at 125% scaling) —
+      scaled to fit this window, so the journal can be checked at sizes a real
+      window cannot be opened at.
+
+      ?ref=journal|calendar|share|share-video lays the matching reference from
+      dev/refs/ over it; &mode=diff shows the difference (black = identical),
+      &mode=half a 50% blend, &mode=ref the reference alone. The frame is
+      same-origin, so it can be driven from here:
+      frames[0].document.querySelector('.profile__button').click().
+    -->
+    <div id="stage"><iframe id="app"></iframe><img id="ref" alt="" /></div>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const w = Number(params.get('w')) || 1536;
+      const h = Number(params.get('h')) || 738;
+      const stage = document.getElementById('stage');
+      const frame = document.getElementById('app');
+      const ref = document.getElementById('ref');
+      stage.style.width = `${w}px`;
+      stage.style.height = `${h}px`;
+      frame.width = w;
+      frame.height = h;
+      frame.src = params.get('path') || '/cards';
+      window.setRef = (name, mode = 'half') => {
+        if (!name) { ref.style.display = 'none'; return; }
+        ref.src = `/dev/refs/${name}.png`;
+        ref.style.display = 'block';
+        ref.style.opacity = mode === 'half' ? '0.5' : '1';
+        ref.style.mixBlendMode = mode === 'diff' ? 'difference' : 'normal';
+      };
+      if (params.get('ref')) window.setRef(params.get('ref'), params.get('mode') || 'half');
+      const fit = () => {
+        const scale = Math.min(innerWidth / w, innerHeight / h);
+        stage.style.transform = `scale(${scale})`;
+      };
+      addEventListener('resize', fit);
+      fit();
+    </script>
+  </body>
+</html>

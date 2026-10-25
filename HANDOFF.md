@@ -30,11 +30,236 @@ file easier to read:
 | 2026-09-22 (c) | **code**: five built-in backgrounds, drawn by the renderer — and why the reference ones were not copied | see **Start here (2026-09-22 c)** |
 | 2026-09-22 (d) | **code**: the five scenes became one — the Astra sky, bright, and the background a new card starts on | see **Start here (2026-09-22 d)** |
 | 2026-09-23 | **code**: the logo mark is fixed to the TradingView mark — no picker, only the on/off toggle | see **Start here (2026-09-23)** |
+| 2026-10-25 | *no code* — `claude doctor` run: no installation issues; one failed auto-update | see **Claude Code health check (2026-10-25)** at the end |
+| 2026-10-25 (b) | **code**: the trading journal — profile modal, PnL calendar, add/edit trades, journal share cards; **needs the SQL run** | see **Start here (2026-10-25 b)** |
+| 2026-10-25 (c) | **code**: the journal matched to the Axiom screens — measured off the screenshots, checked by overlay | see **Start here (2026-10-25 c)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-10-25 c) — the journal, matched to the Axiom screens
+
+Asked for: make the journal look *exactly* like the references in `design-refs/`, using the new
+full-screen captures `PrtSc1`–`PrtSc4`. Only two things may differ: the **+ Add trade** button,
+and how a trade row is shown. The number of trades in each calendar day stays.
+
+**Not committed**, like (b) below. Side-by-side pictures (reference left, Astra right) are in
+**`Desktop\Astra journal - matched to Axiom\`**.
+
+### How it was matched — measured, not eyeballed
+
+Your captures are 1920×1080 at 125% Windows scaling. That is exactly this laptop's browser
+viewport: 1536×738 CSS pixels, physical ÷ 1.25. So every edge, gap, colour and text box was read
+straight off the pixels:
+- the modal is 1280px wide, flush with the top, full height
+- corners are 4px, not the 10px I had
+- panels and history sit in one bordered box with `#22242D` hairlines on `#18181A`
+- the active filter is `#526FFF`, profit `#2FE3AC`, loss `#EC397A`
+- the calendar is a fixed 800×640 with 106×80 cells on an 84px pitch
+- the share card is 720px wide
+
+The reference font is Inter at whole sizes with −0.02em tracking: 14/500 titles, 12px labels. I
+found that by fitting every measured text width in the browser.
+
+Then the app was laid **on top of** the references in a new dev page:
+- `dev/journal-shot.html?ref=journal&mode=half` (also `calendar`, `share`, `share-video`;
+  `mode=diff` for a difference view)
+- CSS-scaled copies of your captures live in `dev/refs/`
+
+Every text's ink box was compared to the reference numerically. Titles, labels, values, filters,
+history columns, calendar header, cells and chips all now land within about 1px of the
+reference at 1536px.
+
+### What changed, screen by screen
+
+- **Profile modal**
+  - Header: name, account label, round avatar · divider · 1d 7d 30d **Max** (blue) · divider · ⚙ · ✕.
+  - Balance panel: same two halves as the reference.
+    - Top: the figures plus a 9px-cell heatmap. It now has the reference's baseline, today's
+      weekday in bold, and a **current-time line with a clock pill**.
+    - Bottom: the dropped wallet fields are replaced by *Starting Balance*, *Realized PNL*,
+      *Account Return* (pill with % and how long you've been journalling) and the trade count.
+  - Curve: full-bleed area chart, with the reference's plot box, margins and gradient
+    (28% → 4.5%).
+  - Performance: the reference's rows, dots, colours and 4px ratio bar.
+- **History**
+  - The reference's tab bar, pill search box, column positions (Pair/Entry/Close/Lots/PnL/Date
+    sit where Token/Bought/Sold/PNL/Opened sit), 60px rows on a slightly lighter ground, and
+    "5d **ago**" dates.
+  - The header now scrolls with the rows, so the two always line up.
+- **PnL Calendar**
+  - The reference's header, with the next-month arrow disabled on the current month.
+  - Total, split bar and labels; weekday row above a divider.
+  - Cell tint grows with the day's size, as in the reference.
+  - The month's **best day is gold with a dot**.
+  - Days still to come are left blank, as the reference does.
+  - Pill chips, and the ASTRA mark bottom right.
+- **Share card** (the reference's sheet, no frame)
+  - The card, then an **Image / Video** switch.
+  - A **strip of backgrounds**: the Astra sky plus your uploaded images, from the same library
+    the editor uses.
+  - A **Change upload** tile that adds a background to that library.
+  - **Customize / Download / Copy** below.
+  - Video side: the wider 853×480 frame with "No Video" or the clip's card, trash (removes the
+    clip), **Advanced** (opens the editor, where clips are trimmed), a play bar that reads the
+    clip's real position, an **Upload n/12** tile, and **Export Video**.
+  - A background picked here applies to that share only; your saved card design is not changed.
+- Trade form and settings restyled with the same colours, corners and type.
+
+### Where it still differs, and why
+
+- **No star, bell, search and similar icons in the header.** Those are Axiom features Astra
+  doesn't have. A button that does nothing would be worse than a gap.
+- **No currency switch in the calendar.** There is nothing to switch to. A gap keeps the month in
+  the reference's place.
+- **The share card is 8.6px taller.** The card renderer draws 840×570, not Axiom's 720×480 shape,
+  and the renderer is on the don't-touch list. The controls below are aligned to the reference
+  anyway.
+- **Performance has 5 stat rows instead of 4.** Win rate, profit factor and average win/loss were
+  all in the spec. Average win and loss share one row, and the distribution list moved down
+  12px to fit.
+- **Your card's own content stays.** That means the TradingView mark, the handle and the footer
+  line, as you designed it.
+- **Narrower and wider windows.** At 1920 the modal stays 83% wide, which is 1600px. Below 1500px
+  the history columns go proportional. Below 1200px the panels stack.
+
+### Verified
+
+- `npm test` 288/288, both typechecks clean, `vite build` passes.
+- Overlay comparison and numeric ink-box comparison at 1536×738 for the journal, calendar, share
+  image and share video, as described above.
+- Visual check at 1440×900 and 1920×1080. At 1440 the heatmap was running past its panel, so it
+  is now anchored to the panel's right edge.
+
+---
+
+## Start here (2026-10-25 b) — the trading journal
+
+Asked for: turn the card app into a trading journal, laid out like the screenshots in
+`design-refs/` (profile page, PnL calendar, share card), with Astra's own name and mark, manual
+trade entry only, and a data layer that MT5 sync can write into later without UI changes. The
+existing share card was to be reused, not rebuilt.
+
+**Not committed.** Everything below is in the working tree, uncommitted.
+
+### What you have to do
+
+1. **Run the SQL.** Supabase → SQL Editor → paste the whole of `supabase/schema.sql` → Run. It is
+   re-runnable as before; the new part is the `journal` section at the end. Until you run it,
+   I checked the live project with the public key: it answers `PGRST205`, "Could not find the
+   table 'public.trades'". The journal works anyway, but keeps trades in that browser and shows a
+   yellow banner saying so. The first time the account answers with an empty journal after the
+   SQL is in, those browser trades are moved into the account automatically.
+2. **Instrument logos**: drop files into `logos/` named after the symbol (`GBPUSD.png`,
+   `XAUUSD.svg`, …) and rebuild. I put in only the two logos that came in `design-refs/`:
+   `EURUSD.svg` and `NAS100.png`. Every other symbol gets a round badge with its first letters.
+
+Screenshots: **`Desktop\Astra journal\`** (journal at 1920, calendar, month card, trade card,
+edit form).
+
+### Where it lives
+
+Clicking the profile button (top right, on every page) now opens the journal. The old dropdown
+held Plans and Log out; both moved into the journal's ⚙ Settings, under *Account*.
+
+| | |
+|---|---|
+| `src/journal/types.ts` | `Trade` with `source: 'manual' \| 'mt5'`, `externalId` (MT5 ticket), `closedAt: null` = open position |
+| `src/journal/repository.ts` | `getTrades / addTrade / addTrades / updateTrade / deleteTrade / clearTrades / getSettings / saveSettings`; a Supabase version and a `localStorage` version behind one interface |
+| `src/journal/store.ts` | the one trades store (`useSyncExternalStore`). Every panel reads it; no component keeps a trade in its own state. Picks the repository, falls back to the browser on `PGRST205`, and does the one-time move |
+| `src/journal/stats.ts` | every number on screen, as pure functions, with 18 tests in `stats.test.ts` |
+| `src/journal/ui/*` | the modals: `JournalModal`, `Panels` (balance + heatmap, curve, performance), `History`, `TradeForm`, `SettingsModal`, `CalendarModal`, `ShareCardModal`, `Overlay` |
+| `src/styles/journal.css` | all journal styling, scoped to `.jx-*` and loaded only with the journal (a separate lazy chunk, ~15 kB gzipped) |
+| `supabase/schema.sql` | `trades` + `journal_settings`, RLS "self-service" like `cards`, a unique index on `(user_id, source, external_id)` so an MT5 re-sync can never duplicate a deal |
+
+**For MT5 sync later:** write rows into `trades` with `source = 'mt5'` and the deal ticket in
+`external_id`, the PnL as the broker reports it, and `closed_at = null` for open positions (their
+PnL shows as *Floating PnL*). Then call `reload(userId)` from `store.ts`. Nothing in the UI branches
+on `source`; the only difference is that the edit form shows a "Synced from MT5" chip.
+
+### How the share card is reused
+
+`ShareCardModal` mounts the editor's own `CardPreview` (read-only) and exports with the existing
+`downloadCard` / `copyCardToClipboard`, plus `downloadCardVideo` when the card's background is a
+clip. Exports go through the same `claim_export` plan check, and the same `LimitDialog` on a
+refusal. The card's look (background, colours, frame, handle, avatar) is the card you last
+designed in the editor (`loadCardDesign`: this browser's copy, or the account's if newer). Only the
+numbers come from the journal. *Customize* closes the journal and opens the editor.
+
+- **Trade card:** title "EUR/USD  Long", the money, entry and exit. The % row is the trade's PnL
+  as a % of the balance at entry, the same figure the History table shows. That needed one small
+  addition to the card model: an optional `trade.pnlPct` (`src/types.ts`) that `computeTrade`
+  (`src/lib/pnl.ts`) uses when set. The editor never sets it, so cards made there are unchanged.
+- **Month card** (calendar share): "October 2026", month PnL, PnL %, start and end balance.
+- **Period card** (Performance share): "30D Realized" / "All-time Realized", with start and end
+  balance for the selected period.
+
+**Not touched**, per the standing rule: `App.tsx`, `ControlPanel.tsx`, `CardPreview.tsx`, `video.ts`,
+`recorders.ts`, `mp4*.ts`, `offline.ts`, `render.ts`, `canvas/`. `git diff --stat` on those paths is
+empty. One more thing, so it is not a surprise: the logo mark on these cards is still the
+TradingView mark, because that is what the renderer draws (your 2026-09-23 decision). The journal
+UI itself carries only the Astra mark and name.
+
+### Definitions (where the screenshots left it open)
+
+- **Period filter** (1d / 7d / 30d / Max): the last 24 h / 7 / 30 days by *close* time. It filters
+  the heatmap, the curve, Performance and the History table. *Current balance* is always the
+  balance now. The calendar always shows whole months; days before the filter's start are dimmed,
+  so the filter is still visible there.
+- **Balance** = starting balance (Settings) + all realized PnL. **% of balance at entry** =
+  starting balance + PnL of every trade closed before this one opened.
+- **Heatmap**: Mon–Sun × 24 hours, local time, by close hour. Colour strength scales against the
+  busiest cell in the period.
+- **Distribution buckets**: > +5 %, +2 ~ +5 %, 0 ~ +2 % (breakeven counts here), 0 ~ −2 %, < −2 %.
+- **Profit factor**: gross win / gross loss. ∞ with wins and no losses, — with neither.
+- **Streaks** count *trading days*: a day with no trades neither extends nor breaks a streak; a
+  losing or flat day breaks it. *Active days* = days with a closed trade, this month / best month.
+- **Curve colour**: green when the period ended up, red when it ended down. The reference is always
+  green, but a losing period drawn in green would lie.
+- **Accent colour**: Astra's accent is white, so the active filter and *+ Add trade* are white,
+  not the reference's blue. The other colours follow the reference: teal profit, pink loss,
+  rounded blue-grey panels. To use a coloured accent, change `--jx-accent` in `journal.css`.
+- Dropped from the reference, as asked: stablecoin balance, tradeable balance, wallet funding.
+
+### Verified
+
+- `npm test`: **288/288** (the 18 new tests cover balances, % at entry, curve, performance and
+  bucket edges, heatmap buckets, calendar layout, streaks, symbols, demo data and the card
+  states). `tsc` for the app and the API both clean. `vite build` passes.
+- **SQL in real Postgres** (PGlite, `dev/journal-sql.mjs`): schema applies twice; user A sees only
+  A's trades; B cannot read, insert as, or delete A's rows; `source` other than manual/mt5 is
+  refused; the same MT5 ticket cannot go in twice; settings are private and round-trip.
+- **In Chrome**, local mode (`VITE_SUPABASE_URL= npx vite --port 5174`), through
+  `dev/journal-shot.html?w=1920&h=1080` and `?w=1440&h=900`. That page shows the app at an exact
+  viewport; this laptop cannot open a 1920-wide window. Checked: open from the profile button;
+  load demo data (30 trades); add a trade through the pair picker (typing "eur" → EUR/USD with its
+  logo); every panel updated at once. Also checked: validation on all required fields; the
+  sign warning ("The prices say this buy was a profit") when a loss is typed for a winning price
+  move; edit; delete with confirmation; search; and 1d / 7d / 30d / Max changing every stat and
+  table. Both share modes, plus the period card, rendered with the right figures. Escape closes
+  only the top modal (3 → 2 → 1). Both tooltips (heatmap cell, curve crosshair) work. At 1100 px
+  the three panels stack, with no sideways page scroll.
+- **Fixed after looking:** the Add trade button rendered white-on-white (a CSS specificity clash).
+  The Performance panel was clipped on a short laptop screen; panels now size to their content,
+  and below 820 px of height the journal body scrolls instead of squeezing the table. The heatmap
+  tooltip sat left of its cell. The share close button overlapped the calendar behind it. The
+  first demo data was absurdly profitable (+131 %); it is now about +28 % over two months.
+- **Not verified:** the signed-in path against the real database. The SQL is not installed yet,
+  and I do not sign in with your account. Once you have run the SQL, open the journal signed in
+  and add a trade: the yellow banner should be gone, and the trade should be in Supabase → Table
+  Editor → `trades`. Download was not clicked in the browser (it would save a file to your disk);
+  it is the same `downloadCard` the editor's Download PNG uses.
+
+### A tension worth naming
+
+Your note from 2026-09-20 says these traders dislike typing in every stat. This phase is manual
+entry because MT5 sync is the next step, and the form is kept to what the broker would otherwise
+supply anyway. Once sync lands, the form becomes the exception (for corrections) rather than the
+way in.
 
 ---
 
@@ -3948,3 +4173,15 @@ anything above the background.**
 `dev/colour-shot.html` is the equivalent for anything that changes a *colour* or a picture slot —
 neither is observable without rendering. `dev/controls.html` is how the editor UI itself gets
 looked at while the studio is behind the auth gate.
+
+---
+
+## Claude Code health check (2026-10-25)
+
+`claude doctor` reported **no installation issues**.
+
+- Version 2.1.304, native install at `~\.local\bin\claude.exe`, win32-x64; search OK (bundled).
+- Auto-updates on, channel `latest`. **The last update attempt today failed (`install_failed`).** Harmless for now — 2.1.304 runs fine. If it keeps failing, close every Claude Code window and run `claude update` in a fresh terminal (a running `claude.exe` can block the file swap on Windows).
+- Managed settings / organisation policy: not applicable to a Pro/Max account — expected, not a problem.
+
+For the deeper in-session check that can also fix things, type `/doctor` inside Claude Code.

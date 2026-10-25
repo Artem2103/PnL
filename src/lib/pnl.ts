@@ -36,6 +36,10 @@ export function computeTrade(trade: TradeState): PnlResult {
   const leverage = Math.max(1, isFiniteNumber(trade.leverage) ? trade.leverage : 1);
   const move = priceMove(trade);
 
+  if (isFiniteNumber(trade.pnlPct)) {
+    return { pnl, roiPct: trade.pnlPct, isProfit: pnl >= 0, degenerate: false };
+  }
+
   return {
     pnl,
     roiPct: move === null ? 0 : move * leverage * 100,

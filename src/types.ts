@@ -24,6 +24,12 @@ export interface TradeState {
    * a function of the prices and leverage alone.
    */
   pnl: number;
+  /**
+   * The PNL row's percentage, given directly. The editor never sets it; the
+   * journal does, with the trade's PnL as a % of the balance at entry, which
+   * prices and leverage cannot reproduce for a lot-sized position.
+   */
+  pnlPct?: number | null;
   /** Show "Long 20×" after the symbol in the title. */
   showDirectionInTitle: boolean;
 }

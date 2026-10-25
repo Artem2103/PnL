@@ -662,3 +662,74 @@ left join public.profiles p on p.id = s.user_id
 order by s.paid_until desc;
 
 revoke all on admin.subscribers from public, anon, authenticated;
+
+-- ============================================================== journal
+
+-- The trading journal: one row per trade, and one settings row per account.
+--
+-- `source` is where a row came from. Today every row is 'manual', typed into
+-- the journal; MT5 sync will write 'mt5' rows into this same table, carrying
+-- the broker's deal ticket in `external_id`. The unique index on
+-- (user_id, source, external_id) is what will let a sync be re-run without
+-- duplicating anything. The UI reads the table without caring which it is.
+--
+-- `closed_at` null means a position that is still open: its `pnl` is then the
+-- floating PnL. Manual entry always closes a trade; MT5 sync will not.
+
+create table if not exists public.trades (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users (id) on delete cascade,
+  source      text not null default 'manual' check (source in ('manual', 'mt5')),
+  external_id text,
+  symbol      text not null check (char_length(symbol) between 1 and 32),
+  side        text not null check (side in ('buy', 'sell')),
+  entry_price double precision not null,
+  close_price double precision,
+  lots        double precision not null check (lots > 0),
+  -- In the account currency of journal_settings, as the broker reports it.
+  pnl         double precision not null,
+  opened_at   timestamptz not null,
+  closed_at   timestamptz,
+  note        text not null default '',
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create index if not exists trades_user_closed_idx
+  on public.trades (user_id, closed_at desc);
+
+create unique index if not exists trades_user_source_external_idx
+  on public.trades (user_id, source, external_id)
+  where external_id is not null;
+
+create table if not exists public.journal_settings (
+  user_id          uuid primary key references auth.users (id) on delete cascade,
+  starting_balance double precision not null default 10000,
+  currency         text not null default 'USD' check (char_length(currency) between 1 and 8),
+  updated_at       timestamptz not null default now()
+);
+
+drop trigger if exists trades_touch_updated_at on public.trades;
+create trigger trades_touch_updated_at
+  before update on public.trades
+  for each row execute function public.touch_updated_at();
+
+drop trigger if exists journal_settings_touch_updated_at on public.journal_settings;
+create trigger journal_settings_touch_updated_at
+  before update on public.journal_settings
+  for each row execute function public.touch_updated_at();
+
+alter table public.trades           enable row level security;
+alter table public.journal_settings enable row level security;
+
+drop policy if exists "trades are self-service" on public.trades;
+create policy "trades are self-service" on public.trades
+  for all to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "journal settings are self-service" on public.journal_settings;
+create policy "journal settings are self-service" on public.journal_settings
+  for all to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);

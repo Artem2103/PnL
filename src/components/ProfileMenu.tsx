@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
 import type { AuthMode } from '../lib/auth';
 
@@ -27,6 +27,16 @@ function Silhouette() {
   );
 }
 
+const JournalModal = lazy(() =>
+  import('../journal/ui/JournalModal').then((module) => ({ default: module.JournalModal })),
+);
+
+/**
+ * The account button in every topbar. It opens the trading journal — balance,
+ * curve, performance and the trade history — in a large modal; the account
+ * actions that used to hang in a dropdown here (plans, log out) live in the
+ * journal's settings.
+ */
 export function ProfileMenu({
   user,
   mode,
@@ -40,81 +50,48 @@ export function ProfileMenu({
   onOpenPlans?: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const menuId = useId();
-
-  // Closes on a click anywhere else or on Escape, like any menu.
-  useEffect(() => {
-    if (!open) return;
-    const onPointer = (event: PointerEvent) => {
-      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('pointerdown', onPointer);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('pointerdown', onPointer);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
   const isAccount = mode === 'account';
-  const name = isAccount ? displayNameFor(user) : 'Not signed in';
+  const name = isAccount ? displayNameFor(user) : 'Local journal';
+  const label = isAccount ? (user?.email ?? '') : 'Accounts are off — saved in this browser only';
 
   return (
-    <div className="profile" ref={wrapRef}>
+    <div className="profile">
       <button
         type="button"
         className={`profile__button${open ? ' is-open' : ''}`}
-        onClick={() => setOpen((value) => !value)}
-        aria-haspopup="true"
+        onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
         aria-expanded={open}
-        aria-controls={menuId}
-        aria-label="Account"
+        aria-label="Account and trading journal"
+        title="Trading journal"
       >
         <Silhouette />
       </button>
 
       {open ? (
-        <div className="profile__menu" id={menuId} role="dialog" aria-label="Account">
-          <div className="profile__head">
-            <span className="profile__avatar">
-              <Silhouette />
-            </span>
-            <div className="profile__who">
-              <strong title={name}>{name}</strong>
-              <span title={user?.email ?? undefined}>
-                {isAccount ? user?.email : 'Accounts are off — saved in this browser only'}
-              </span>
-            </div>
-          </div>
-          {isAccount && onOpenPlans ? (
-            <button
-              type="button"
-              className="btn btn--ghost btn--small profile__signout"
-              onClick={() => {
-                setOpen(false);
-                onOpenPlans();
-              }}
-            >
-              Plans &amp; promo codes
-            </button>
-          ) : null}
-          {isAccount ? (
-            <button
-              type="button"
-              className="btn btn--ghost btn--small profile__signout"
-              onClick={() => {
-                setOpen(false);
-                onSignOut();
-              }}
-            >
-              Log out
-            </button>
-          ) : null}
-        </div>
+        <Suspense fallback={null}>
+          <JournalModal
+            name={name}
+            accountLabel={label}
+            onClose={() => setOpen(false)}
+            onOpenPlans={
+              isAccount && onOpenPlans
+                ? () => {
+                    setOpen(false);
+                    onOpenPlans();
+                  }
+                : undefined
+            }
+            onSignOut={
+              isAccount
+                ? () => {
+                    setOpen(false);
+                    onSignOut();
+                  }
+                : undefined
+            }
+          />
+        </Suspense>
       ) : null}
     </div>
   );
