@@ -54,6 +54,7 @@ describe('the theme list', () => {
     const ids = SITE_THEMES.map((theme) => theme.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toContain(DEFAULT_SITE_THEME);
+    expect(DEFAULT_SITE_THEME).toBe('black');
   });
 
   it('sets the same variables in every theme', () => {

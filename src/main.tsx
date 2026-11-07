@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './lib/auth';
 import { AuthGate } from './components/AuthGate';
 import { PricingPage } from './components/PricingPage';
 import { HomePage } from './components/HomePage';
+import { PLANS_ENABLED } from './lib/billing';
 import { navigate, pageFor, takeAfterSignIn, useLocation } from './lib/route';
 import { applySiteTheme } from './lib/siteTheme';
 import './styles/global.css';
@@ -35,7 +36,8 @@ function Root() {
   }, [session]);
 
   const page = pageFor(pathname);
-  if (page === 'home') return <HomePage />;
+  // With plans off, an old link to /pricing lands on the front page.
+  if (page === 'home' || (page === 'pricing' && !PLANS_ENABLED)) return <HomePage />;
   if (page === 'pricing') return <PricingPage search={search} />;
   if (page === 'community') {
     return (

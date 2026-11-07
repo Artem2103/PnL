@@ -1,3 +1,4 @@
+import { PLANS_ENABLED } from '../lib/billing';
 import { COMMUNITY_PATH, HOME_PATH, PRICING_PATH, STUDIO_PATH, navigate, type Page } from '../lib/route';
 
 /**
@@ -31,7 +32,7 @@ export function SiteNav({ current }: { current: Page }) {
         <h1>Astra</h1>
       </a>
       <nav className="sitenav" aria-label="Sections">
-        {LINKS.map((link) => (
+        {LINKS.filter((link) => PLANS_ENABLED || link.page !== 'pricing').map((link) => (
           <a
             key={link.page}
             className={`sitenav__link${current === link.page ? ' is-current' : ''}`}

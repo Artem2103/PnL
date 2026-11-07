@@ -28,7 +28,7 @@ import { useAuth } from './lib/auth';
 import { ProfileMenu } from './components/ProfileMenu';
 import { LimitDialog } from './components/LimitDialog';
 import { PlanNote } from './components/PlanNote';
-import { allowanceFor, cardKey, claimExport, type ExportFormat, type PlanStatus } from './lib/billing';
+import { PLANS_ENABLED, allowanceFor, cardKey, claimExport, type ExportFormat, type PlanStatus } from './lib/billing';
 import { usePlanStatus } from './lib/usePlanStatus';
 import { COMMUNITY_PATH, PRICING_PATH, navigate } from './lib/route';
 import { setPendingImage } from './community/pending';
@@ -76,7 +76,7 @@ export default function App() {
   const [progress, setProgress] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const video = useMemo(videoSupport, []);
-  const plan = usePlanStatus(userId, authMode === 'account');
+  const plan = usePlanStatus(userId, authMode === 'account' && PLANS_ENABLED);
   const [limitStatus, setLimitStatus] = useState<PlanStatus | null>(null);
   // The current card's identity for the free limit, so the export bar can say
   // whether exporting it would use the month's free card.

@@ -15,6 +15,7 @@ import {
   FREE_FEATURES,
   PAID_FEATURES,
   PLANS,
+  PLANS_ENABLED,
   formatUsd,
   monthlyPrice,
   savingPercent,
@@ -171,20 +172,24 @@ export function HomePage() {
               <button type="button" className="btn btn--primary home__cta-btn" onClick={start}>
                 {signedIn || accountsOff ? 'Open the editor' : 'Make your first card — free'}
               </button>
-              <button
-                type="button"
-                className="btn btn--ghost home__cta-btn"
-                onClick={() => navigate(PRICING_PATH)}
-              >
-                See plans
-              </button>
+              {PLANS_ENABLED ? (
+                <button
+                  type="button"
+                  className="btn btn--ghost home__cta-btn"
+                  onClick={() => navigate(PRICING_PATH)}
+                >
+                  See plans
+                </button>
+              ) : null}
             </div>
             <p className="home__cta-note">
               {accountsOff
                 ? 'Accounts are off on this copy — everything is saved in this browser, and every export is unlimited.'
-                : `No card needed to start. A free account makes ${FREE_CARDS_PER_MONTH} card a month; plans start at ${
-                    monthly ? formatUsd(monthly.price) : ''
-                  } and never renew on their own.`}
+                : PLANS_ENABLED
+                  ? `No card needed to start. A free account makes ${FREE_CARDS_PER_MONTH} card a month; plans start at ${
+                      monthly ? formatUsd(monthly.price) : ''
+                    } and never renew on their own.`
+                  : 'Free to use, with every export included.'}
             </p>
           </div>
 
@@ -242,6 +247,7 @@ export function HomePage() {
           </div>
         </section>
 
+        {PLANS_ENABLED ? (
         <section className="home__section" aria-labelledby="home-plans">
           <h3 className="home__section-title" id="home-plans">
             Plans
@@ -367,12 +373,14 @@ export function HomePage() {
             Full plans and promo codes
           </button>
         </section>
+        ) : null}
 
         <section className="home__closer">
           <h3>Post the next one today.</h3>
           <p>
-            {FREE_CARDS_PER_MONTH} free card a month, the whole editor, no watermark. Nothing to
-            install.
+            {PLANS_ENABLED
+              ? `${FREE_CARDS_PER_MONTH} free card a month, the whole editor, no watermark. Nothing to install.`
+              : 'Free, the whole editor, no watermark. Nothing to install.'}
           </p>
           <button type="button" className="btn btn--primary home__cta-btn" onClick={start}>
             {signedIn || accountsOff ? 'Open the editor' : 'Start free'}
@@ -385,9 +393,11 @@ export function HomePage() {
             <button type="button" className="linkish" onClick={start}>
               Cards
             </button>
-            <button type="button" className="linkish" onClick={() => navigate(PRICING_PATH)}>
-              Plans
-            </button>
+            {PLANS_ENABLED ? (
+              <button type="button" className="linkish" onClick={() => navigate(PRICING_PATH)}>
+                Plans
+              </button>
+            ) : null}
           </nav>
         </footer>
       </main>

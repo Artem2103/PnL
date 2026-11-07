@@ -21,6 +21,7 @@ import {
 } from './repository';
 import { Avatar, type Community } from './shared';
 import { isValidHandle, MAX_BIO, MAX_NAME, timeAgo } from './text';
+import { PLANS_ENABLED } from '../lib/billing';
 import '../styles/community.css';
 
 /**
@@ -418,9 +419,11 @@ function MemberView({
                   </button>
                   {onLogOut ? (
                     <>
-                      <button type="button" className="cm-pill" onClick={() => navigate(PRICING_PATH)}>
-                        Plans
-                      </button>
+                      {PLANS_ENABLED ? (
+                        <button type="button" className="cm-pill" onClick={() => navigate(PRICING_PATH)}>
+                          Plans
+                        </button>
+                      ) : null}
                       <button type="button" className="cm-pill" onClick={onLogOut}>
                         Log out
                       </button>
@@ -794,7 +797,7 @@ export function CommunityPage() {
             name={me?.displayName || accountName}
             accountLabel={mode === 'account' ? (user?.email ?? '') : 'Saved in this browser'}
             onClose={() => setJournalOpen(false)}
-            onOpenPlans={mode === 'account' ? () => navigate(PRICING_PATH) : undefined}
+            onOpenPlans={mode === 'account' && PLANS_ENABLED ? () => navigate(PRICING_PATH) : undefined}
             onSignOut={mode === 'account' ? logOut : undefined}
           />
         </Suspense>

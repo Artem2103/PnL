@@ -41,11 +41,47 @@ file easier to read:
 | 2026-11-07 (e) | **code**: card page video fixes (double sound, blinking, switching clips), 3:1 banner, stronger glass | see **Start here (2026-11-07 e)** |
 | 2026-11-07 (f) | **code**: the card holds still when the shape changes; 9:16 removed. SQL confirmed run | see **Start here (2026-11-07 f)** |
 | 2026-11-08 | **code**: the card page fits the window; only the left panel scrolls | see **Start here (2026-11-08)** |
+| 2026-11-08 (b) | **code**: Black is the default theme; plans hidden and everything free, behind `VITE_PLANS` | see **Start here (2026-11-08 b)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-11-08 b) — Black by default, and plans hidden
+
+Asked for: make Black the default theme, and remove plans from the header and the home page for now, without deleting them, because it is all free.
+
+**Pushed to `main`.** Screenshots: **`Desktop\Astra black and free\`**.
+
+### Black
+
+New visitors start on Black, and the page's first paint is black too (`index.html`). Anyone who already picked a theme keeps it. **Your own browser at localhost:5173 has Light saved**, so pick Black once from the palette to see it there.
+
+### Plans
+
+One switch, `VITE_PLANS`, read as `PLANS_ENABLED` in `src/lib/billing.ts`. It is off unless set to `on`. Nothing was deleted: the plans page, checkout, the API routes, the tables and promo codes are all still there.
+
+With it off:
+
+- **Gone from view:** the Plans link in the header, the home page's plans section, "See plans", the footer link, the pricing sentence under the hero, Upgrade on the card page, Plans on the profile, and the plan note under the export bar.
+- **The export limit is off.** You only mentioned the links, but "it's all free" needs this too: with the links gone, a free user would hit the one-card-a-month limit with nowhere to go. `claimExport` now allows every export without asking the server.
+- **`/pricing`** shows the home page, so old links don't break.
+- **Home page wording:** the closing line now says "Free, the whole editor, no watermark", and the hero note says "Free to use, with every export included."
+
+To bring it all back: set `VITE_PLANS=on` in Vercel and rebuild.
+
+**Not changed:**
+- The payment API routes still exist on the server. Nothing on the site links to them.
+- Exports made while plans are off aren't counted, so when plans return, everyone starts with a fresh allowance.
+
+### Verified
+
+- `npm test` **384/384**: 2 new, including that an export is allowed without calling the server. Typecheck passes.
+- **In Chrome, as a first-time visitor on a fresh port:** theme Black with nothing saved. The nav shows Community and Cards only. `/pricing` shows the home page. A text search of the home page, `/cards`, `/community`, `/community/explore` and `/profile` found no mention of plans or prices. Home, card page and community looked right in Black, with no console errors.
+- **Not verified in the browser with a signed-in account**, which is where Upgrade, the profile's Plans button and the plan note normally show. Those are covered by reading the code and the unit test.
 
 ---
 

@@ -101,6 +101,13 @@ export function cardIdentity(state: CardState): unknown {
   };
 }
 
+/**
+ * Everything is free for now. Off, there is no export limit and no mention of
+ * plans anywhere on the site. `VITE_PLANS=on` brings it all back: the limit, the
+ * plans page, the links and the home page section. Nothing is deleted.
+ */
+export const PLANS_ENABLED = import.meta.env.VITE_PLANS === 'on';
+
 export async function cardKey(state: CardState): Promise<string> {
   const bytes = new TextEncoder().encode(canonicalJson(cardIdentity(state)));
   const digest = await crypto.subtle.digest('SHA-256', bytes);
@@ -191,7 +198,7 @@ export type ExportDecision =
  * Called before the render starts, so a refused export costs no rendering.
  */
 export async function claimExport(state: CardState, format: ExportFormat): Promise<ExportDecision> {
-  if (!supabase) return { allowed: true, status: null };
+  if (!supabase || !PLANS_ENABLED) return { allowed: true, status: null };
   const key = await cardKey(state);
   const { data, error } = await supabase.rpc('claim_export', { p_card_key: key, p_format: format });
   if (error) {

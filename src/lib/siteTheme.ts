@@ -39,7 +39,7 @@ export const SITE_THEMES: readonly SiteTheme[] = [
   { id: 'wine', label: 'Wine', dark: true, bg: '#180b12', card: '#25121c', soft: '#321a27', strong: '#422433', border: '#381e2c', borderStrong: '#50303f', text: '#f7e9ef', muted: '#cdb0bd', faint: '#ad909d', accent: '#f08fb4', accentInk: '#180b12', glowA: '#a12c63', glowB: '#6a2f9a' },
 ];
 
-export const DEFAULT_SITE_THEME = 'light';
+export const DEFAULT_SITE_THEME = 'black';
 
 /**
  * How much of the page shows through. Kept low on purpose: the look should read
@@ -94,7 +94,8 @@ export function tokensFor(theme: SiteTheme): Record<string, string> {
 }
 
 function find(id: string | null): SiteTheme {
-  return SITE_THEMES.find((theme) => theme.id === id) ?? SITE_THEMES[0]!;
+  const wanted = id ?? DEFAULT_SITE_THEME;
+  return SITE_THEMES.find((theme) => theme.id === wanted) ?? SITE_THEMES.find((theme) => theme.id === DEFAULT_SITE_THEME)!;
 }
 
 function read(key: string): string | null {
