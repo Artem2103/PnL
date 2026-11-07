@@ -54,7 +54,7 @@ Asked for:
 - On the card page: switching clips took two clicks, two clips' sound played at once, and the thumbnails blinked black.
 - The glass was not visible.
 
-**Not committed yet.** Screenshots: **`Desktop\Astra fixes\`**.
+**Committed in `357379b` and merged to `main`.** Screenshots: **`Desktop\Astra fixes\`**.
 
 ### Banner
 
@@ -114,7 +114,7 @@ The first version was so faint it could not be seen. Stronger now, in `src/lib/s
 
 Asked for: remove the "Style" section on the card page, and add a glass design to the themes, not too much of it.
 
-**Not committed yet.** Screenshots: **`Desktop\Astra glass\`**.
+**Committed in `357379b` and merged to `main`.** Screenshots: **`Desktop\Astra glass\`**.
 
 ### Style section
 
@@ -152,7 +152,7 @@ Unit tests passed while the glass was not showing at all. Only looking at the pa
 
 Asked for: a variety of themes, near the profile button, and the site running so you can open it.
 
-**Not committed yet.** Screenshots: **`Desktop\Astra themes\`**.
+**Committed in `357379b` and merged to `main`.** Screenshots: **`Desktop\Astra themes\`**.
 
 ### What it does
 
@@ -191,7 +191,7 @@ Plain `npm run dev` uses your real Supabase project and asks you to sign in.
 
 Asked for: posts public, a community feed, built very closely on the idea of liquidjournal.app, and the site's style moved towards theirs, "not exactly, but similar".
 
-**Not committed yet.** Screenshots: **`Desktop\Astra community\`**.
+**Committed in `357379b` and merged to `main`.** Screenshots: **`Desktop\Astra community\`**.
 
 This replaces the private profile in (2026-11-07) below. `src/profile/` is gone, and the shapes and the hidden journal in that section still stand. The `VITE_JOURNAL=on` button now sits on your own profile.
 
@@ -273,7 +273,7 @@ Asked for, ahead of shipping in a few days:
 - **A profile page** behind the profile button: picture, a custom banner behind it, and a Twitter-style board to post on.
 - **Most important: a choice of resolutions next to 1× / 2× / 3×**: 16:9, 9:16, 4:3, 1:1. The statistics, the TradingView logo and the footer stay on the left, exactly as now, with the same left padding.
 
-**Not committed yet.** Screenshots: **`Desktop\Astra shapes and profile\`**.
+**Committed in `357379b` and merged to `main`.** Screenshots: **`Desktop\Astra shapes and profile\`**.
 
 ### What you have to do before shipping
 
