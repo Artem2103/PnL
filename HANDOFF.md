@@ -40,11 +40,46 @@ file easier to read:
 | 2026-11-07 (d) | **code**: a restrained glass look on every theme; Style section removed from the card page | see **Start here (2026-11-07 d)** |
 | 2026-11-07 (e) | **code**: card page video fixes (double sound, blinking, switching clips), 3:1 banner, stronger glass | see **Start here (2026-11-07 e)** |
 | 2026-11-07 (f) | **code**: the card holds still when the shape changes; 9:16 removed. SQL confirmed run | see **Start here (2026-11-07 f)** |
+| 2026-11-08 | **code**: the card page fits the window; only the left panel scrolls | see **Start here (2026-11-08)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-11-08) — the card page fits the window
+
+Asked for: the right side of the card page should not scroll. Make the spaces smaller so it fits, at 100% browser zoom.
+
+**Pushed to `main`.** Screenshots: **`Desktop\Astra no scroll\`**.
+
+### What changed
+
+Above 980px wide, the card page is now exactly the window's height. The left panel scrolls by itself and the right side fits. Shrinking gaps alone would have broken at other window heights, so the card now takes whatever height is left after the export bar. Below 980px it is one scrolling column, as before.
+
+- **Tighter:** right column padding from 30/60 to 10/14, gaps from 18 to 10, and the export bar is slimmer.
+- **Removed from this view above 980px:** the grey note under the export bar (including the Ctrl+S hint) and "Drag the card to reposition the background". They took height. Ctrl+S and dragging still work, and both texts come back in the phone layout.
+- **The Pause / Sound bar moved** from between the card and the export bar to float in the stage's bottom edge. It only appears for clips, so in the old place picking a clip would have shrunk the card. The card never reaches that area in any shape. At 1:1 it sits over the frame's picture, under the card's content.
+- **The left panel** is no longer sticky above 980px, because there is no page scroll to stick against. The wheel-chaining trap in **The scroll trap in the editor shell** can't happen at these widths.
+
+### The gap that remains
+
+In the plain Card shape there are about 97px above and below the card on a 738px-tall window. That space is what lets 1:1 grow without moving the card, as you asked last time. Shrinking it means either a smaller 1:1 frame or the card moving when you change shape.
+
+### Verified
+
+Measured at 1536×738, in a separate test copy:
+
+- **No page or right-side scroll** at 1536 wide and 560, 620, 682, 738 and 864 tall, and at 1920×1080, 1280×720 and 1100×700. The left panel scrolls in all of them. The local-mode banner was removed for these, since signed-in people don't have it.
+- **Real mouse wheel:** 10 ticks over the right side moved nothing. 10 ticks over the left panel moved it 1000px, and it reaches its end at 2233.
+- **Card width at 738 tall: 540**, up from 478.
+- **Still held across shapes:** Card, 16:9, 4:3, 1:1 keep the same left edge, scale and export bar position, and picking a clip moved neither the card nor the export bar.
+- **The plan note under the export bar** (signed-in free accounts) was simulated with a 42px block: the card shrinks to fit and nothing scrolls. On those accounts the card is a little smaller, about 487 wide.
+- `npm test` 382/382, typecheck and production build pass. No console errors.
+
+**Not verified:** with your real signed-in account, Safari and Firefox (this needs container queries, Safari 16+ and Firefox 110+), and windows under 560px tall. A window shorter than about 480px lets the right column scroll rather than hide the export bar.
 
 ---
 

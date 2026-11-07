@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { ArtworkState, CardState, RenderAssets } from '../types';
 import { prepareAssets, renderToCanvas } from '../lib/render';
 import { placeCover, panBy } from '../lib/canvas/placement';
@@ -43,6 +43,7 @@ export function CardPreview({
   playing = true,
   soundOn = false,
   stage = false,
+  children,
 }: {
   state: CardState;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
@@ -60,6 +61,8 @@ export function CardPreview({
    * card at one scale inside it, and only the frame growing around the card.
    */
   stage?: boolean;
+  /** Stage only: laid over the free space under the card, so it never resizes it. */
+  children?: ReactNode;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const assetsRef = useRef<RenderAssets | null>(null);
@@ -376,17 +379,19 @@ export function CardPreview({
   );
 
   return (
-    <div className="preview">
+    <div className={`preview${stage ? ' preview--stage' : ''}`}>
       {stage ? (
-        <div
-          className="preview__stage"
-          style={{
-            aspectRatio: `${STAGE.width} / ${STAGE.height}`,
-            // Leaves room under it for the export bar, which holds the download.
-            maxWidth: `calc(max(320px, 100vh - 260px) * ${STAGE.width / STAGE.height})`,
-          }}
-        >
-          {picture}
+        <div className="preview__room">
+          <div
+            className="preview__stage"
+            style={{
+              aspectRatio: `${STAGE.width} / ${STAGE.height}`,
+              ['--stage-ratio' as string]: STAGE.width / STAGE.height,
+            }}
+          >
+            {picture}
+            {children}
+          </div>
         </div>
       ) : (
         picture

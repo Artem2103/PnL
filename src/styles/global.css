@@ -2239,3 +2239,99 @@ body::before {
 .dialog__card {
   box-shadow: inset 0 1px 0 var(--glass-edge), 0 24px 60px rgba(0, 0, 0, 0.3);
 }
+
+/* ------------------------------------------------------- the card page
+
+   Two columns, one window. The left column scrolls by itself and the right one
+   fits: the card takes whatever height the bars leave. There is no page scroll
+   here, so there is nothing for a wheel over the panel to chain to. Below 980px
+   this is all off and the page scrolls as one column.
+
+   The clip bar floats in the stage's bottom edge, which the card never reaches
+   in any shape, so choosing a clip does not resize the card. */
+
+.preview__stage .clipbar {
+  position: absolute;
+  z-index: 2;
+  right: 8px;
+  bottom: 6px;
+  left: 8px;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: var(--glass-strong);
+  backdrop-filter: blur(16px) saturate(140%);
+}
+
+@media (min-width: 981px) {
+  .app:has(> .layout) {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .layout {
+    min-height: 0;
+    align-items: stretch;
+  }
+
+  .layout__controls {
+    position: static;
+    min-height: 0;
+    max-height: none;
+  }
+
+  .layout__stage {
+    align-items: center;
+    min-height: 0;
+    padding: 10px 24px 14px;
+    overflow-y: auto;
+  }
+
+  .stage__inner {
+    justify-content: center;
+    gap: 10px;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .preview--stage {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    /* The stage's full height at the column's full width. */
+    max-height: 560px;
+    /* Only a window too short to use: the column scrolls then, not the card. */
+    min-height: 240px;
+  }
+
+  .preview__room {
+    display: grid;
+    flex: 1;
+    min-height: 0;
+    container-type: size;
+    place-items: center;
+  }
+
+  .preview__stage {
+    width: min(100cqw, calc(100cqh * var(--stage-ratio)));
+  }
+
+  .preview--stage .preview__tip,
+  .stage__note {
+    display: none;
+  }
+
+  .exportbar {
+    flex: none;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+}
+
+@media (max-width: 980px) {
+  .preview__stage .clipbar__meta {
+    display: none;
+  }
+}

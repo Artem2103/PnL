@@ -413,37 +413,37 @@ export default function App() {
               patchArtwork={patchArtwork}
               playing={playing}
               soundOn={soundOn}
-            />
-
-            {isVideoBackground ? (
-              <div className="clipbar">
-                <button
-                  type="button"
-                  className="btn btn--ghost btn--small"
-                  onClick={() => setPlaying((value) => !value)}
-                >
-                  {playing ? 'Pause' : 'Play'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--ghost btn--small"
-                  onClick={() => setSoundOn((value) => !value)}
-                  aria-pressed={soundOn}
-                >
-                  {soundOn ? 'Sound off' : 'Sound on'}
-                </button>
-                <span className="clipbar__meta">
-                  {clip.length.toFixed(1)} s clip · video ·{' '}
-                  {Math.round(frame.width * videoScale)}×{Math.round(frame.height * videoScale)}
-                  {video.extension ? ` · ${video.extension.toUpperCase()}` : ''}
-                </span>
-                {busy === 'video' ? (
-                  <span className="clipbar__progress" aria-live="polite">
-                    <span style={{ width: `${Math.round(progress * 100)}%` }} />
+            >
+              {isVideoBackground ? (
+                <div className="clipbar">
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--small"
+                    onClick={() => setPlaying((value) => !value)}
+                  >
+                    {playing ? 'Pause' : 'Play'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--small"
+                    onClick={() => setSoundOn((value) => !value)}
+                    aria-pressed={soundOn}
+                  >
+                    {soundOn ? 'Sound off' : 'Sound on'}
+                  </button>
+                  <span className="clipbar__meta">
+                    {clip.length.toFixed(1)} s clip · video ·{' '}
+                    {Math.round(frame.width * videoScale)}×{Math.round(frame.height * videoScale)}
+                    {video.extension ? ` · ${video.extension.toUpperCase()}` : ''}
                   </span>
-                ) : null}
-              </div>
-            ) : null}
+                  {busy === 'video' ? (
+                    <span className="clipbar__progress" aria-live="polite">
+                      <span style={{ width: `${Math.round(progress * 100)}%` }} />
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+            </CardPreview>
 
             <div className="exportbar">
               <div className="exportbar__scale" role="group" aria-label="Picture shape">
