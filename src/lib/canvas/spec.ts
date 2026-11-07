@@ -27,7 +27,6 @@ export const CARD = {
 export const FRAMES: Record<CardAspect, { width: number; height: number }> = {
   card: { width: CARD.width, height: CARD.height },
   '16:9': { width: (CARD.height * 16) / 9, height: CARD.height },
-  '9:16': { width: CARD.width, height: (CARD.width * 16) / 9 },
   '4:3': { width: 840, height: 630 },
   '1:1': { width: 840, height: 840 },
 };
@@ -41,7 +40,6 @@ export const FRAMES: Record<CardAspect, { width: number; height: number }> = {
 export const VIDEO_SIZE: Record<CardAspect, { width: number; height: number }> = {
   card: { width: CARD.width * 2, height: CARD.height * 2 },
   '16:9': { width: 1920, height: 1080 },
-  '9:16': { width: 1080, height: 1920 },
   '4:3': { width: 1440, height: 1080 },
   '1:1': { width: 1080, height: 1080 },
 };
@@ -49,10 +47,19 @@ export const VIDEO_SIZE: Record<CardAspect, { width: number; height: number }> =
 export const ASPECTS: readonly { id: CardAspect; label: string }[] = [
   { id: 'card', label: 'Card' },
   { id: '16:9', label: '16:9' },
-  { id: '9:16', label: '9:16' },
   { id: '4:3', label: '4:3' },
   { id: '1:1', label: '1:1' },
 ];
+
+/**
+ * The box that holds every shape at one scale. The editor's preview is this
+ * size whichever shape is chosen, so the card never changes size or position
+ * and nothing around it moves. Only the frame grows, inside the box.
+ */
+export const STAGE = {
+  width: Math.max(...Object.values(FRAMES).map((frame) => frame.width)),
+  height: Math.max(...Object.values(FRAMES).map((frame) => frame.height)),
+};
 
 /** The frame for a saved shape; anything unknown is the plain card. */
 export function frameOf(aspect: CardAspect | undefined): { width: number; height: number } {

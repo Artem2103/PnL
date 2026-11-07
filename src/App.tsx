@@ -407,6 +407,7 @@ export default function App() {
         <section className="layout__stage" aria-label="Preview and export">
           <div className="stage__inner">
             <CardPreview
+              stage
               state={state}
               canvasRef={canvasRef}
               patchArtwork={patchArtwork}

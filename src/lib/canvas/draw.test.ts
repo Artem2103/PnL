@@ -4,7 +4,7 @@ import { buildContent } from '../content';
 import { createDefaultState } from '../defaults';
 import { computeCard } from '../pnl';
 import { drawCardForeground, foregroundKey, type DrawInput } from './draw';
-import { ASPECTS, CARD, FRAMES, SPEC, VIDEO_SIZE, cardTop } from './spec';
+import { ASPECTS, CARD, FRAMES, SPEC, STAGE, VIDEO_SIZE, cardTop } from './spec';
 import { videoScaleFor } from '../video';
 import type { Ctx2D } from './primitives';
 
@@ -69,6 +69,13 @@ describe('the frame shapes', () => {
     expect(cardTop('card')).toBe(0);
   });
 
+  it('fits every shape in the preview stage', () => {
+    for (const frame of Object.values(FRAMES)) {
+      expect(frame.width).toBeLessThanOrEqual(STAGE.width);
+      expect(frame.height).toBeLessThanOrEqual(STAGE.height);
+    }
+  });
+
   it('never shrinks the card', () => {
     for (const frame of Object.values(FRAMES)) {
       expect(frame.width).toBeGreaterThanOrEqual(CARD.width);
@@ -89,7 +96,6 @@ describe('the frame shapes', () => {
 
   it('is close to the ratio it is named for', () => {
     expect(FRAMES['16:9'].width / FRAMES['16:9'].height).toBeCloseTo(16 / 9);
-    expect(FRAMES['9:16'].width / FRAMES['9:16'].height).toBeCloseTo(9 / 16);
     expect(FRAMES['4:3'].width / FRAMES['4:3'].height).toBe(4 / 3);
     expect(FRAMES['1:1'].width).toBe(FRAMES['1:1'].height);
   });

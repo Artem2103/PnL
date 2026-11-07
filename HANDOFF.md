@@ -39,11 +39,45 @@ file easier to read:
 | 2026-11-07 (c) | **code**: eight site themes, picked beside the profile button | see **Start here (2026-11-07 c)** |
 | 2026-11-07 (d) | **code**: a restrained glass look on every theme; Style section removed from the card page | see **Start here (2026-11-07 d)** |
 | 2026-11-07 (e) | **code**: card page video fixes (double sound, blinking, switching clips), 3:1 banner, stronger glass | see **Start here (2026-11-07 e)** |
+| 2026-11-07 (f) | **code**: the card holds still when the shape changes; 9:16 removed. SQL confirmed run | see **Start here (2026-11-07 f)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-11-07 f) — the card holds still, and 9:16 is gone
+
+Asked for: changing the shape made the card bigger or smaller and moved the page around it. The card, its statistics and images should stay the same size, and only the frame around them should change. Also remove 9:16.
+
+**Pushed to `main`.** Screenshots: **`Desktop\Astra still card\`**.
+
+### What changed
+
+- **`CardPreview` has a new `stage` mode, used only on the card page.** The preview is now a fixed box sized for the largest shape (`STAGE` in `canvas/spec.ts`: 16:9's width and 1:1's height). Every shape is drawn at one scale inside it, and the frame grows around the card: to the right for 16:9, up and down for 4:3 and 1:1. The home page and the share sheet keep the old preview.
+- **The column grew from 560 to 676px**, so a tall window still shows the card at 560 wide.
+- **The stage is limited by window height** so Download stays on screen. On a 738px-tall window the card is **478 wide**, down from about 560. That is the cost of holding everything still without scrolling. In the Card shape there is also some empty space around it, reserved for the larger shapes.
+- **9:16 is removed everywhere**, including the video studio. A card saved as 9:16 opens as Card, and a test covers that.
+- Exports did not change. This is preview layout only.
+
+### Verified
+
+- `npm test` **382/382**: new tests cover old 9:16 saves and the stage, and the 9:16 cases went with it, so the total is unchanged. Typecheck and production build pass.
+- **In Chrome, measured across Card → 16:9 → 4:3 → 1:1 → Card:** scale, card left edge, card top edge, card width, export bar position and page height were **identical in every shape**. The final sizing was then re-measured: card left edge 672.3 and export bar 596 to 704 in all four, on a 738px-tall window.
+- Once settled, the canvas matches its on-screen shape in all four, so nothing is stretched. For about a frame after a switch the canvas resolution can be out of date. It corrects itself, and it only affects sharpness.
+- **Not verified:** a clip as the background in these shapes this round, a phone, and a very wide or very short window.
+
+### The SQL
+
+You ran it. Checked read-only with the public key:
+- `community_feed` and `community_trending` answer.
+- `community_profiles` has a row, `trader99e5`, so signing in created a profile.
+- Reading `profiles` anonymously returns nothing, so emails are not exposed.
+- The `community` bucket path answers with "object not found" for a file that does not exist, not "bucket not found".
+
+**Still not verified:** a real post with an image from a signed-in account, seen by a second account.
 
 ---
 

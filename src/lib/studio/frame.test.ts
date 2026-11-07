@@ -30,7 +30,7 @@ describe('the studio frame', () => {
     expect(rect.w / rect.h).toBeCloseTo(CARD.width / CARD.height);
   });
 
-  it.each(['1:1', '4:3', '9:16'] as const)('runs the card the full width of a %s frame, centred down', (aspect) => {
+  it.each(['1:1', '4:3'] as const)('runs the card the full width of a %s frame, centred down', (aspect) => {
     const { width, height } = EXPORT_SIZE[aspect];
     const rect = cardRect({ ...studio, aspect }, width, height);
     expect(rect.x).toBe(0);

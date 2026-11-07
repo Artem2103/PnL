@@ -2,9 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import type { ArtworkState, CardState, RenderAssets } from '../types';
 import { prepareAssets, renderToCanvas } from '../lib/render';
 import { placeCover, panBy } from '../lib/canvas/placement';
-import { frameOf } from '../lib/canvas/spec';
+import { STAGE, cardTop, frameOf } from '../lib/canvas/spec';
 import { onFontsChanged } from '../lib/fonts';
 import { resolveClip } from '../lib/video';
+
+const CARD_HEIGHT = frameOf('card').height;
 
 /** Preview beyond 2× device pixels is invisible and costs real time. */
 const MAX_PREVIEW_SCALE = 2;
@@ -40,6 +42,7 @@ export function CardPreview({
   patchArtwork,
   playing = true,
   soundOn = false,
+  stage = false,
 }: {
   state: CardState;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
@@ -52,6 +55,11 @@ export function CardPreview({
    * records from its own element, so this never changes what gets exported.
    */
   soundOn?: boolean;
+  /**
+   * Holds the card still across shapes: a box sized for the largest shape, the
+   * card at one scale inside it, and only the frame growing around the card.
+   */
+  stage?: boolean;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const assetsRef = useRef<RenderAssets | null>(null);
@@ -337,29 +345,52 @@ export function CardPreview({
   );
 
   const frame = frameOf(state.display.aspect);
+  const picture = (
+    <div
+      className="preview__frame"
+      ref={wrapRef}
+      style={
+        stage
+          ? {
+              position: 'absolute',
+              left: 0,
+              // The card's own top stays put: a taller frame grows evenly around it.
+              top: `${(((STAGE.height - CARD_HEIGHT) / 2 - cardTop(state.display.aspect)) / STAGE.height) * 100}%`,
+              width: `${(frame.width / STAGE.width) * 100}%`,
+              aspectRatio: `${frame.width} / ${frame.height}`,
+            }
+          : { aspectRatio: `${frame.width} / ${frame.height}` }
+      }
+    >
+      <canvas
+        ref={canvasRef}
+        className={`preview__canvas${canPan ? ' is-pannable' : ''}${dragging ? ' is-dragging' : ''}`}
+        role="img"
+        aria-label="PnL card preview"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+      />
+    </div>
+  );
 
   return (
     <div className="preview">
-      <div
-        className="preview__frame"
-        ref={wrapRef}
-        style={{
-          aspectRatio: `${frame.width} / ${frame.height}`,
-          // A tall shape is held to the window's height, not the column's width.
-          maxWidth: `calc(var(--preview-max-h, 76vh) * ${frame.width / frame.height})`,
-        }}
-      >
-        <canvas
-          ref={canvasRef}
-          className={`preview__canvas${canPan ? ' is-pannable' : ''}${dragging ? ' is-dragging' : ''}`}
-          role="img"
-          aria-label="PnL card preview"
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={endDrag}
-          onPointerCancel={endDrag}
-        />
-      </div>
+      {stage ? (
+        <div
+          className="preview__stage"
+          style={{
+            aspectRatio: `${STAGE.width} / ${STAGE.height}`,
+            // Leaves room under it for the export bar, which holds the download.
+            maxWidth: `calc(max(320px, 100vh - 260px) * ${STAGE.width / STAGE.height})`,
+          }}
+        >
+          {picture}
+        </div>
+      ) : (
+        picture
+      )}
       {canPan ? <p className="preview__tip">Drag the card to reposition the background.</p> : null}
     </div>
   );

@@ -37,6 +37,18 @@ Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable
 
 beforeEach(() => storage.clear());
 
+describe('a saved shape', () => {
+  it('that no longer exists opens as the plain card', () => {
+    const state = hydrateState({ display: { aspect: '9:16' } as never });
+    expect(state.display.aspect).toBe('card');
+  });
+
+  it('that exists is kept', () => {
+    const state = hydrateState({ display: { aspect: '16:9' } as never });
+    expect(state.display.aspect).toBe('16:9');
+  });
+});
+
 describe('the per-account card cache', () => {
   it('returns the sample card for an account that has never saved', () => {
     const snapshot = loadLocalCard('user-a');

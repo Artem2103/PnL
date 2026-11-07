@@ -139,7 +139,7 @@ export interface ArtworkState {
  * The shape of the picture. `card` is the 840×570 card as it has always been;
  * the others extend its frame, and the card's content stays where it is.
  */
-export type CardAspect = 'card' | '16:9' | '9:16' | '4:3' | '1:1';
+export type CardAspect = 'card' | '16:9' | '4:3' | '1:1';
 
 /** The frame a composed video is exported in. */
 export type StudioAspect = CardAspect;
