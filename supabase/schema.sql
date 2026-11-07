@@ -733,3 +733,341 @@ create policy "journal settings are self-service" on public.journal_settings
   for all to authenticated
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+-- =============================================================== community
+--
+-- The public feed. Everything here is world-readable on purpose, so nothing
+-- private may live here: `profiles` keeps the email and stays self-service, and
+-- `community_profiles` carries only what a person chose to show. Pictures go in
+-- their own public bucket, never the private "media" one.
+
+create table if not exists public.community_profiles (
+  id           uuid primary key references auth.users (id) on delete cascade,
+  handle       text not null,
+  display_name text not null default '' check (char_length(display_name) <= 50),
+  bio          text not null default '' check (char_length(bio) <= 160),
+  -- Paths in the "community" bucket, not URLs: a URL could point anywhere and
+  -- track everyone who loads the feed.
+  avatar_path  text,
+  banner_path  text,
+  created_at   timestamptz not null default now(),
+  constraint community_handle_shape check (handle ~ '^[a-z0-9_]{3,20}$'),
+  constraint community_handle_reserved check (
+    handle not in ('admin', 'astra', 'support', 'help', 'official', 'moderator', 'staff', 'community', 'everyone')
+  ),
+  constraint community_paths_are_own check (
+    (avatar_path is null or split_part(avatar_path, '/', 1) = id::text)
+    and (banner_path is null or split_part(banner_path, '/', 1) = id::text)
+  )
+);
+
+create unique index if not exists community_profiles_handle_idx
+  on public.community_profiles (handle);
+
+create table if not exists public.posts (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  heading    text not null default '' check (char_length(heading) <= 80),
+  body       text not null default '' check (char_length(body) <= 2000),
+  images     text[] not null default '{}' check (cardinality(images) <= 4),
+  -- "#ict" and "$eurusd", lower case. Written by the trigger below from the text.
+  tags       text[] not null default '{}',
+  reply_to   uuid references public.posts (id) on delete cascade,
+  repost_of  uuid references public.posts (id) on delete cascade,
+  -- Set by hand from the dashboard to take a post down; see `post_reports`.
+  hidden     boolean not null default false,
+  created_at timestamptz not null default now(),
+  constraint posts_not_empty check (
+    char_length(btrim(body)) > 0 or cardinality(images) > 0 or repost_of is not null
+  )
+);
+
+create index if not exists posts_created_idx on public.posts (created_at desc);
+create index if not exists posts_user_created_idx on public.posts (user_id, created_at desc);
+create index if not exists posts_reply_idx on public.posts (reply_to) where reply_to is not null;
+create index if not exists posts_tags_idx on public.posts using gin (tags);
+create unique index if not exists posts_one_repost_idx
+  on public.posts (user_id, repost_of) where repost_of is not null;
+
+create table if not exists public.post_likes (
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  post_id    uuid not null references public.posts (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (user_id, post_id)
+);
+create index if not exists post_likes_post_idx on public.post_likes (post_id);
+
+create table if not exists public.post_bookmarks (
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  post_id    uuid not null references public.posts (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (user_id, post_id)
+);
+
+create table if not exists public.follows (
+  follower_id uuid not null references auth.users (id) on delete cascade,
+  followee_id uuid not null references auth.users (id) on delete cascade,
+  created_at  timestamptz not null default now(),
+  primary key (follower_id, followee_id),
+  constraint follows_not_self check (follower_id <> followee_id)
+);
+create index if not exists follows_followee_idx on public.follows (followee_id);
+
+create table if not exists public.post_reports (
+  post_id     uuid not null references public.posts (id) on delete cascade,
+  reporter_id uuid not null references auth.users (id) on delete cascade,
+  reason      text not null check (reason in ('spam', 'scam', 'abuse', 'other')),
+  created_at  timestamptz not null default now(),
+  primary key (post_id, reporter_id)
+);
+
+create table if not exists public.notifications (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  actor_id   uuid not null references auth.users (id) on delete cascade,
+  kind       text not null check (kind in ('like', 'reply', 'repost', 'follow')),
+  post_id    uuid references public.posts (id) on delete cascade,
+  read_at    timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists notifications_user_idx on public.notifications (user_id, created_at desc);
+
+-- The server decides what a post is: its tags and its time. A client that sets
+-- `created_at` to next year would otherwise sit on top of the feed for a year.
+create or replace function public.prepare_post()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  recent integer;
+begin
+  select count(*) into recent from public.posts
+    where user_id = new.user_id and created_at > now() - interval '1 hour';
+  if recent >= 30 then
+    raise exception 'You are posting too fast. Try again in a while.' using errcode = 'P0001';
+  end if;
+  if exists (select 1 from unnest(new.images) as path where split_part(path, '/', 1) <> new.user_id::text) then
+    raise exception 'A post can only use your own pictures.' using errcode = 'P0001';
+  end if;
+  new.created_at := now();
+  new.hidden := false;
+  new.tags := coalesce(
+    array(select distinct lower(m[1]) from regexp_matches(new.body, '(?:^|\s)([#$][A-Za-z][A-Za-z0-9_]{0,29})', 'g') as m),
+    '{}'
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists posts_prepare on public.posts;
+create trigger posts_prepare
+  before insert on public.posts
+  for each row execute function public.prepare_post();
+
+-- Notifications are written here and nowhere else: definer, because the row
+-- belongs to someone other than the person acting.
+create or replace function public.notify_activity()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  target uuid;
+  actor  uuid;
+  what   text;
+  post   uuid;
+begin
+  if tg_table_name = 'post_likes' then
+    select p.user_id into target from public.posts p where p.id = new.post_id;
+    actor := new.user_id; what := 'like'; post := new.post_id;
+  elsif tg_table_name = 'follows' then
+    target := new.followee_id; actor := new.follower_id; what := 'follow'; post := null;
+  elsif new.reply_to is not null then
+    select p.user_id into target from public.posts p where p.id = new.reply_to;
+    actor := new.user_id; what := 'reply'; post := new.reply_to;
+  elsif new.repost_of is not null then
+    select p.user_id into target from public.posts p where p.id = new.repost_of;
+    actor := new.user_id; what := 'repost'; post := new.repost_of;
+  end if;
+  if target is not null and target <> actor then
+    insert into public.notifications (user_id, actor_id, kind, post_id) values (target, actor, what, post);
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.notify_activity() from public, anon, authenticated;
+
+drop trigger if exists post_likes_notify on public.post_likes;
+create trigger post_likes_notify after insert on public.post_likes
+  for each row execute function public.notify_activity();
+drop trigger if exists follows_notify on public.follows;
+create trigger follows_notify after insert on public.follows
+  for each row execute function public.notify_activity();
+drop trigger if exists posts_notify on public.posts;
+create trigger posts_notify after insert on public.posts
+  for each row execute function public.notify_activity();
+
+alter table public.community_profiles enable row level security;
+alter table public.posts              enable row level security;
+alter table public.post_likes         enable row level security;
+alter table public.post_bookmarks     enable row level security;
+alter table public.follows            enable row level security;
+alter table public.post_reports       enable row level security;
+alter table public.notifications      enable row level security;
+
+drop policy if exists "community profiles are public" on public.community_profiles;
+create policy "community profiles are public" on public.community_profiles
+  for select to anon, authenticated using (true);
+drop policy if exists "community profiles are created by their owner" on public.community_profiles;
+create policy "community profiles are created by their owner" on public.community_profiles
+  for insert to authenticated with check (auth.uid() = id);
+drop policy if exists "community profiles are edited by their owner" on public.community_profiles;
+create policy "community profiles are edited by their owner" on public.community_profiles
+  for update to authenticated using (auth.uid() = id) with check (auth.uid() = id);
+
+-- No update policy on posts: a post is not edited, and `hidden` is the
+-- moderator's alone. The author still sees their own hidden post.
+drop policy if exists "posts are public" on public.posts;
+create policy "posts are public" on public.posts
+  for select to anon, authenticated using (not hidden or auth.uid() = user_id);
+drop policy if exists "posts are written by their author" on public.posts;
+create policy "posts are written by their author" on public.posts
+  for insert to authenticated with check (auth.uid() = user_id);
+drop policy if exists "posts are deleted by their author" on public.posts;
+create policy "posts are deleted by their author" on public.posts
+  for delete to authenticated using (auth.uid() = user_id);
+
+drop policy if exists "likes are public" on public.post_likes;
+create policy "likes are public" on public.post_likes
+  for select to anon, authenticated using (true);
+drop policy if exists "likes are given by their owner" on public.post_likes;
+create policy "likes are given by their owner" on public.post_likes
+  for insert to authenticated with check (auth.uid() = user_id);
+drop policy if exists "likes are taken back by their owner" on public.post_likes;
+create policy "likes are taken back by their owner" on public.post_likes
+  for delete to authenticated using (auth.uid() = user_id);
+
+drop policy if exists "bookmarks are private" on public.post_bookmarks;
+create policy "bookmarks are private" on public.post_bookmarks
+  for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "follows are public" on public.follows;
+create policy "follows are public" on public.follows
+  for select to anon, authenticated using (true);
+drop policy if exists "follows are made by the follower" on public.follows;
+create policy "follows are made by the follower" on public.follows
+  for insert to authenticated with check (auth.uid() = follower_id);
+drop policy if exists "follows are ended by the follower" on public.follows;
+create policy "follows are ended by the follower" on public.follows
+  for delete to authenticated using (auth.uid() = follower_id);
+
+-- Write-only: nobody reads reports through the API, or who reported whom. Read
+-- them in the dashboard.
+drop policy if exists "reports are filed by the reporter" on public.post_reports;
+create policy "reports are filed by the reporter" on public.post_reports
+  for insert to authenticated with check (auth.uid() = reporter_id);
+
+drop policy if exists "notifications are read by their owner" on public.notifications;
+create policy "notifications are read by their owner" on public.notifications
+  for select to authenticated using (auth.uid() = user_id);
+drop policy if exists "notifications are marked by their owner" on public.notifications;
+create policy "notifications are marked by their owner" on public.notifications
+  for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Runs as the caller, so every row above still decides what comes back.
+create or replace function public.community_feed(
+  p_tab    text default 'foryou',
+  p_tag    text default null,
+  p_query  text default null,
+  p_author uuid default null,
+  p_parent uuid default null,
+  p_before timestamptz default null,
+  p_limit  integer default 30
+)
+returns table (
+  entry_id uuid, entry_at timestamptz, reposted_by text,
+  id uuid, user_id uuid, heading text, body text, images text[], reply_to uuid, created_at timestamptz,
+  handle text, display_name text, avatar_path text,
+  like_count bigint, reply_count bigint, repost_count bigint,
+  liked boolean, reposted boolean, bookmarked boolean, following boolean
+)
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select
+    e.id, e.created_at, rb.handle,
+    v.id, v.user_id, v.heading, v.body, v.images, v.reply_to, v.created_at,
+    a.handle, a.display_name, a.avatar_path,
+    (select count(*) from public.post_likes l where l.post_id = v.id),
+    (select count(*) from public.posts r where r.reply_to = v.id and not r.hidden),
+    (select count(*) from public.posts r where r.repost_of = v.id and not r.hidden),
+    exists (select 1 from public.post_likes l where l.post_id = v.id and l.user_id = auth.uid()),
+    exists (select 1 from public.posts r where r.repost_of = v.id and r.user_id = auth.uid()),
+    exists (select 1 from public.post_bookmarks b where b.post_id = v.id and b.user_id = auth.uid()),
+    exists (select 1 from public.follows f where f.followee_id = v.user_id and f.follower_id = auth.uid())
+  from public.posts e
+  join public.posts v on v.id = coalesce(e.repost_of, e.id)
+  join public.community_profiles a on a.id = v.user_id
+  left join public.community_profiles rb on e.repost_of is not null and rb.id = e.user_id
+  where (p_before is null or e.created_at < p_before)
+    and case when p_parent is not null then e.reply_to = p_parent else e.reply_to is null end
+    and (p_author is null or e.user_id = p_author)
+    and (p_tag is null or v.tags @> array[lower(p_tag)])
+    and (
+      p_query is null
+      or v.body ilike '%' || replace(replace(replace(p_query, '\', '\\'), '%', '\%'), '_', '\_') || '%'
+      or v.heading ilike '%' || replace(replace(replace(p_query, '\', '\\'), '%', '\%'), '_', '\_') || '%'
+      or a.handle ilike '%' || replace(replace(replace(p_query, '\', '\\'), '%', '\%'), '_', '\_') || '%'
+    )
+    and (p_tab <> 'following' or e.user_id in (select f.followee_id from public.follows f where f.follower_id = auth.uid()))
+    and (p_tab <> 'bookmarks' or (e.repost_of is null and exists (
+      select 1 from public.post_bookmarks b where b.post_id = v.id and b.user_id = auth.uid()
+    )))
+  order by e.created_at desc
+  limit least(greatest(p_limit, 1), 50);
+$$;
+
+create or replace function public.community_trending()
+returns table (tag text, uses bigint)
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select t.tag, count(*)
+  from public.posts p, unnest(p.tags) as t(tag)
+  where p.created_at > now() - interval '7 days' and p.repost_of is null
+  group by t.tag
+  order by count(*) desc, t.tag
+  limit 10;
+$$;
+
+grant execute on function public.community_feed(text, text, text, uuid, uuid, timestamptz, integer) to anon, authenticated;
+grant execute on function public.community_trending() to anon, authenticated;
+
+-- Public bucket: anyone can read a file by its URL, which is what a public feed
+-- is. Only images, and never SVG, which is a document that can run script.
+-- 8 MB is well above what the browser's re-encoding produces.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('community', 'community', true, 8388608, array['image/webp', 'image/png', 'image/jpeg'])
+on conflict (id) do update
+  set public = true,
+      file_size_limit = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "community objects are readable by anyone" on storage.objects;
+drop policy if exists "community objects are writable by their owner" on storage.objects;
+drop policy if exists "community objects are deletable by their owner" on storage.objects;
+
+create policy "community objects are readable by anyone" on storage.objects
+  for select to anon, authenticated
+  using (bucket_id = 'community');
+create policy "community objects are writable by their owner" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'community' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "community objects are deletable by their owner" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'community' and (storage.foldername(name))[1] = auth.uid()::text);

@@ -1,38 +1,28 @@
 /**
- * The video studio's frame: a clip filling a 16:9, 4:3 or 1:1 picture with the
- * card laid over it, or — `aspect: 'card'` — the card itself with the clip as
- * its background, exactly as the editor has always made it.
+ * The video studio's frame: the card in a chosen shape (`canvas/spec.ts`
+ * `FRAMES`) with a clip as its background. `aspect: 'card'` is the card exactly
+ * as the editor has always made it; in the others the frame extends and the
+ * card's content stays at its own left margin.
  *
  * One function paints a frame (`paintStudioFrame`). The live preview calls it
  * with a playing `<video>`; the exporter (`compose.ts`) calls it with each
  * decoded frame. Same function, same pixels.
  *
- * The card part is the card renderer's own foreground (`drawCardForeground`),
- * drawn into the card's rectangle; nothing about the card is drawn twice.
+ * Both halves are the card renderer's own, so a video frame and a PNG of the
+ * same shape match; nothing about the card is drawn twice.
  */
 
 import type { CardState, RenderAssets, StudioAspect, StudioClip, StudioState } from '../../types';
 import { buildContent } from '../content';
 import { computeCard } from '../pnl';
-import { CARD } from '../canvas/spec';
+import { ASPECTS, CARD, VIDEO_SIZE, cardTop, frameOf } from '../canvas/spec';
 import { drawCardBackground, drawCardForeground, foregroundKey, type DrawInput } from '../canvas/draw';
-import { placeCover } from '../canvas/placement';
 import type { Ctx2D } from '../canvas/primitives';
 
-/** Exported picture size per frame. The card keeps the editor's 2× export. */
-export const EXPORT_SIZE: Record<StudioAspect, { width: number; height: number }> = {
-  card: { width: CARD.width * 2, height: CARD.height * 2 },
-  '16:9': { width: 1920, height: 1080 },
-  '4:3': { width: 1440, height: 1080 },
-  '1:1': { width: 1080, height: 1080 },
-};
+export { ASPECTS };
 
-export const ASPECTS: readonly { id: StudioAspect; label: string }[] = [
-  { id: 'card', label: 'Card' },
-  { id: '16:9', label: '16:9' },
-  { id: '4:3', label: '4:3' },
-  { id: '1:1', label: '1:1' },
-];
+/** Exported picture size per frame. */
+export const EXPORT_SIZE: Record<StudioAspect, { width: number; height: number }> = VIDEO_SIZE;
 
 export function aspectRatio(aspect: StudioAspect): number {
   const { width, height } = EXPORT_SIZE[aspect];
@@ -47,19 +37,15 @@ export interface Rect {
 }
 
 /**
- * Where the card sits in a `width × height` frame: as large as fits, centred.
- * The card does not move — only the clip behind it does — so this is the
- * same rectangle in the preview and in the file.
+ * Where the card's own 840×570 sits in a `width × height` frame: flush left,
+ * centred down. The card does not move — only the clip behind it does — so
+ * this is the same rectangle in the preview and in the file.
  */
 export function cardRect(studio: StudioState, width: number, height: number): Rect {
-  if (studio.aspect === 'card') return { x: 0, y: 0, w: width, h: height };
-  let w = width;
-  let h = (w * CARD.height) / CARD.width;
-  if (h > height) {
-    h = height;
-    w = (h * CARD.width) / CARD.height;
-  }
-  return { x: (width - w) / 2, y: (height - h) / 2, w, h };
+  const frame = frameOf(studio.aspect);
+  const sx = width / frame.width;
+  const sy = height / frame.height;
+  return { x: 0, y: cardTop(studio.aspect) * sy, w: CARD.width * sx, h: CARD.height * sy };
 }
 
 /** A picture to paint: a playing `<video>`, a decoded `VideoFrame`, a canvas. */
@@ -89,7 +75,8 @@ export class ForegroundCache {
     if (!ctx) return null;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, pw, ph);
-    ctx.setTransform(pw / CARD.width, 0, 0, ph / CARD.height, 0, 0);
+    const frame = frameOf(input.state.display.aspect);
+    ctx.setTransform(pw / frame.width, 0, 0, ph / frame.height, 0, 0);
     ctx.imageSmoothingQuality = 'high';
     drawCardForeground(ctx, input);
     this.canvas = canvas;
@@ -98,11 +85,12 @@ export class ForegroundCache {
   }
 }
 
-/** The card state as the frame paints it: the clip as its background, placed as the clip says. */
+/** The card state as the frame paints it: the studio's shape, the clip as its background. */
 export function stateForClip(state: CardState, clip: StudioClip | null): CardState {
-  if (!clip) return state;
+  const shaped = { ...state, display: { ...state.display, aspect: state.studio.aspect } };
+  if (!clip) return shaped;
   return {
-    ...state,
+    ...shaped,
     artwork: {
       ...state.artwork,
       imageId: clip.mediaId,
@@ -128,7 +116,6 @@ export function paintStudioFrame(
   assets: RenderAssets,
   cache: ForegroundCache,
 ): void {
-  const studio = state.studio;
   const clipState = stateForClip(state, clip);
   const result = computeCard(clipState);
   const media =
@@ -143,34 +130,19 @@ export function paintStudioFrame(
   };
 
   ctx.save();
-  if (studio.aspect === 'card') {
-    // The card exactly as the editor paints it, with this clip behind it.
-    ctx.setTransform(width / CARD.width, 0, 0, height / CARD.height, 0, 0);
-    ctx.imageSmoothingQuality = 'high';
-    if (!media) {
-      // No clip yet: the card's own ground, so the frame is never empty.
-      drawCardBackground(ctx, { ...input, state: { ...clipState, artwork: { ...clipState.artwork, imageId: null } } });
-    } else {
-      drawCardBackground(ctx, input);
-    }
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    const layer = cache.get(input, width, height);
-    if (layer) ctx.drawImage(layer, 0, 0);
-    ctx.restore();
-    return;
+  // The card exactly as the editor paints it, with this clip behind it.
+  const frame = frameOf(clipState.display.aspect);
+  ctx.setTransform(width / frame.width, 0, 0, height / frame.height, 0, 0);
+  ctx.imageSmoothingQuality = 'high';
+  if (!media) {
+    // No clip yet: the card's own ground, so the frame is never empty.
+    drawCardBackground(ctx, { ...input, state: { ...clipState, artwork: { ...clipState.artwork, imageId: null } } });
+  } else {
+    drawCardBackground(ctx, input);
   }
-
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, width, height);
-  if (media && clip) {
-    const placed = placeCover(media.width, media.height, width, height, clip.zoom, clip.offsetX, clip.offsetY);
-    ctx.imageSmoothingQuality = 'medium';
-    ctx.drawImage(source!.element, placed.x, placed.y, placed.w, placed.h);
-  }
-
-  const rect = cardRect(studio, width, height);
-  const layer = cache.get(input, rect.w, rect.h);
-  if (layer) ctx.drawImage(layer, Math.round(rect.x), Math.round(rect.y));
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const layer = cache.get(input, width, height);
+  if (layer) ctx.drawImage(layer, 0, 0);
   ctx.restore();
 }
 

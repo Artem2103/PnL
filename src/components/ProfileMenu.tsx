@@ -1,6 +1,6 @@
-import { lazy, Suspense, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
-import type { AuthMode } from '../lib/auth';
+import { PROFILE_PATH, navigate, useLocation } from '../lib/route';
+import { ThemeMenu } from './ThemeMenu';
 
 /**
  * The name to greet someone by: the one given at sign-up, or the part of the
@@ -18,7 +18,7 @@ export function displayNameFor(user: User | null): string {
  * on the vertical axis of a square box; the shoulders run past the bottom edge
  * so the round container crops them evenly on both sides.
  */
-function Silhouette() {
+export function Silhouette() {
   return (
     <svg viewBox="0 0 40 40" aria-hidden="true" focusable="false">
       <circle cx="20" cy="15.5" r="7" fill="currentColor" />
@@ -27,72 +27,29 @@ function Silhouette() {
   );
 }
 
-const JournalModal = lazy(() =>
-  import('../journal/ui/JournalModal').then((module) => ({ default: module.JournalModal })),
-);
-
 /**
- * The account button in every topbar. It opens the trading journal — balance,
- * curve, performance and the trade history — in a large modal; the account
- * actions that used to hang in a dropdown here (plans, log out) live in the
- * journal's settings.
+ * The account button in every topbar. It goes to the profile page, which holds
+ * what used to hang off this button: plans and log out.
  */
-export function ProfileMenu({
-  user,
-  mode,
-  onSignOut,
-  onOpenPlans,
-}: {
-  user: User | null;
-  mode: AuthMode;
-  onSignOut: () => void;
-  /** Adds a "Plans" entry; left out on the plans page itself. */
-  onOpenPlans?: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const isAccount = mode === 'account';
-  const name = isAccount ? displayNameFor(user) : 'Local journal';
-  const label = isAccount ? (user?.email ?? '') : 'Accounts are off — saved in this browser only';
+export function ProfileMenu() {
+  const { pathname } = useLocation();
+  const current = pathname.replace(/\/+$/, '') === PROFILE_PATH;
 
   return (
-    <div className="profile">
+    <>
+      <ThemeMenu />
+      <div className="profile">
       <button
         type="button"
-        className={`profile__button${open ? ' is-open' : ''}`}
-        onClick={() => setOpen(true)}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-label="Account and trading journal"
-        title="Trading journal"
+        className={`profile__button${current ? ' is-open' : ''}`}
+        onClick={() => navigate(PROFILE_PATH)}
+        aria-label="Your profile"
+        aria-current={current ? 'page' : undefined}
+        title="Profile"
       >
         <Silhouette />
       </button>
-
-      {open ? (
-        <Suspense fallback={null}>
-          <JournalModal
-            name={name}
-            accountLabel={label}
-            onClose={() => setOpen(false)}
-            onOpenPlans={
-              isAccount && onOpenPlans
-                ? () => {
-                    setOpen(false);
-                    onOpenPlans();
-                  }
-                : undefined
-            }
-            onSignOut={
-              isAccount
-                ? () => {
-                    setOpen(false);
-                    onSignOut();
-                  }
-                : undefined
-            }
-          />
-        </Suspense>
-      ) : null}
-    </div>
+      </div>
+    </>
   );
 }

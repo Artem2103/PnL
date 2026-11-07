@@ -1,5 +1,6 @@
 import type { CardState } from '../types';
-import { CARD, prepareAssets, renderToOffscreenCanvas } from './render';
+import { prepareAssets, renderToOffscreenCanvas } from './render';
+import { frameOf } from './canvas/spec';
 
 /**
  * A frame, or 120 ms — whichever comes first, reporting which it was.
@@ -82,7 +83,7 @@ export async function checkExportMatchesPreview(
       : undefined;
 
   // Same scale the preview used, so the comparison is pixel-for-pixel.
-  const scale = width / CARD.width;
+  const scale = width / frameOf(state.display.aspect).width;
   const exportCanvas = renderToOffscreenCanvas(state, assets, scale);
 
   if (exportCanvas.width !== width || exportCanvas.height !== height) {

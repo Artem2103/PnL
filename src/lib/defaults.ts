@@ -2,6 +2,7 @@ import type { CardState, StudioClip, StudioState, StudioTrack } from '../types';
 import { MAX_CLIP_SECONDS } from './images';
 import { DEFAULT_FRAME_ID } from './frames';
 import { DEFAULT_SCENE_ID, NO_SCENE, sceneById } from './canvas/scenes';
+import { ASPECTS } from './canvas/spec';
 import { DEFAULT_CUSTOM_ACCENT, DEFAULT_THEME_ID } from './themes';
 
 /**
@@ -67,6 +68,7 @@ export function createDefaultState(): CardState {
       textShadow: false,
       showBlock: true,
       showTokenImage: false,
+      aspect: 'card',
     },
     artwork: {
       imageId: null,
@@ -97,7 +99,7 @@ function hydrateStudio(saved: unknown): StudioState {
   const s = saved as Partial<StudioState>;
   const num = (v: unknown, fallback: number, lo: number, hi: number) =>
     typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback;
-  const aspects: StudioState['aspect'][] = ['card', '16:9', '4:3', '1:1'];
+  const aspects = ASPECTS.map((a) => a.id);
   return {
     aspect: aspects.includes(s.aspect as StudioState['aspect']) ? (s.aspect as StudioState['aspect']) : base.aspect,
     clips: Array.isArray(s.clips)
@@ -167,12 +169,16 @@ export function hydrateState(raw: unknown): CardState {
     merged.sceneId && merged.sceneId !== NO_SCENE && !sceneById(merged.sceneId)
       ? { ...merged, sceneId: DEFAULT_SCENE_ID }
       : merged;
+  const display = merge(base.display, saved.display);
   return {
     mode: saved.mode === 'trade' || saved.mode === 'period' ? saved.mode : base.mode,
     trade: merge(base.trade, saved.trade),
     period: merge(base.period, saved.period),
     brand: merge(base.brand, saved.brand),
-    display: merge(base.display, saved.display),
+    display: {
+      ...display,
+      aspect: ASPECTS.some((a) => a.id === display.aspect) ? display.aspect : base.display.aspect,
+    },
     artwork:
       artwork.clipLength === PREVIOUS_MAX_CLIP_SECONDS
         ? { ...artwork, clipLength: MAX_CLIP_SECONDS }

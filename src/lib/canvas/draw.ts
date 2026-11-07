@@ -3,7 +3,7 @@ import { FOOTER_SECONDARY, type CardContent } from '../content';
 import type { PnlResult } from '../pnl';
 import { ensureContrast, readableOn, withAlpha } from '../color';
 import { resolveTheme, type Theme } from '../themes';
-import { CARD, GROUND, PALETTE, SPEC } from './spec';
+import { CARD, GROUND, PALETTE, SPEC, cardTop, frameOf } from './spec';
 import { drawAvatarFrame } from './avatarFrames';
 import { placeCover } from './placement';
 import { sceneById } from './scenes';
@@ -103,6 +103,9 @@ export function drawCardForeground(ctx: Ctx2D, input: DrawInput): void {
   const accentInk = ensureContrast(accent, groundFor(state)[1]);
 
   ctx.save();
+  // Everything below is in the card's own 840×570 space. Only a taller frame
+  // moves it, and only down: the left margin is the same in every shape.
+  ctx.translate(0, cardTop(state.display.aspect));
   if (state.display.showLogo) drawLogo(ctx, input);
   if (state.display.showWordmark) drawWordmark(ctx, input, ink);
   drawTitle(ctx, input, ink);
@@ -151,6 +154,7 @@ export function foregroundKey(input: DrawInput): string {
     d.textShadow ? 1 : 0,
     d.showBlock ? 1 : 0,
     d.showTokenImage ? 1 : 0,
+    d.aspect,
     assets.avatar?.src ?? '',
     assets.logo?.src ?? '',
     assets.token?.src ?? '',
@@ -175,7 +179,7 @@ function isPaintable(media: BackgroundMedia): boolean {
 
 function drawBackground(ctx: Ctx2D, input: DrawInput, theme: Theme): void {
   const { state, assets } = input;
-  const { width, height } = CARD;
+  const { width, height } = frameOf(state.display.aspect);
   const light = state.display.textTone === 'dark';
   const ground = groundFor(state);
 
@@ -196,7 +200,7 @@ function drawBackground(ctx: Ctx2D, input: DrawInput, theme: Theme): void {
   } else {
     // Near-black ground with the faint lift toward the bottom seen on the
     // reference cards — or its mirror image, when the ink is dark.
-    ctx.fillStyle = cachedGradient(ctx, `ground:${light ? 'light' : 'dark'}`, (target) => {
+    ctx.fillStyle = cachedGradient(ctx, `ground:${light ? 'light' : 'dark'}:${width}x${height}`, (target) => {
       const gradient = target.createLinearGradient(0, 0, width * 0.35, height);
       gradient.addColorStop(0, ground[0]);
       gradient.addColorStop(0.6, ground[1]);
@@ -237,15 +241,17 @@ function drawBackground(ctx: Ctx2D, input: DrawInput, theme: Theme): void {
   // that leaves the artwork on the right untouched. It veils the photo *away*
   // from the ink: near-black under light text, near-white under dark, so the
   // slider means the same thing — "make the text readable" — in both.
-  drawScrim(ctx, state.artwork.scrim, light);
+  drawScrim(ctx, state.artwork.scrim, light, width, height);
 }
 
 /**
  * The veil over the text column, shared by the uploaded background and the
  * built-in scenes so the slider cannot come to mean two different things.
  */
-function drawScrim(ctx: Ctx2D, scrim: number, light: boolean): void {
-  const { width, height } = CARD;
+function drawScrim(ctx: Ctx2D, scrim: number, light: boolean, frameWidth: number, frameHeight: number): void {
+  // The ramp is the card's, whatever the frame: the same veil under the text,
+  // and the extra width of a wider frame is left clear.
+  const { width } = CARD;
   const veil = light ? '253, 253, 255' : '1, 1, 3';
   ctx.save();
   ctx.fillStyle = cachedGradient(ctx, `scrim:${veil}:${scrim}`, (target) => {
@@ -255,7 +261,7 @@ function drawScrim(ctx: Ctx2D, scrim: number, light: boolean): void {
     gradient.addColorStop(0.78, `rgba(${veil}, 0)`);
     return gradient;
   });
-  ctx.fillRect(0, 0, width, height);
+  ctx.fillRect(0, 0, frameWidth, frameHeight);
   ctx.restore();
 }
 

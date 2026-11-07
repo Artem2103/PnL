@@ -19,7 +19,8 @@ import {
   downloadCard,
   shareCard,
 } from './lib/share';
-import { CARD } from './lib/render';
+import { ASPECTS, frameOf } from './lib/canvas/spec';
+import { renderCardBlob } from './lib/render';
 import { describeMedia, loadMedia } from './lib/images';
 import { downloadCardVideo, resolveClip, videoScaleFor, videoSupport } from './lib/video';
 import { checkExportMatchesPreview } from './lib/selftest';
@@ -29,7 +30,8 @@ import { LimitDialog } from './components/LimitDialog';
 import { PlanNote } from './components/PlanNote';
 import { allowanceFor, cardKey, claimExport, type ExportFormat, type PlanStatus } from './lib/billing';
 import { usePlanStatus } from './lib/usePlanStatus';
-import { PRICING_PATH, navigate } from './lib/route';
+import { COMMUNITY_PATH, PRICING_PATH, navigate } from './lib/route';
+import { setPendingImage } from './community/pending';
 import { SiteNav } from './components/SiteNav';
 
 type ToastTone = 'info' | 'error';
@@ -60,12 +62,12 @@ const SYNC_LABEL: Record<CardSyncStatus, string> = {
 };
 
 export default function App() {
-  const { user, userId, mode: authMode, signOut } = useAuth();
+  const { userId, mode: authMode } = useAuth();
   // The card lives in the account now. This still paints from the local cache
   // on the first frame; the reconciliation lands behind it.
   const { state, setState, status: cardStatus, error: cardError } = useCloudCard(userId ?? '');
   const [scale, setScale] = useState(2);
-  const [busy, setBusy] = useState<null | 'download' | 'copy' | 'share' | 'video'>(null);
+  const [busy, setBusy] = useState<null | 'download' | 'copy' | 'share' | 'video' | 'post'>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [background, setBackground] = useState<BackgroundInfo | null>(null);
   const [playing, setPlaying] = useState(true);
@@ -82,7 +84,8 @@ export default function App() {
 
   const isVideoBackground = background?.kind === 'video';
   const clip = resolveClip(background?.duration ?? 0, state.artwork.clipStart, state.artwork.clipLength);
-  const videoScale = videoScaleFor(scale);
+  const videoScale = videoScaleFor(scale, state.display.aspect);
+  const frame = frameOf(state.display.aspect);
 
   const notify = useCallback((message: string, tone: ToastTone = 'info') => {
     setToast({ id: Date.now(), message, tone });
@@ -206,6 +209,20 @@ export default function App() {
       setBusy(null);
     }
   }, [gateExport, notify, scale, state]);
+
+  /** The card goes to the Post dialog as an image, and costs an export like a download. */
+  const handlePost = useCallback(async () => {
+    setBusy('post');
+    try {
+      if (!(await gateExport('png'))) return;
+      setPendingImage(await renderCardBlob(state, 2));
+      navigate(COMMUNITY_PATH);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Export failed.', 'error');
+    } finally {
+      setBusy(null);
+    }
+  }, [gateExport, notify, state]);
 
   const handleCopy = useCallback(async () => {
     setBusy('copy');
@@ -353,16 +370,7 @@ export default function App() {
           >
             Reset
           </button>
-          <ProfileMenu
-            user={user}
-            mode={authMode}
-            onOpenPlans={authMode === 'account' ? () => navigate(PRICING_PATH) : undefined}
-            onSignOut={() => {
-              void signOut().catch((error: unknown) =>
-                notify(error instanceof Error ? error.message : 'Log out failed.', 'error'),
-              );
-            }}
-          />
+          <ProfileMenu />
         </div>
       </header>
 
@@ -382,6 +390,7 @@ export default function App() {
       <main className="layout">
         <aside className="layout__controls" aria-label="Card settings">
           <ControlPanel
+            hideStyle
             state={state}
             background={background}
             setMode={setMode}
@@ -423,8 +432,8 @@ export default function App() {
                   {soundOn ? 'Sound off' : 'Sound on'}
                 </button>
                 <span className="clipbar__meta">
-                  {clip.length.toFixed(1)} s clip · video {videoScale}× ·{' '}
-                  {Math.round(CARD.width * videoScale)}×{Math.round(CARD.height * videoScale)}
+                  {clip.length.toFixed(1)} s clip · video ·{' '}
+                  {Math.round(frame.width * videoScale)}×{Math.round(frame.height * videoScale)}
                   {video.extension ? ` · ${video.extension.toUpperCase()}` : ''}
                 </span>
                 {busy === 'video' ? (
@@ -436,6 +445,20 @@ export default function App() {
             ) : null}
 
             <div className="exportbar">
+              <div className="exportbar__scale" role="group" aria-label="Picture shape">
+                {ASPECTS.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className={`chip${state.display.aspect === option.id ? ' is-active' : ''}`}
+                    onClick={() => patchDisplay({ aspect: option.id })}
+                    aria-pressed={state.display.aspect === option.id}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+
               <div className="exportbar__scale" role="group" aria-label="Export resolution">
                 {SCALES.map((option) => (
                   <button
@@ -449,11 +472,19 @@ export default function App() {
                   </button>
                 ))}
                 <span className="exportbar__dims">
-                  {Math.round(CARD.width * scale)}×{Math.round(CARD.height * scale)}
+                  {Math.round(frame.width * scale)}×{Math.round(frame.height * scale)}
                 </span>
               </div>
 
               <div className="exportbar__actions">
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  onClick={() => void handlePost()}
+                  disabled={busy !== null}
+                >
+                  {busy === 'post' ? 'Preparing…' : 'Post to community'}
+                </button>
                 {isVideoBackground && video.supported ? (
                   <button
                     type="button"
@@ -513,8 +544,8 @@ export default function App() {
                     frames, not recorded off the screen: it keeps the clip's frame rate, the sound
                     stays in step, and it goes as fast as this machine can encode. The preview
                     pauses while it runs. The scale buttons set the PNG; video always records at{' '}
-                    {videoScale}×, because anything smaller is smeared by the time a platform has
-                    re-encoded it.
+                    {Math.round(frame.width * videoScale)}×{Math.round(frame.height * videoScale)},
+                    because anything smaller is smeared by the time a platform has re-encoded it.
                   </>
                 ) : (
                   <>

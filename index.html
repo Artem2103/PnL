@@ -3,19 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#0a0a0a" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#f4f4f6" />
+    <meta name="color-scheme" content="light" />
     <meta
       name="description"
       content="Design and download premium PnL cards for your trades. Cards are drawn in your browser and saved to your account."
     />
     <title>Astra — PnL cards</title>
-    <!-- Paints the page's own ground before any stylesheet lands, so the load
-         never flashes white on the way to a near-black editor. -->
+    <!-- Paints the page's own ground before any stylesheet lands. -->
     <style>
       html {
-        background: #0a0a0a;
-        color-scheme: dark;
+        background: #f4f4f6;
+        color-scheme: light;
       }
     </style>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -24,6 +23,19 @@
          title, rows, handle and footer, 800 for the value in the accent block,
          and 500/600/700 for the editor's own chrome. Asking for 900, or for
          JetBrains Mono Bold, cost a font file nothing ever rendered with. -->
+    <!-- The chosen theme's ground, before anything else, so a dark one never
+         flashes light. Written by `lib/siteTheme.ts`. -->
+    <script>
+      try {
+        var boot = JSON.parse(localStorage.getItem('astra:site-theme-boot') || 'null');
+        if (boot) {
+          document.documentElement.style.background = boot.bg;
+          document.documentElement.style.colorScheme = boot.dark ? 'dark' : 'light';
+        }
+      } catch (e) {}
+    </script>
+    <!-- Satoshi is the site's own type. The card keeps drawing in Inter. -->
+    <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700,900&display=swap" rel="stylesheet" />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"

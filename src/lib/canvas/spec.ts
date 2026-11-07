@@ -10,10 +10,59 @@
  * (cap height 0.727em, ascender ~0.75em, descender ~0.21em).
  */
 
+import type { CardAspect } from '../../types';
+
 export const CARD = {
   width: 840,
   height: 570,
 } as const;
+
+/**
+ * The picture around the card, in the same design units. The content is never
+ * scaled or re-laid out for a shape: a wider frame grows to the right and a
+ * taller one grows evenly up and down, so the left margin and every distance
+ * inside the card stay as measured. The sizes are exact ratios, fractions and
+ * all, so `VIDEO_SIZE` lands on whole pixels.
+ */
+export const FRAMES: Record<CardAspect, { width: number; height: number }> = {
+  card: { width: CARD.width, height: CARD.height },
+  '16:9': { width: (CARD.height * 16) / 9, height: CARD.height },
+  '9:16': { width: CARD.width, height: (CARD.width * 16) / 9 },
+  '4:3': { width: 840, height: 630 },
+  '1:1': { width: 840, height: 840 },
+};
+
+/**
+ * A video's pixels per shape. The card keeps the editor's 2×. The others are
+ * the standard sizes, not 2×: H.264 encoders refuse much above 1680×1140 at the
+ * levels `recorders.ts` asks for, and a refusal drops the export to the live
+ * recorder, which loses frames at these sizes.
+ */
+export const VIDEO_SIZE: Record<CardAspect, { width: number; height: number }> = {
+  card: { width: CARD.width * 2, height: CARD.height * 2 },
+  '16:9': { width: 1920, height: 1080 },
+  '9:16': { width: 1080, height: 1920 },
+  '4:3': { width: 1440, height: 1080 },
+  '1:1': { width: 1080, height: 1080 },
+};
+
+export const ASPECTS: readonly { id: CardAspect; label: string }[] = [
+  { id: 'card', label: 'Card' },
+  { id: '16:9', label: '16:9' },
+  { id: '9:16', label: '9:16' },
+  { id: '4:3', label: '4:3' },
+  { id: '1:1', label: '1:1' },
+];
+
+/** The frame for a saved shape; anything unknown is the plain card. */
+export function frameOf(aspect: CardAspect | undefined): { width: number; height: number } {
+  return (aspect && FRAMES[aspect]) || FRAMES.card;
+}
+
+/** How far down the frame the card's own top edge sits. */
+export function cardTop(aspect: CardAspect | undefined): number {
+  return Math.round((frameOf(aspect).height - CARD.height) / 2);
+}
 
 export const SPEC = {
   /** Left margin shared by the title, the accent block and the footer. */

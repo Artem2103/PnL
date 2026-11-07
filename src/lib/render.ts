@@ -1,7 +1,7 @@
 import type { BackgroundMedia, CardState, RenderAssets } from '../types';
 import { buildContent } from './content';
 import { drawCardBackground, drawCardForeground, foregroundKey, type DrawInput } from './canvas/draw';
-import { CARD } from './canvas/spec';
+import { CARD, frameOf } from './canvas/spec';
 import { ensureFonts } from './fonts';
 import { loadImageElement, loadMedia, peekImageElement, peekMedia } from './images';
 import { computeCard } from './pnl';
@@ -14,8 +14,8 @@ const MAX_CANVAS_EDGE = 8192;
 export { CARD };
 
 /** Highest scale that keeps both edges within the canvas limit. */
-export function clampScale(scale: number): number {
-  const limit = MAX_CANVAS_EDGE / Math.max(CARD.width, CARD.height);
+export function clampScale(scale: number, frame: { width: number; height: number } = CARD): number {
+  const limit = MAX_CANVAS_EDGE / Math.max(frame.width, frame.height);
   return Math.max(0.25, Math.min(scale, limit));
 }
 
@@ -146,7 +146,8 @@ function foregroundLayerFor(
   if (!ctx) return null;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, pixelWidth, pixelHeight);
-  ctx.setTransform(pixelWidth / CARD.width, 0, 0, pixelHeight / CARD.height, 0, 0);
+  const frame = frameOf(input.state.display.aspect);
+  ctx.setTransform(pixelWidth / frame.width, 0, 0, pixelHeight / frame.height, 0, 0);
   ctx.imageSmoothingQuality = 'high';
   drawCardForeground(ctx, input);
 
@@ -167,9 +168,10 @@ export function renderToCanvas(
   assets: RenderAssets,
   scale: number,
 ): void {
-  const safeScale = clampScale(scale);
-  const pixelWidth = Math.round(CARD.width * safeScale);
-  const pixelHeight = Math.round(CARD.height * safeScale);
+  const frame = frameOf(state.display.aspect);
+  const safeScale = clampScale(scale, frame);
+  const pixelWidth = Math.round(frame.width * safeScale);
+  const pixelHeight = Math.round(frame.height * safeScale);
 
   if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
   if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
@@ -183,7 +185,7 @@ export function renderToCanvas(
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, pixelWidth, pixelHeight);
   // Everything downstream draws in design units; the scale lives here alone.
-  ctx.setTransform(pixelWidth / CARD.width, 0, 0, pixelHeight / CARD.height, 0, 0);
+  ctx.setTransform(pixelWidth / frame.width, 0, 0, pixelHeight / frame.height, 0, 0);
   ctx.imageSmoothingQuality = 'high';
 
   drawCardBackground(ctx, input);

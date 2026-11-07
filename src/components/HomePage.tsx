@@ -3,6 +3,7 @@ import type { CardState } from '../types';
 import { useAuth } from '../lib/auth';
 import { CardPreview } from './CardPreview';
 import { ProfileMenu } from './ProfileMenu';
+import { ThemeMenu } from './ThemeMenu';
 import { SiteNav } from './SiteNav';
 import { createDefaultState } from '../lib/defaults';
 import { THEMES } from '../lib/themes';
@@ -120,7 +121,7 @@ const FEATURES = [
 ];
 
 export function HomePage() {
-  const { session, user, mode, loading: authLoading, signOut } = useAuth();
+  const { session, mode, loading: authLoading } = useAuth();
   const signedIn = mode === 'account' && Boolean(session);
   const accountsOff = mode === 'local';
   const [themeId, setThemeId] = useState(THEMES[0]!.id);
@@ -152,16 +153,7 @@ export function HomePage() {
           >
             {signedIn || accountsOff ? 'Open the editor' : 'Start free'}
           </button>
-          {signedIn || accountsOff ? (
-            <ProfileMenu
-              user={user}
-              mode={mode}
-              onOpenPlans={signedIn ? () => navigate(PRICING_PATH) : undefined}
-              onSignOut={() => {
-                void signOut();
-              }}
-            />
-          ) : null}
+          {signedIn || accountsOff ? <ProfileMenu /> : <ThemeMenu />}
         </div>
       </header>
 

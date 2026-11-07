@@ -244,7 +244,8 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
  * Re-encodes the upload: caps the long edge, drops EXIF (including GPS) and
  * normalises the format.
  */
-async function normalize(file: File, maxEdge: number) {
+/** Redrawn onto a canvas, so nothing but the pixels survives: no location, no camera data. */
+export async function normalizeImage(file: Blob, maxEdge: number) {
   const { source, width, height } = await decode(file);
   if (!width || !height) throw new ImageError('That file is not a readable image.');
 
@@ -461,7 +462,7 @@ export async function addLocalMedia(
 
   const media = video
     ? { ...(await probeVideo(file)), blob: file as Blob }
-    : { ...(await normalize(file, limits.maxEdge)), duration: 0, poster: undefined };
+    : { ...(await normalizeImage(file, limits.maxEdge)), duration: 0, poster: undefined };
 
   const record: MediaRecord = {
     id: makeId(),

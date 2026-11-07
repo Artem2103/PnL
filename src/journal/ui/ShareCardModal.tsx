@@ -16,7 +16,7 @@ import {
 import { downloadCardVideo, videoSupport } from '../../lib/video';
 import { claimExport, type ExportFormat, type PlanStatus } from '../../lib/billing';
 import { PRICING_PATH, navigate } from '../../lib/route';
-import { CARD } from '../../lib/render';
+import { ASPECTS, frameOf } from '../../lib/canvas/spec';
 import { DEFAULT_SCENE_ID, SCENES } from '../../lib/canvas/scenes';
 import { slugify } from '../../lib/format';
 import { useAuth } from '../../lib/auth';
@@ -294,6 +294,8 @@ export function ShareCardModal({
         const result = await downloadCardVideo(
           {
             ...state,
+            // The Image side's shape is its own; this branch is the plain card.
+            display: { ...state.display, aspect: 'card' },
             artwork: {
               ...state.artwork,
               imageId: only.mediaId,
@@ -407,6 +409,7 @@ export function ShareCardModal({
     patchArtwork({ zoom: Math.min(3, Math.max(1, design.artwork.zoom * factor)) });
   };
 
+  const frame = frameOf(design.display.aspect);
   const clip = studio.clips[0] ?? null;
   const clipDuration = clips.find((m) => m.id === clip?.mediaId)?.duration ?? 0;
 
@@ -674,6 +677,19 @@ export function ShareCardModal({
           </button>
         ) : (
           <>
+            <div className="jx-segment jx-segment--small" role="group" aria-label="Shape">
+              {ASPECTS.map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  className={design.display.aspect === a.id ? 'is-active' : ''}
+                  aria-pressed={design.display.aspect === a.id}
+                  onClick={() => patchDisplay({ aspect: a.id })}
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
             <div className="jx-segment jx-segment--small" role="group" aria-label="Resolution">
               {SCALES.map((s) => (
                 <button
@@ -682,7 +698,7 @@ export function ShareCardModal({
                   className={scale === s ? 'is-active' : ''}
                   aria-pressed={scale === s}
                   onClick={() => setScale(s)}
-                  title={`${CARD.width * s}×${CARD.height * s}`}
+                  title={`${Math.round(frame.width * s)}×${Math.round(frame.height * s)}`}
                 >
                   {s}×
                 </button>

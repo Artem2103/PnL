@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ArtworkState, CardState, RenderAssets } from '../types';
-import { CARD, prepareAssets, renderToCanvas } from '../lib/render';
+import { prepareAssets, renderToCanvas } from '../lib/render';
 import { placeCover, panBy } from '../lib/canvas/placement';
+import { frameOf } from '../lib/canvas/spec';
 import { onFontsChanged } from '../lib/fonts';
 import { resolveClip } from '../lib/video';
 
@@ -54,6 +55,8 @@ export function CardPreview({
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const assetsRef = useRef<RenderAssets | null>(null);
+  /** The background `assetsRef` was prepared for. */
+  const assetsForRef = useRef<string | null>(null);
   const dragRef = useRef<DragOrigin | null>(null);
   const clipRef = useRef<HTMLVideoElement | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -93,8 +96,12 @@ export function CardPreview({
     if (!canvas || !assets || cssWidth <= 0) return;
 
     const media = assets.artwork;
+    // While a newly picked background loads, `assets` is still the previous
+    // one. Its clip has been stopped and must stay stopped: starting it here
+    // left it playing, with sound, underneath the new one.
+    const current = assetsForRef.current === stateRef.current.artwork.imageId;
     const video =
-      media && media.kind === 'video' && media.element instanceof HTMLVideoElement
+      current && media && media.kind === 'video' && media.element instanceof HTMLVideoElement
         ? media.element
         : null;
 
@@ -121,7 +128,8 @@ export function CardPreview({
     if (dirtyRef.current) {
       dirtyRef.current = false;
       const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
-      const natural = Math.min(MAX_PREVIEW_SCALE, Math.max(0.5, (cssWidth * dpr) / CARD.width));
+      const designWidth = frameOf(stateRef.current.display.aspect).width;
+      const natural = Math.min(MAX_PREVIEW_SCALE, Math.max(0.5, (cssWidth * dpr) / designWidth));
       const floor = Math.min(natural, MIN_PREVIEW_SCALE);
       renderToCanvas(
         canvas,
@@ -206,9 +214,11 @@ export function CardPreview({
   // off the path a keystroke takes.
   useEffect(() => {
     let cancelled = false;
+    const imageId = stateRef.current.artwork.imageId;
     void prepareAssets(stateRef.current).then((assets) => {
       if (cancelled) return;
       assetsRef.current = assets;
+      assetsForRef.current = imageId;
       request();
     });
     return () => {
@@ -274,11 +284,12 @@ export function CardPreview({
       const rect = canvas.getBoundingClientRect();
       if (rect.width <= 0) return;
 
+      const frame = frameOf(state.display.aspect);
       const placement = placeCover(
         media.width,
         media.height,
-        CARD.width,
-        CARD.height,
+        frame.width,
+        frame.height,
         state.artwork.zoom,
         state.artwork.offsetX,
         state.artwork.offsetY,
@@ -292,12 +303,12 @@ export function CardPreview({
         offsetY: state.artwork.offsetY,
         overflowX: placement.overflowX,
         overflowY: placement.overflowY,
-        designPerCss: CARD.width / rect.width,
+        designPerCss: frame.width / rect.width,
       };
       canvas.setPointerCapture(event.pointerId);
       setDragging(true);
     },
-    [canPan, canvasRef, state.artwork.offsetX, state.artwork.offsetY, state.artwork.zoom],
+    [canPan, canvasRef, state.artwork.offsetX, state.artwork.offsetY, state.artwork.zoom, state.display.aspect],
   );
 
   const onPointerMove = useCallback(
@@ -325,9 +336,19 @@ export function CardPreview({
     [canvasRef],
   );
 
+  const frame = frameOf(state.display.aspect);
+
   return (
-    <div className="preview" ref={wrapRef}>
-      <div className="preview__frame" style={{ aspectRatio: `${CARD.width} / ${CARD.height}` }}>
+    <div className="preview">
+      <div
+        className="preview__frame"
+        ref={wrapRef}
+        style={{
+          aspectRatio: `${frame.width} / ${frame.height}`,
+          // A tall shape is held to the window's height, not the column's width.
+          maxWidth: `calc(var(--preview-max-h, 76vh) * ${frame.width / frame.height})`,
+        }}
+      >
         <canvas
           ref={canvasRef}
           className={`preview__canvas${canPan ? ' is-pannable' : ''}${dragging ? ' is-dragging' : ''}`}

@@ -3,7 +3,10 @@ import type { CardState, RenderAssets } from '../../types';
 import { buildContent } from '../content';
 import { createDefaultState } from '../defaults';
 import { computeCard } from '../pnl';
-import { foregroundKey, type DrawInput } from './draw';
+import { drawCardForeground, foregroundKey, type DrawInput } from './draw';
+import { ASPECTS, CARD, FRAMES, SPEC, VIDEO_SIZE, cardTop } from './spec';
+import { videoScaleFor } from '../video';
+import type { Ctx2D } from './primitives';
 
 /**
  * `renderToCanvas` paints the foreground once and blits the result on every
@@ -34,8 +37,71 @@ function markAt(src: string): HTMLImageElement {
   return { src } as HTMLImageElement;
 }
 
+describe('the frame shapes', () => {
+  /** Records where each rectangle lands, which is all the block needs. */
+  function blockOrigin(aspect: CardState['display']['aspect']) {
+    const state = createDefaultState();
+    state.display = { ...state.display, aspect, showLogo: false, showWordmark: false, showRows: false, showHandle: false, showFooter: false };
+    state.trade = { ...state.trade, symbol: '' };
+    state.period = { ...state.period, title: '' };
+    let y = 0;
+    const fills: { x: number; y: number }[] = [];
+    const ctx = new Proxy(
+      {
+        translate: (_: number, dy: number) => (y += dy),
+        fillRect: (x: number, top: number) => fills.push({ x, y: top + y }),
+        measureText: () => ({ width: 100, actualBoundingBoxLeft: 0, actualBoundingBoxRight: 100 }),
+      } as Record<string, unknown>,
+      { get: (target, key) => target[key as string] ?? (() => undefined), set: () => true },
+    );
+    drawCardForeground(ctx as unknown as Ctx2D, inputFor(state));
+    return fills[0]!;
+  }
+
+  it.each(ASPECTS.map((a) => a.id))('keeps the left margin in %s', (aspect) => {
+    const origin = blockOrigin(aspect);
+    expect(origin.x).toBe(SPEC.block.x);
+    expect(origin.y).toBe(SPEC.block.y + cardTop(aspect));
+  });
+
+  it('leaves the plain card where it always was', () => {
+    expect(FRAMES.card).toEqual({ width: CARD.width, height: CARD.height });
+    expect(cardTop('card')).toBe(0);
+  });
+
+  it('never shrinks the card', () => {
+    for (const frame of Object.values(FRAMES)) {
+      expect(frame.width).toBeGreaterThanOrEqual(CARD.width);
+      expect(frame.height).toBeGreaterThanOrEqual(CARD.height);
+    }
+  });
+
+  it.each(ASPECTS.map((a) => a.id))('lands on the video size in %s, even and within what H.264 takes', (aspect) => {
+    const scale = videoScaleFor(2, aspect);
+    const width = Math.round(FRAMES[aspect].width * scale);
+    const height = Math.round(FRAMES[aspect].height * scale);
+    expect({ width, height }).toEqual(VIDEO_SIZE[aspect]);
+    expect(width % 2).toBe(0);
+    expect(height % 2).toBe(0);
+    // Level 4: 8192 16×16 blocks, which is what the card itself is under.
+    expect(Math.ceil(width / 16) * Math.ceil(height / 16)).toBeLessThanOrEqual(8192);
+  });
+
+  it('is close to the ratio it is named for', () => {
+    expect(FRAMES['16:9'].width / FRAMES['16:9'].height).toBeCloseTo(16 / 9);
+    expect(FRAMES['9:16'].width / FRAMES['9:16'].height).toBeCloseTo(9 / 16);
+    expect(FRAMES['4:3'].width / FRAMES['4:3'].height).toBe(4 / 3);
+    expect(FRAMES['1:1'].width).toBe(FRAMES['1:1'].height);
+  });
+});
+
 describe('foregroundKey', () => {
   const base = createDefaultState();
+
+  it('moves with the frame shape', () => {
+    const wide = { ...base, display: { ...base.display, aspect: '16:9' as const } };
+    expect(keyFor(wide)).not.toBe(keyFor(base));
+  });
 
   it('is stable for an unchanged card', () => {
     expect(keyFor(createDefaultState())).toBe(keyFor(createDefaultState()));

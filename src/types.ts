@@ -106,6 +106,8 @@ export interface DisplayState {
   showBlock: boolean;
   /** The instrument's logo before the title, on a trade card. */
   showTokenImage: boolean;
+  /** The picture's shape; see `FRAMES` in `canvas/spec.ts`. */
+  aspect: CardAspect;
 }
 
 export interface ArtworkState {
@@ -133,8 +135,14 @@ export interface ArtworkState {
   muteAudio: boolean;
 }
 
-/** The frame a composed video is exported in. `card` is the card itself, clip behind it. */
-export type StudioAspect = 'card' | '16:9' | '4:3' | '1:1';
+/**
+ * The shape of the picture. `card` is the 840×570 card as it has always been;
+ * the others extend its frame, and the card's content stays where it is.
+ */
+export type CardAspect = 'card' | '16:9' | '9:16' | '4:3' | '1:1';
+
+/** The frame a composed video is exported in. */
+export type StudioAspect = CardAspect;
 
 /** One clip on the video timeline. Clips play one after another. */
 export interface StudioClip {

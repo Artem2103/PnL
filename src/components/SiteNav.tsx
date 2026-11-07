@@ -1,4 +1,4 @@
-import { HOME_PATH, PRICING_PATH, STUDIO_PATH, navigate, type Page } from '../lib/route';
+import { COMMUNITY_PATH, HOME_PATH, PRICING_PATH, STUDIO_PATH, navigate, type Page } from '../lib/route';
 
 /**
  * The left half of the topbar, shared by all three pages: the wordmark, which
@@ -11,6 +11,7 @@ import { HOME_PATH, PRICING_PATH, STUDIO_PATH, navigate, type Page } from '../li
  */
 
 const LINKS = [
+  { page: 'community', href: COMMUNITY_PATH, label: 'Community' },
   { page: 'studio', href: STUDIO_PATH, label: 'Cards' },
   { page: 'pricing', href: PRICING_PATH, label: 'Plans' },
 ] as const satisfies readonly { page: Page; href: string; label: string }[];

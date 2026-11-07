@@ -34,11 +34,334 @@ file easier to read:
 | 2026-10-25 (b) | **code**: the trading journal — profile modal, PnL calendar, add/edit trades, journal share cards; **needs the SQL run** | see **Start here (2026-10-25 b)** |
 | 2026-10-25 (c) | **code**: the journal matched to the Axiom screens — measured off the screenshots, checked by overlay | see **Start here (2026-10-25 c)** |
 | 2026-10-25 (d) | **code**: share sheet = editor: Axiom Customize, photos/clips split, fixed card over a movable clip, 16:9/4:3/1:1, added audio | see **Start here (2026-10-25 d)** |
+| 2026-11-07 | **code**: picture shapes (16:9, 9:16, 4:3, 1:1) with the card pinned left; profile page with banner and posts; journal hidden. **Needs the SQL run** | see **Start here (2026-11-07)** |
+| 2026-11-07 (b) | **code**: public community feed modelled on Liquid's, and the whole site restyled light. **Needs the SQL run** | see **Start here (2026-11-07 b)** |
+| 2026-11-07 (c) | **code**: eight site themes, picked beside the profile button | see **Start here (2026-11-07 c)** |
+| 2026-11-07 (d) | **code**: a restrained glass look on every theme; Style section removed from the card page | see **Start here (2026-11-07 d)** |
+| 2026-11-07 (e) | **code**: card page video fixes (double sound, blinking, switching clips), 3:1 banner, stronger glass | see **Start here (2026-11-07 e)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-11-07 e) — video fixes on the card page, the banner, and visible glass
+
+Asked for:
+- The profile banner sized like Liquid's.
+- On the card page: switching clips took two clicks, two clips' sound played at once, and the thumbnails blinked black.
+- The glass was not visible.
+
+**Not committed yet.** Screenshots: **`Desktop\Astra fixes\`**.
+
+### Banner
+
+Measured on Liquid's own profile page: **380×127, which is 3:1**. Ours was 16:9. The banner is now 3:1 on the profile (600×200) and in the right-hand card, and the picture went from 112 to 96px, Liquid's size by eye. A new upload should be about 1500×500. An existing 16:9 banner is cropped to fit.
+
+### Two sounds at once
+
+Reproduced on the old code: both clips `paused: false, muted: false`, for as long as I watched.
+
+After a click, `CardPreview` keeps the old background until the new one has loaded. The old clip was paused correctly, but the paint loop then ran on the old background and started it again. Nothing stopped it after that.
+
+The paint loop now only touches a clip if it is the one the card has selected (`assetsForRef`).
+
+### Blinking thumbnails
+
+Reproduced: **14 thumbnail changes from two clicks.**
+
+`App.tsx` passes a new `onError` function on every render. `ImagePicker` depended on it, so every render threw away the thumbnail URLs and listed the library again. A tile with a dropped URL shows black until the new one loads.
+
+`ImagePicker` now reads `onError` through a ref, and a tile already on screen keeps its URL.
+
+### Two clicks to switch
+
+**I did not see this one happen by itself on the old code.** The one test I ran there was the switch that showed the double sound, and I did not measure whether its picture moved. My best explanation is the same bug: the frame callback was left waiting on the old clip, so the new clip's picture didn't advance. After the fix one click works in every case below. If you still need two clicks, tell me exactly how, because then this explanation was wrong.
+
+### Verified on the fixed code
+
+Real mouse clicks on two clips, sound on, in a test copy on its own port, so nothing landed in your library:
+
+| action | result |
+|---|---|
+| Switch clip, one click | New clip plays with sound, old one paused and muted, picture moving |
+| Switch back, one click | Same |
+| Pause, then pick the other clip | New clip plays, one click |
+| Pick None | Both paused and muted |
+| Thumbnail changes across all of this | **0**, against 14 before |
+| Thumbnail changes during 4 s of playback | **0** |
+
+`npm test` 382/382, both typechecks clean, production build passes.
+
+**Not verified:** an account with cloud clips (they take longer to load), Safari and Firefox, and a clip that fails to load. None of this has an automated test, because the loop needs a real browser. It was checked by hand as above.
+
+Files on the don't-touch list changed, as you asked: `CardPreview.tsx` and `ImagePicker.tsx`. `video.ts`, `offline.ts`, `render.ts` and `recorders.ts` were not touched, so exports are unaffected. `App.tsx` was not changed this round.
+
+### Glass
+
+The first version was so faint it could not be seen. Stronger now, in `src/lib/siteTheme.ts`:
+- Panels 56% solid, was 78%. Colour behind them 62% in light themes and 50% in dark, was 34% and 26%, with a third soft area of colour at the bottom.
+- Panels have a full thin lit edge and a soft shadow.
+- Checked by eye: Light and Midnight on the profile, Sky on the card page. The other five themes rely on the contrast tests.
+- The contrast tests failed at this strength on the light themes, so the quiet grey text in Light, Sand and Sky is darker, and so is Sky's secondary text.
+- Liquid's Glass mode was not compared. Your account has Ink selected, and switching it would change a setting on your account.
+
+---
+
+## Start here (2026-11-07 d) — glass, and the Style section removed
+
+Asked for: remove the "Style" section on the card page, and add a glass design to the themes, not too much of it.
+
+**Not committed yet.** Screenshots: **`Desktop\Astra glass\`**.
+
+### Style section
+
+Gone from `/cards` (`hideStyle` on `ControlPanel` in `App.tsx`). The section left Numbers, Colour, Background, Placement and Identity.
+
+- **Side effect:** Text and PnL colours, bold, text shadow, the coloured rectangle on/off and the token image now have no control in the editor. The Customize dialog still has them, but it is in the hidden share sheet.
+- **A card that already changed one of those keeps it**, and the only way to undo it on `/cards` is **Reset**, which resets the whole card. New cards are unaffected.
+- The code is still there, so it is one word to bring back.
+
+### Glass
+
+- **Background:** two very soft colour washes behind the page, tinted per theme (`glowA`, `glowB` in `siteTheme.ts`).
+- **Cards and panels:** 78% solid, so a little of the wash shows through, with a thin lit top edge.
+- **Real blur only** on what content slides under: the top bar, menus, the Post dialog and the phone nav. Blurring every post would slow scrolling and show nothing over a wash this soft.
+- **To make it stronger or weaker:** `GLASS_OPACITY` and `GLOW_OPACITY` in `siteTheme.ts`. The first is how solid the panels are, the second how strong the colour is.
+- The PnL card and its preview are not glass, so exports don't change.
+
+### What went wrong on the way
+
+Unit tests passed while the glass was not showing at all. Only looking at the page caught it:
+
+1. `community.css` loads after `global.css` and put the feed's cards back to solid. The glass for those now lives in `community.css`.
+2. I had added a `prefers-reduced-transparency` rule that turned the glass off. **Chrome on this PC reports that setting**, which usually means Windows "Transparency effects" is off, so you would never have seen the glass. I removed the rule. **Trade-off:** someone who asked their system for less transparency now gets the soft glass too. Text stays readable for them, because the tests below check it at the strongest part of the wash.
+
+### Verified
+
+- `npm test` **382/382**, with a new check on every theme that text stays readable on the glass at the strongest part of the wash. It caught Light's faint grey falling to 4.3:1, so that grey is darker now.
+- **In Chrome:** the computed styles show the panels at 78% and the wash on. By eye: Light and Midnight on the community page, Midnight on the card page. No console errors. Style is gone from the page.
+- **Not looked at by eye:** the other six themes with glass, a post with an image, the top bar with content scrolling under it, and a real phone. Blur cost on a slow machine wasn't measured.
+- `Page.captureScreenshot` timed out twice, as it did last time. The retry worked and the page stayed responsive. I can't say why it happens, so if pages feel slow on your machine, tell me.
+
+---
+
+## Start here (2026-11-07 c) — site themes
+
+Asked for: a variety of themes, near the profile button, and the site running so you can open it.
+
+**Not committed yet.** Screenshots: **`Desktop\Astra themes\`**.
+
+### What it does
+
+- A palette button sits left of the profile button in every topbar. Signed-out visitors get it too, next to Sign in.
+- **Light themes:** Light, Sand, Sky.
+- **Dark themes:** Graphite, Black, Midnight, Forest, Wine.
+- Each row shows a small preview. The change is instant and the menu stays open, so you can flick through them.
+- The choice is saved **in this browser**, not the account, so it doesn't follow someone to another device.
+- **The PnL card does not change with the theme**, so a PNG or MP4 looks the same whichever theme you're on. The hidden journal keeps its own dark style.
+
+### How it is built
+
+- `src/lib/siteTheme.ts` is the one list of themes. To add one, add a row there.
+- `src/components/ThemeMenu.tsx` is the button and menu.
+- Colours that were fixed for the light look in `global.css` and `community.css` are now variables each theme sets.
+- A small script in `index.html` paints the saved background first, so a dark theme doesn't flash light on load.
+
+### Verified
+
+- `npm test` **374/374**: 42 new. Every theme is checked for readable text, buttons, and profit and loss colours. The first-try values all passed. Typecheck and production build pass.
+- **In Chrome, local mode:** all eight listed; the menu fits on screen; the choice survived moving between pages. I looked at Midnight on the community page and Black on the plans page. Sand was switched on the editor, and its screenshot failed.
+- **The other five themes were only checked by the contrast tests, not by eye.** Dark themes on the home page and the editor weren't looked at either, because the screenshot tool stalled on some captures. The page itself was fine (it answered in 57 ms with no errors).
+- **Not verified:** signed-in pages and the sign-in screen in a dark theme, and a real phone.
+
+### Running it
+
+The site is at **http://localhost:5173/** while this Claude Code session is open. It runs in **local mode**: no sign-in, and everything saves in your browser, because the community can't work against the real database until the SQL is run. To run it yourself, in Git Bash:
+
+`VITE_SUPABASE_URL= VITE_SUPABASE_ANON_KEY= npx vite --port 5173`
+
+Plain `npm run dev` uses your real Supabase project and asks you to sign in.
+
+---
+
+## Start here (2026-11-07 b) — the public community, and the new look
+
+Asked for: posts public, a community feed, built very closely on the idea of liquidjournal.app, and the site's style moved towards theirs, "not exactly, but similar".
+
+**Not committed yet.** Screenshots: **`Desktop\Astra community\`**.
+
+This replaces the private profile in (2026-11-07) below. `src/profile/` is gone, and the shapes and the hidden journal in that section still stand. The `VITE_JOURNAL=on` button now sits on your own profile.
+
+### What you have to do before shipping
+
+1. **Run the SQL.** Supabase → SQL Editor → paste the whole of `supabase/schema.sql` → Run. Until then `/community` is empty and shows a yellow notice. Nothing can be posted. There is no browser fallback, because a public feed in one browser is not a feed.
+2. **Keep the anon key as it is.** Nothing new goes in Vercel, and `VITE_JOURNAL` stays unset.
+3. **Add Community Guidelines and terms.** Strangers can now publish on your site, and the app stores will ask about this too if the native app comes. I have not written these.
+4. **Decide who moderates.** See below.
+
+### Moderation is manual
+
+- **Reports:** the ⋯ on a post files a report (spam, scam, abuse, other) into the `post_reports` table. Nothing notifies you. Read it in the Supabase table editor.
+- **Taking a post down:** set `hidden = true` on the row in `posts`. It disappears for everyone but its author, and reposts of it go too.
+- **In place:** a limit of 30 posts an hour per account.
+- **Not built:** block, mute, banning an account, and any admin screen.
+
+### What I looked at
+
+Your Chrome, signed in, read-only: the landing page, `/community`, Explore, Crews, the composer (closed without posting) and your profile. I did not post, follow or join anything. I skipped Messages and Notifications so your unread counts stayed.
+
+### What is built
+
+- **`/community`:** three columns.
+  - Left: a big Post button and round icon nav (Home, Explore, Notifications, Bookmarks, Profile, Make a card).
+  - Middle: search, For you / Following, the composer and the feed.
+  - Right: your banner card and Who to follow.
+- **Posts:** optional heading, up to 2000 characters, up to 4 images. Reply, repost, like, bookmark, copy link, and delete or report from the ⋯.
+- **Tags:** `#tags` and `$tickers` in a post are links to their own feed. Searching a whole tag opens that feed. `@handles` link to profiles. Money like `$500` is not read as a ticker.
+- **Post dialog:** like Liquid's, with heading, quick tags and a ticker field.
+- **Explore:** the week's top tags and tickers.
+- **Notifications:** like, reply, repost and follow, with a count on the bell.
+- **Public profiles:** `/u/<handle>`, with follow, counts and posts. Your own is at `/profile`, with banner, picture, name, handle, bio, Plans and Log out.
+- **Post to community:** a new button in the editor. It sends the current card into the Post dialog as an image, and counts as an export against the free limit, so it cannot be used to get around it.
+- **Anyone can read the feed and profiles without an account.** Trying to act sends them to sign in, and then back.
+
+### Not built from Liquid
+
+- **Stories, crews, direct messages and live rooms.** Each is its own project, and messages and live also need realtime. Tell me which matters first.
+- **"Post a trade from your journal"**, their proof that a P&L is real. The journal is hidden, so a card here is just a picture and **its numbers can be faked**. MT5 sync is what would fix that.
+- **Multi-language, videos and GIFs in posts, emoji picker, view counts, editing a post, the "Friends" audience.** "For you" is simply newest first.
+
+### The look
+
+- Soft grey page, white cards, 24px corners, black pill buttons, grey pill chips, Satoshi for the site. This is on every page: home, editor, plans and sign-in.
+- **It is deliberately not a copy.** No logo, wording, images or their exact colours. Astra keeps its own name and star. Satoshi is a free Fontshare font, loaded from their server, the same way Inter already loads from Google.
+- **I went with light** because that is how Liquid looked in your browser. Their landing page is black, though, and that may be a theme setting on your account. Dark is mostly a change to the tokens at the top of `global.css`, plus a few fixed colours.
+- **The card itself did not change.** It still draws in Inter with its square corners, so nothing about a PNG or MP4 moved. The hidden journal and share sheet keep their old dark style.
+
+### How public data is kept safe
+
+- **Emails stay private.** Public data lives in `community_profiles`, which has no email column. `profiles` stays readable only by its owner.
+- **A first handle and name never come from the email.** While reviewing my own code I caught `displayNameFor` falling back to the part of the email before the @, which would have been published. The community now uses only a name the person gave, or `trader` plus part of their id.
+- **Images** go to a new public `community` bucket, separate from the private `media` one. PNG, JPEG and WebP only, because SVG can carry script. The browser redraws each image first, which strips phone location data. A profile or post can only point at the author's own folder.
+- **The server decides** a post's time and tags, so nobody can pin a post to the top by dating it next year. A post can't be edited.
+- **Post text is never treated as HTML**, so a post can't run script.
+- **Note:** old uploads in the private bucket are untouched, and nothing there became public.
+
+### Verified
+
+- `npm test` **332/332**. Both typechecks are clean and a production build passes.
+- **Database, real Postgres (PGlite), 42 checks, all passing,** including: the schema applies twice; signed-out readers see posts and profiles but not `profiles`; no email in feed rows; nobody can post, like, follow or delete as someone else; taken, reserved and malformed handles are refused; future dates are overwritten; `$500` isn't a tag; `%` in search is plain text; bookmarks, reports and notifications stay private; hidden posts leave the feed with their reposts; the rate limit fires. The script was temporary and is not in the repo.
+- **Chrome, local mode, sample traders, journal flag off:** like, repost, bookmark, reply, follow, the Following tab, ticker and text search, tag pages, Explore, Bookmarks, profile pictures, another trader's profile, a missing profile, and Post to community with the card attached. No console errors. No Journal button.
+- **Chrome against your real project, signed out:** the yellow notice shows, Sign in appears, and Post goes to sign-in and remembers `/community`.
+- **Phone width (390px frame):** no sideways scroll on the feed, Explore, profile, plans and home. This caught two real bugs, both fixed: the feed ran off the right edge, and so did the editor.
+
+### Not verified
+
+- **The signed-in path against the real database.** The SQL isn't run and I don't sign in with your account. That covers real uploads to the bucket, the storage rules (my test database has a stand-in for Supabase storage), and images in real posts. **Sign in and try it right after running the SQL**: post with an image, and check a second account can see it.
+- **A real phone.** The phone check was a frame in desktop Chrome.
+- **Liquid's fonts and layout were read off your screen, not measured** the way the journal was, since you asked for similar rather than exact.
+
+---
+
+## Start here (2026-11-07) — picture shapes, the profile page, and the journal hidden for launch
+
+Asked for, ahead of shipping in a few days:
+- **Hide the calendar and trade logging**, without deleting them.
+- **A profile page** behind the profile button: picture, a custom banner behind it, and a Twitter-style board to post on.
+- **Most important: a choice of resolutions next to 1× / 2× / 3×**: 16:9, 9:16, 4:3, 1:1. The statistics, the TradingView logo and the footer stay on the left, exactly as now, with the same left padding.
+
+**Not committed yet.** Screenshots: **`Desktop\Astra shapes and profile\`**.
+
+### What you have to do before shipping
+
+1. **Run the SQL.** Supabase → SQL Editor → paste the whole of `supabase/schema.sql` → Run. It is re-runnable. The new part is the `profile` section at the end. Until it runs, signed-in people get a working profile that is **saved only in their browser**, with a one-line note saying so. Browser copies are **not** moved into the account afterwards, so run it before launch.
+2. **Leave `VITE_JOURNAL` unset in Vercel.** That is what keeps the journal hidden.
+
+### Three decisions for you
+
+- **Posts are private for now.** (Answered: public. See 2026-11-07 b.) Only the account that wrote a post can read it, and there is no public profile link. Making a board other people can see needs public profile URLs, public images (the media bucket is private) and some way to deal with abuse. That is a real piece of work; say if you want it for launch.
+- **The share sheet is hidden with the journal.** It only opens from a journal trade. So the Video studio's **added audio** and **Customize dialog** can't be reached at launch. The editor at `/cards` still does everything else: every shape, PNG, MP4, the clip's own sound, and the same style options in its panel. If you want added audio at launch, the sheet needs its own button in the editor. That is a small job.
+- **"9:16 wide" banner.** I took that as a **wide 16:9** banner, because 9:16 is a tall shape. It is one line in `src/styles/profile.css` (`.pf-banner`, `aspect-ratio`).
+
+### Picture shapes
+
+- **Where:** a new row beside 1× / 2× / 3× in the editor's export bar: **Card, 16:9, 9:16, 4:3, 1:1**. The share sheet has the same row. The shape is saved with the card; old cards open on **Card**, unchanged.
+- **The rule:** the card's content is never scaled or re-laid out.
+  - **16:9** is wider than the card, so the frame grows to the **right**. Height stays 570.
+  - **4:3, 1:1 and 9:16** are taller than the card, so the frame grows **up and down evenly**. The content stays on the left with its padding and sits in the middle vertically. Width stays 840.
+- **The background** covers the whole new frame. The dark veil behind the text is the same as on the card, so it fades out in the same place and the extra width on the right is left clean.
+
+| shape | PNG 1× | PNG 2× | PNG 3× | MP4 |
+|---|---|---|---|---|
+| Card | 840×570 | 1680×1140 | 2520×1710 | 1680×1140 |
+| 16:9 | 1013×570 | 2027×1140 | 3040×1710 | 1920×1080 |
+| 9:16 | 840×1493 | 1680×2987 | 2520×4480 | 1080×1920 |
+| 4:3 | 840×630 | 1680×1260 | 2520×1890 | 1440×1080 |
+| 1:1 | 840×840 | 1680×1680 | 2520×2520 | 1080×1080 |
+
+- **The wordmark stays where it is too.** It is empty by default. If someone sets one, at 16:9 it sits at the card's old right edge, not the new one, because you said everything stays exactly as it is. If you'd rather it follow the right edge, that is one line in `drawWordmark`.
+- **Video does not follow the 1×/2×/3× chips in these shapes.** See the bug below.
+
+### A bug found while testing, and why video sizes are fixed
+
+My first version exported video at 2× in every shape. The file looked fine and the unit tests passed, but the export was broken:
+- The encoder settings in `recorders.ts` are H.264 **level 4.0**, which tops out around the card's own 1680×1140.
+- At 2× every new shape is bigger than that, so the encoder refused, and the export dropped silently to the old live recorder.
+- At 9:16 that file held **0.455 s of picture** in a clip meant to be 2 s long.
+
+So video in these shapes uses the standard sizes in the table, which all fit level 4.0. A test now checks that every shape lands on its video size, even and within that limit. `recorders.ts` itself was not changed.
+
+### Files on the "don't touch" list that changed
+
+You asked for this directly, so they had to change. The rest of the export path is untouched: `offline.ts`, `recorders.ts`, `mp4write.ts`, `mp4.ts`, `compose.ts`.
+- `canvas/spec.ts`: `FRAMES`, `VIDEO_SIZE`, `ASPECTS`, `frameOf`, `cardTop`.
+- `canvas/draw.ts`: background sized to the frame; the foreground moves down only for tall frames.
+- `render.ts`, `CardPreview.tsx`, `selftest.ts`: frame size in place of `CARD`.
+- `video.ts`: `videoScaleFor` takes the shape.
+- `App.tsx`: the shape row, and dropped the profile button's props.
+- `studio/frame.ts`: the video studio now paints through the same path as the editor, so its card is pinned left too (it used to be centred with black or clip either side) and it gained 9:16. A clip behind the card now gets the same veil as a photo.
+
+With the shape on **Card**, the numbers above and every existing test are unchanged.
+
+### The profile page
+
+- **Where:** `/profile`, behind sign-in. The profile button in every topbar goes there. Code: `src/profile/ProfilePage.tsx`, `src/profile/repository.ts`, `src/styles/profile.css`.
+- **Banner:** 16:9, your own upload, with a **Change banner** button on it.
+- **Picture:** sits over the banner's bottom edge; click it to change it. It is separate from the avatar on the card.
+- **Name and bio:** **Edit profile** (50 and 160 characters).
+- **Board:** text up to 280 characters and/or one image, newest first, Ctrl+Enter posts. Hover a post to delete it; its image is deleted too.
+- **Plans and Log out** moved here, because they used to live in the journal's settings.
+- **Not built:** likes, replies, reposts, following, editing a post. The board shows the newest 200.
+- **The topbar button still shows the blank silhouette**, not the uploaded picture.
+
+Storage works like the journal: tables in the account, or the browser in local mode. New in `schema.sql`: `bio`, `avatar_id`, `banner_id` on `profiles`; a `posts` table with row-level security; and two media roles, `profile` and `post`. A new picture deletes the old file, so that library cannot fill up.
+
+### The journal, hidden
+
+Nothing was deleted. Trades, calendar, share sheet, tables and data are all intact.
+- Hidden by one flag, `JOURNAL_ENABLED` in `ProfilePage.tsx`, read from `VITE_JOURNAL`.
+- Set `VITE_JOURNAL=on` (it is in `.env.example`) and rebuild: a **Journal** button appears on the profile and opens everything as before.
+- With it off, the button is gone and the journal code is never loaded. Its file still ships in the build, unused.
+
+### Verified
+
+- `npm test` **324/324** (20 new). Both typechecks are clean. A production build passes with the journal off, and the journal's text appears only in its own unused file.
+- **In Chrome, local mode:**
+  - **PNG, all five shapes, measured:** the accent block's left edge is **70px at 2× in every shape**, the same as the card. Its height inside the card is 354px in every shape. The built-in check that the export matches the preview passes in all five.
+  - **Editor MP4, all five shapes, using the clip in `dev/`:** all went through the frame-exact path, 30 fps, **2.02 s** for a 2 s window, at the sizes in the table. In a frame read back from each file, the block sits at the matching left edge.
+  - **Studio export:** 16:9 and 9:16 were re-checked for size and left edge; 60 frames, 2.01 s. That run was before the final frame sizes. The studio's sizes did not change, but it was not repeated afterwards.
+  - **Profile:** banner, picture, replacing the banner (the old file is deleted), text post, image post, empty and 281-character posts refused, edit, reload keeps everything, delete removes the post and its image. No console errors.
+  - **Journal flag on:** the button opens the journal; demo trades load; the share sheet opens and changes shape.
+- **SQL in real Postgres** (PGlite, the same way as `dev/journal-sql.mjs`): schema applies twice; each account sees only its own posts; B can't post as A, delete A's posts or edit A's profile; empty and 281-character posts are refused; image-only posts are allowed; the new media roles are accepted; `email` is still not writable. This was a temporary script and is not in the repo.
+- **Fixed after looking:** the picture was hidden behind the banner.
+- **Not verified:**
+  - the signed-in path against the real database (the SQL isn't run, and I don't sign in with your account), including images reaching a second device;
+  - a real phone;
+  - clicking Download itself, which would save files to your disk. The exports above call the same code the buttons call;
+  - the share sheet's Video side in the browser since these changes, beyond the export calls above.
 
 ---
 
@@ -243,7 +566,8 @@ edit form).
 ### Where it lives
 
 Clicking the profile button (top right, on every page) now opens the journal. The old dropdown
-held Plans and Log out; both moved into the journal's ⚙ Settings, under *Account*.
+held Plans and Log out; both moved into the journal's ⚙ Settings, under *Account*. (Since
+2026-11-07 the button opens the profile page and the journal is hidden; see that section.)
 
 | | |
 |---|---|

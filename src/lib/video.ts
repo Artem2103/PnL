@@ -24,10 +24,11 @@
  *    with `repairFragmentedMp4` (`lib/mp4.ts`) after it.
  */
 
-import type { CardState, RenderAssets } from '../types';
+import type { CardAspect, CardState, RenderAssets } from '../types';
 import { MAX_CLIP_SECONDS, openClipBytes, openVideoForExport } from './images';
 import type { RecordingRepair } from './mp4';
 import { OfflineUnavailable, exportOffline } from './offline';
+import { VIDEO_SIZE, frameOf } from './canvas/spec';
 import {
   MediaStreamRecorder,
   WebCodecsRecorder,
@@ -49,8 +50,12 @@ export const MAX_VIDEO_SCALE = 2;
  */
 export const MIN_VIDEO_SCALE = 2;
 
-/** The scale a clip actually records at, given the chosen export scale. */
-export function videoScaleFor(scale: number): number {
+/**
+ * The scale a clip actually records at, given the chosen export scale. A shape
+ * other than the card has one standard size, whatever the chip says.
+ */
+export function videoScaleFor(scale: number, aspect: CardAspect = 'card'): number {
+  if (aspect !== 'card') return VIDEO_SIZE[aspect].width / frameOf(aspect).width;
   if (!Number.isFinite(scale)) return MIN_VIDEO_SCALE;
   return Math.min(MAX_VIDEO_SCALE, Math.max(MIN_VIDEO_SCALE, scale));
 }
@@ -442,7 +447,7 @@ async function renderCardVideoFrameExact(
     bytes: clipBytes.bytes,
     state,
     assets,
-    scale: videoScaleFor(options.scale),
+    scale: videoScaleFor(options.scale, state.display.aspect),
     clipStart: clip.start,
     clipLength: clip.length,
     muteAudio: state.artwork.muteAudio,
@@ -531,7 +536,7 @@ async function renderCardVideoWith(
     throw new VideoExportError('That clip window is empty. Move the start point back.');
   }
 
-  const scale = videoScaleFor(options.scale);
+  const scale = videoScaleFor(options.scale, state.display.aspect);
   const base = await prepareAssets(state);
   const assets: RenderAssets = {
     ...base,

@@ -43,18 +43,35 @@ function ImagePickerView({
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const itemsRef = useRef<MediaSummary[]>([]);
+  // Read through a ref: the host may pass a new function on every render, and
+  // `refresh` depending on it re-listed the library each time, which revoked
+  // every thumbnail's URL and flashed the tiles black.
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
 
   const refresh = useCallback(async () => {
     if (!userId) return;
     try {
-      const next = await listMedia(role, userId);
-      releaseThumbnails(itemsRef.current);
+      const listed = await listMedia(role, userId);
+      // A tile already showing keeps its URL, so a refresh repaints nothing.
+      const shown = new Map(itemsRef.current.filter((item) => !item.remoteOnly).map((item) => [item.id, item]));
+      const replaced: MediaSummary[] = [];
+      const next = listed.map((item) => {
+        const old = shown.get(item.id);
+        if (!old || item.remoteOnly) return item;
+        shown.delete(item.id);
+        replaced.push(item);
+        return { ...item, url: old.url, posterUrl: old.posterUrl };
+      });
+      releaseThumbnails(replaced);
+      releaseThumbnails([...shown.values()]);
+      releaseThumbnails(itemsRef.current.filter((item) => item.remoteOnly));
       itemsRef.current = next;
       setItems(next);
     } catch (error) {
-      onError(error instanceof Error ? error.message : 'Could not read your images.');
+      onErrorRef.current(error instanceof Error ? error.message : 'Could not read your images.');
     }
-  }, [onError, role, userId]);
+  }, [role, userId]);
 
   // `librarySyncedAt` moves when the account's manifest has been pulled, which
   // is what turns files uploaded on another device into tiles here.
@@ -76,13 +93,13 @@ function ImagePickerView({
         // Resolves once the file is in this browser; the upload to the account
         // finishes after, and `refresh` clears the tile's "saving" badge.
         const record = await addMedia(file, role, userId, (uploadError) => {
-          if (uploadError) onError(uploadError.message);
+          if (uploadError) onErrorRef.current(uploadError.message);
           void refresh();
         });
         await refresh();
         onSelect(record.id);
       } catch (error) {
-        onError(
+        onErrorRef.current(
           error instanceof ImageError || error instanceof Error ? error.message : 'Upload failed.',
         );
       } finally {
@@ -90,7 +107,7 @@ function ImagePickerView({
         if (inputRef.current) inputRef.current.value = '';
       }
     },
-    [onError, onSelect, refresh, role, userId],
+    [onSelect, refresh, role, userId],
   );
 
   const remove = useCallback(
@@ -100,10 +117,10 @@ function ImagePickerView({
         if (selectedId === id) onSelect(null);
         await refresh();
       } catch (error) {
-        onError(error instanceof Error ? error.message : 'Could not delete that image.');
+        onErrorRef.current(error instanceof Error ? error.message : 'Could not delete that image.');
       }
     },
-    [onError, onSelect, refresh, selectedId],
+    [onSelect, refresh, selectedId],
   );
 
   return (

@@ -21,20 +21,22 @@ const clip = (id: string, start: number, length: number): StudioClip => ({
 describe('the studio frame', () => {
   const studio = createDefaultState().studio;
 
-  it('fits the card whole and centred, and never moves it', () => {
+  it('keeps the card flush left in a wide frame, at full height', () => {
     const { width, height } = EXPORT_SIZE['16:9'];
     const rect = cardRect({ ...studio, aspect: '16:9' }, width, height);
-    // 840×570 is taller than 16:9, so the height decides.
-    expect(rect.h).toBeCloseTo(height);
-    expect(rect.w).toBeCloseTo((height * CARD.width) / CARD.height);
-    expect(rect.x).toBeCloseTo((width - rect.w) / 2);
+    expect(rect.x).toBe(0);
     expect(rect.y).toBeCloseTo(0);
+    expect(rect.h).toBeCloseTo(height);
+    expect(rect.w / rect.h).toBeCloseTo(CARD.width / CARD.height);
   });
 
-  it('runs the card the full width of a square frame', () => {
-    const rect = cardRect({ ...studio, aspect: '1:1' }, 1080, 1080);
-    expect(rect.w).toBeCloseTo(1080);
-    expect(rect.y).toBeCloseTo((1080 - rect.h) / 2);
+  it.each(['1:1', '4:3', '9:16'] as const)('runs the card the full width of a %s frame, centred down', (aspect) => {
+    const { width, height } = EXPORT_SIZE[aspect];
+    const rect = cardRect({ ...studio, aspect }, width, height);
+    expect(rect.x).toBe(0);
+    expect(rect.w).toBeCloseTo(width);
+    // To the pixel: the card's own top is kept on a whole design unit.
+    expect(Math.abs(rect.y - (height - rect.h) / 2)).toBeLessThan(1);
   });
 
   it('is the whole picture for the card-shaped video', () => {
@@ -67,7 +69,7 @@ describe('saved studios', () => {
 
   it('keep at most ten sounds and clamp what is out of range', () => {
     const tracks = Array.from({ length: 14 }, (_, i) => ({ id: `t${i}`, soundId: `s${i}`, name: 'x', at: -4, start: 0, length: 3, volume: 7 }));
-    const state = hydrateState({ studio: { aspect: '9:16', clips: [{ mediaId: 'm', zoom: 9 }], tracks } });
+    const state = hydrateState({ studio: { aspect: '3:2', clips: [{ mediaId: 'm', zoom: 9 }], tracks } });
     expect(state.studio.aspect).toBe('16:9');
     expect(state.studio.tracks).toHaveLength(10);
     expect(state.studio.tracks[0]).toMatchObject({ at: 0, volume: 1 });

@@ -1,4 +1,4 @@
-import { StrictMode, useEffect } from 'react';
+import { lazy, StrictMode, Suspense, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import { AuthProvider, useAuth } from './lib/auth';
@@ -6,15 +6,22 @@ import { AuthGate } from './components/AuthGate';
 import { PricingPage } from './components/PricingPage';
 import { HomePage } from './components/HomePage';
 import { navigate, pageFor, takeAfterSignIn, useLocation } from './lib/route';
+import { applySiteTheme } from './lib/siteTheme';
 import './styles/global.css';
+
+const CommunityPage = lazy(() =>
+  import('./community/CommunityPage').then((module) => ({ default: module.CommunityPage })),
+);
+
+applySiteTheme();
 
 const container = document.getElementById('root');
 if (!container) throw new Error('Root element is missing from index.html.');
 
 /**
- * Three pages. The front page and the plans page are public — a stranger can
- * read what this is and what it costs before making an account — and only the
- * editor sits behind the sign-in gate.
+ * Four pages. The front page, the plans page and the community are public — a
+ * stranger can read what this is before making an account — and the editor sits
+ * behind the sign-in gate. Acting in the community asks for an account then.
  */
 function Root() {
   const { pathname, search } = useLocation();
@@ -30,6 +37,13 @@ function Root() {
   const page = pageFor(pathname);
   if (page === 'home') return <HomePage />;
   if (page === 'pricing') return <PricingPage search={search} />;
+  if (page === 'community') {
+    return (
+      <Suspense fallback={null}>
+        <CommunityPage />
+      </Suspense>
+    );
+  }
   return (
     <AuthGate>
       <App />

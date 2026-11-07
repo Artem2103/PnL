@@ -21,6 +21,7 @@ import {
 import { usePlanStatus } from '../lib/usePlanStatus';
 import { PRICING_PATH, STUDIO_PATH, navigate, setAfterSignIn } from '../lib/route';
 import { ProfileMenu } from './ProfileMenu';
+import { ThemeMenu } from './ThemeMenu';
 import { SiteNav } from './SiteNav';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -28,7 +29,7 @@ const POLL_MS = 5000;
 const POLL_FOR_MS = 30 * 60 * 1000;
 
 export function PricingPage({ search }: { search: string }) {
-  const { session, user, mode, loading: authLoading, signOut } = useAuth();
+  const { session, mode, loading: authLoading } = useAuth();
   const signedIn = mode === 'account' && Boolean(session);
   const plan = usePlanStatus(session?.user.id ?? null, signedIn);
   const [busyPlan, setBusyPlan] = useState<PlanId | null>(null);
@@ -69,22 +70,19 @@ export function PricingPage({ search }: { search: string }) {
           {/* No "Back to editor" here any more: the nav beside the wordmark
               has Cards, and two ways to the same place in one bar is noise. */}
           {signedIn || accountsOff ? (
-            <ProfileMenu
-              user={user}
-              mode={mode}
-              onSignOut={() => {
-                void signOut();
-              }}
-            />
+            <ProfileMenu />
           ) : (
-            <button
-              type="button"
-              className="btn btn--primary btn--small"
-              onClick={goSignIn}
-              disabled={authLoading}
-            >
-              Sign in
-            </button>
+            <>
+              <button
+                type="button"
+                className="btn btn--primary btn--small"
+                onClick={goSignIn}
+                disabled={authLoading}
+              >
+                Sign in
+              </button>
+              <ThemeMenu />
+            </>
           )}
         </div>
       </header>
