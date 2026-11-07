@@ -31,8 +31,9 @@
  * leaves the device, which is worth knowing.
  */
 
+import { connection } from './idb';
+
 const DB_NAME = 'pnl-card-studio';
-const DB_VERSION = 1;
 const STORE = 'backgrounds';
 
 export type ImageRole = 'artwork' | 'avatar' | 'logo';
@@ -136,39 +137,19 @@ export function maxImagesFor(role: ImageRole): number {
   return ROLE_LIMITS[role].max;
 }
 
-let dbPromise: Promise<IDBDatabase> | null = null;
+const cache = connection({
+  name: DB_NAME,
+  store: STORE,
+  create: (db) => db.createObjectStore(STORE, { keyPath: 'id' }),
+  openError: (cause) =>
+    new ImageError(
+      typeof indexedDB === 'undefined'
+        ? 'This browser has no IndexedDB, so uploads cannot be saved.'
+        : `Could not open local storage${cause instanceof Error ? ` (${cause.message})` : ''}.`,
+    ),
+});
 
-function openDb(): Promise<IDBDatabase> {
-  if (dbPromise) return dbPromise;
-  dbPromise = new Promise((resolve, reject) => {
-    if (typeof indexedDB === 'undefined') {
-      reject(new ImageError('This browser has no IndexedDB, so uploads cannot be saved.'));
-      return;
-    }
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        db.createObjectStore(STORE, { keyPath: 'id' });
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new ImageError('Could not open storage.'));
-  });
-  return dbPromise;
-}
-
-function tx<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  return openDb().then(
-    (db) =>
-      new Promise<T>((resolve, reject) => {
-        const transaction = db.transaction(STORE, mode);
-        const request = run(transaction.objectStore(STORE));
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-      }),
-  );
-}
+const tx = cache.run;
 
 /**
  * Must be a real UUID, not just something unique: this id is the primary key of

@@ -7,6 +7,8 @@
  * another device simply has no track for it, and the studio says so.
  */
 
+import { connection } from '../idb';
+
 const DB_NAME = 'astra-sounds';
 const STORE = 'sounds';
 export const MAX_SOUND_BYTES = 40 * 1024 * 1024;
@@ -25,36 +27,13 @@ export interface SoundRecord {
 
 export type SoundSummary = Omit<SoundRecord, 'blob'>;
 
-let dbPromise: Promise<IDBDatabase> | null = null;
-
-function openDb(): Promise<IDBDatabase> {
-  dbPromise ??= new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        db.createObjectStore(STORE, { keyPath: 'id' }).createIndex('userId', 'userId');
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => {
-      dbPromise = null;
-      reject(request.error ?? new Error('This browser would not open its sound store.'));
-    };
-  });
-  return dbPromise;
-}
-
-function run<T>(mode: IDBTransactionMode, work: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  return openDb().then(
-    (db) =>
-      new Promise<T>((resolve, reject) => {
-        const request = work(db.transaction(STORE, mode).objectStore(STORE));
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error ?? new Error('The sound store failed.'));
-      }),
-  );
-}
+const { run } = connection({
+  name: DB_NAME,
+  store: STORE,
+  create: (db) => db.createObjectStore(STORE, { keyPath: 'id' }).createIndex('userId', 'userId'),
+  openError: (cause) =>
+    cause instanceof Error ? cause : new Error('This browser would not open its sound store.'),
+});
 
 /** Reads a file's length without decoding it: an `<audio>` element's metadata. */
 function durationOf(blob: Blob): Promise<number> {

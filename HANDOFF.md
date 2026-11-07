@@ -43,6 +43,7 @@ file easier to read:
 | 2026-11-08 | **code**: the card page fits the window; only the left panel scrolls | see **Start here (2026-11-08)** |
 | 2026-11-08 (b) | **code**: Black is the default theme; plans hidden and everything free, behind `VITE_PLANS` | see **Start here (2026-11-08 b)** |
 | 2026-11-08 (c) | **code**: the Colour section works again on cards that had Style colours saved | see **Start here (2026-11-08 c)** |
+| 2026-11-08 (d) | **code**: adding a background no longer fails with "Failed to execute 'transaction' on 'IDBDatabase'" | see **Start here (2026-11-08 d)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
@@ -50,6 +51,29 @@ the two picture slots** the third, and **Local mode** and **The scroll trap in t
 the fourth.
 
 ---
+
+## Start here (2026-11-08 d) — "Failed to execute 'transaction' on 'IDBDatabase'" when adding a background
+
+**What Artem saw:** adding a background failed with *failed to execute transaction on IDBDatabase*.
+
+**Cause.** `lib/images.ts` (the local media cache) opened its IndexedDB connection once and kept the
+promise for the life of the page. When the browser closes that connection by itself — site data
+cleared, disk pressure, another Astra tab upgrading the database, Chrome dropping an idle backing
+store — every later `db.transaction()` throws *"The database connection is closing"*, and nothing
+reconnected, so every add (and every load) kept failing until a full reload. `lib/studio/sounds.ts`
+had the same shape. A second, rarer variant: a `pnl-card-studio` database at version 1 *without*
+the `backgrounds` store gives *NotFoundError* from the same call, and version 1 could never repair it.
+
+**Fix.** New `src/lib/idb.ts`, used by both stores:
+- drops the cached connection on `close` and `versionchange`;
+- retries a transaction once on a fresh connection when it fails with `InvalidStateError` or
+  `NotFoundError` (anything else, e.g. quota, still reaches the caller — and now also via
+  `transaction.onabort`, which used to be ignored and left the promise hanging);
+- if the database exists without its store, reopens it one version higher so the store is created.
+
+No data is touched; existing records stay. Typecheck clean, 384/384 tests pass. **Not reproduced in a
+browser** — the original error was not captured, so if it comes back, the console message (the part
+after the colon) says which case it is.
 
 ## Start here (2026-11-08 c) — the Colour section stopped working
 
