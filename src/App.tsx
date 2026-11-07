@@ -391,6 +391,7 @@ export default function App() {
         <aside className="layout__controls" aria-label="Card settings">
           <ControlPanel
             hideStyle
+            colourOverridesTheme
             state={state}
             background={background}
             setMode={setMode}

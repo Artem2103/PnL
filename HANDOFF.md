@@ -42,11 +42,45 @@ file easier to read:
 | 2026-11-07 (f) | **code**: the card holds still when the shape changes; 9:16 removed. SQL confirmed run | see **Start here (2026-11-07 f)** |
 | 2026-11-08 | **code**: the card page fits the window; only the left panel scrolls | see **Start here (2026-11-08)** |
 | 2026-11-08 (b) | **code**: Black is the default theme; plans hidden and everything free, behind `VITE_PLANS` | see **Start here (2026-11-08 b)** |
+| 2026-11-08 (c) | **code**: the Colour section works again on cards that had Style colours saved | see **Start here (2026-11-08 c)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-11-08 c) — the Colour section stopped working
+
+Reported: the Colour section on the card page does not change the colour.
+
+**Pushed to `main`.**
+
+### What was wrong
+
+Caused by removing the Style section (2026-11-07 d). Style could save `profitColor`, `lossColor`, `blockTextColor` and `textColor`, and each of those wins over the theme. Your card had `#1419A9`, `#BF455B` and `#FAFAFA` saved, so the theme did change but the block stayed dark blue. Removing Style left no way to clear them. The (d) section noted that side effect, but it should have been fixed then, not just noted.
+
+Reproduced: with those colours saved, Cyan, Violet and Gold all left the block at `#1419a9`.
+
+### The fix
+
+`ControlPanel` has a new `colourOverridesTheme` prop, set only by `App.tsx`. On the card page:
+- Picking a swatch or Custom, or changing the custom colour, clears the saved profit, loss and block text colours.
+- Changing White / Black text clears the saved text colour.
+
+The share sheet's Customize dialog doesn't set it, because that dialog still has its own colour controls.
+
+A card keeps its old colours until you click something in Colour. Nothing is wiped on load, because a colour you chose on purpose shouldn't disappear when you open the page. Bold, shadow, the coloured rectangle and the token image are still saved with no control on the card page, and only Reset clears them.
+
+### Verified
+
+With the same colours saved, in a separate test copy:
+- Each swatch produced its exact colour in the rendered card: Cyan `#64FAFF`, Gold `#FFC94D`, Bone `#EAEDFF`. Mint, Violet, Cherry and Custom changed it too.
+- After the swatches and the text setting, all four saved colours are null.
+- `npm test` passes, typecheck and production build pass. No console errors.
+
+**Not verified:** a signed-in account, and an automated test for this. There is none, because nothing in the test suite renders the panel.
 
 ---
 

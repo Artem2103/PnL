@@ -55,6 +55,12 @@ export interface ControlPanelProps {
   hideNumbers?: boolean;
   /** Leaves out the Style section, where a host shows those options its own way. */
   hideStyle?: boolean;
+  /**
+   * For a host with no Style section at all: the Colour section is then the only
+   * control, so what it sets replaces any colour saved through Style. Without
+   * this those saved colours sit on top of the theme and the swatches look dead.
+   */
+  colourOverridesTheme?: boolean;
   /** Leaves out the background pickers, where a host lists backgrounds itself. */
   hideBackgroundPicker?: boolean;
 }
@@ -103,6 +109,7 @@ export function ControlPanel({
   onError,
   hideNumbers = false,
   hideStyle = false,
+  colourOverridesTheme = false,
   hideBackgroundPicker = false,
 }: ControlPanelProps) {
   const { trade, period, brand, display, artwork } = state;
@@ -136,6 +143,9 @@ export function ControlPanel({
     (sceneId: string | null) => patchArtwork(sceneId ? { sceneId, imageId: null } : { sceneId }),
     [patchArtwork],
   );
+
+  const accentReset = colourOverridesTheme ? { profitColor: null, lossColor: null, blockTextColor: null } : {};
+  const inkReset = colourOverridesTheme ? { textColor: null } : {};
 
   return (
     <div className="controls">
@@ -318,7 +328,7 @@ export function ControlPanel({
               type="button"
               className={`theme-swatch${display.themeId === theme.id ? ' is-selected' : ''}`}
               style={{ background: theme.swatch }}
-              onClick={() => patchDisplay({ themeId: theme.id })}
+              onClick={() => patchDisplay({ themeId: theme.id, ...accentReset })}
               aria-pressed={display.themeId === theme.id}
               title={theme.name}
             >
@@ -329,7 +339,7 @@ export function ControlPanel({
             type="button"
             className={`theme-swatch${isCustom ? ' is-selected' : ''}`}
             style={{ background: display.customAccent }}
-            onClick={() => patchDisplay({ themeId: CUSTOM_THEME_ID })}
+            onClick={() => patchDisplay({ themeId: CUSTOM_THEME_ID, ...accentReset })}
             aria-pressed={isCustom}
             title="Any colour you like"
           >
@@ -342,7 +352,7 @@ export function ControlPanel({
             <RgbPicker
               label="Accent colour"
               value={display.customAccent}
-              onChange={(customAccent) => patchDisplay({ customAccent })}
+              onChange={(customAccent) => patchDisplay({ customAccent, ...accentReset })}
             />
             <p className="muted-note">
               A custom colour is used whether the card is up or down — the presets swap to red on a
@@ -356,7 +366,7 @@ export function ControlPanel({
           <Segmented
             ariaLabel="Text colour"
             value={display.textTone}
-            onChange={(textTone) => patchDisplay({ textTone })}
+            onChange={(textTone) => patchDisplay({ textTone, ...inkReset })}
             options={[
               { value: 'light', label: 'White' },
               { value: 'dark', label: 'Black' },
