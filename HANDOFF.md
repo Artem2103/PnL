@@ -102,7 +102,7 @@ Handle, Footer). Those checks used the dev harness pages, not a signed-in accoun
 the old-save case is covered by the new test. Screenshots: `Desktop\Astra-fixed-domain\` — `card.png`,
 `panel.png`.
 
-**Committed and pushed on the branch `fixed-card-domain`, not merged into `main` yet.**
+**Committed as `2a8d312`, merged into `main` and pushed.**
 
 ---
 
