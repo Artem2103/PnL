@@ -7,7 +7,6 @@ import { ThemeMenu } from './ThemeMenu';
 import { SiteNav } from './SiteNav';
 import { createDefaultState } from '../lib/defaults';
 import { THEMES } from '../lib/themes';
-import { MAX_CLIP_SECONDS } from '../lib/images';
 import { CARD } from '../lib/render';
 import {
   CARD_PAYMENTS,
@@ -23,7 +22,7 @@ import {
 import { PRICING_PATH, STUDIO_PATH, navigate, setAfterSignIn } from '../lib/route';
 
 /**
- * The front page: what Astra is, what it does, and what the plans cost.
+ * The front page: what Astra is, how it works, and what the plans cost.
  *
  * The card in the hero is not a screenshot — it is the real renderer, the same
  * `CardPreview` the editor uses, painting a real `CardState`. That is the one
@@ -67,57 +66,6 @@ const STEPS = [
     body:
       'A PNG up to 3×, an MP4 built frame by frame from your clip, or copy it straight to the ' +
       'clipboard. What you see in the preview is exactly what lands in the file.',
-  },
-];
-
-const FEATURES = [
-  {
-    title: 'Two kinds of card',
-    body:
-      'A single trade or a whole period. Both draw through one layout, so your month card and your ' +
-      'trade cards look like they came from the same place.',
-  },
-  {
-    title: 'The maths, done',
-    body:
-      'Percentage, multiple and the money, derived from what you typed. It also says so when the ' +
-      'sign of your profit disagrees with your prices, before you post it.',
-  },
-  {
-    title: 'Six accents, or your own',
-    body:
-      'Mint, cyan, violet, gold, cherry and bone — or any hex colour you like. The text goes light ' +
-      'or dark, and the whole card turns over with it.',
-  },
-  {
-    title: 'Photo or video backgrounds',
-    body:
-      'Drag a still or a clip onto the card, zoom it, drag it into place, and dial the scrim until ' +
-      `the text sits cleanly on top. Clips play up to ${MAX_CLIP_SECONDS} seconds, trimmed in the editor.`,
-  },
-  {
-    title: 'Seven avatar frames',
-    body:
-      'A pin badge in any colour, a tag, gilt, a halo in the card’s accent, a stamp, corner ' +
-      'brackets, or none at all.',
-  },
-  {
-    title: 'Frame-exact MP4',
-    body:
-      'The video is built from your clip’s own frames rather than recorded off the screen: it keeps ' +
-      'the source frame rate, the sound stays in step, and it encodes as fast as your machine can go.',
-  },
-  {
-    title: 'Rendered in your browser',
-    body:
-      `Nothing is uploaded to be drawn. Every pixel of the ${CARD.width}×${CARD.height} card is ` +
-      'painted on your machine, by the same code for the preview, the PNG and every video frame.',
-  },
-  {
-    title: 'Saved to your account',
-    body:
-      'Your card and your uploads follow you to your phone, your laptop and back. Close the tab ' +
-      'mid-edit and it is where you left it.',
   },
 ];
 
@@ -231,20 +179,6 @@ export function HomePage() {
               </li>
             ))}
           </ol>
-        </section>
-
-        <section className="home__section" aria-labelledby="home-what">
-          <h3 className="home__section-title" id="home-what">
-            What Astra does
-          </h3>
-          <div className="home__features">
-            {FEATURES.map((feature) => (
-              <article key={feature.title} className="home__feature">
-                <h4>{feature.title}</h4>
-                <p>{feature.body}</p>
-              </article>
-            ))}
-          </div>
         </section>
 
         {PLANS_ENABLED ? (

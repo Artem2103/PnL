@@ -1870,8 +1870,7 @@ kbd {
 /* The hairline grids: one border colour showing through a 1px gap, the same
    way the plan tiers are separated. */
 
-.home__steps,
-.home__features {
+.home__steps {
   display: grid;
   gap: 1px;
   margin: 0;
@@ -1885,12 +1884,7 @@ kbd {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.home__features {
-  grid-template-columns: repeat(auto-fit, minmax(248px, 1fr));
-}
-
-.home__step,
-.home__feature {
+.home__step {
   display: grid;
   gap: 8px;
   align-content: start;
@@ -1904,16 +1898,14 @@ kbd {
   color: var(--text-faint);
 }
 
-.home__step h4,
-.home__feature h4 {
+.home__step h4 {
   margin: 0;
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 
-.home__step p,
-.home__feature p {
+.home__step p {
   font-size: 13.5px;
   color: var(--text-muted);
 }
@@ -2071,8 +2063,7 @@ kbd {
 }
 
 .pricing__grid,
-.home__steps,
-.home__features {
+.home__steps {
   overflow: hidden;
   border-radius: var(--radius);
 }
@@ -2211,8 +2202,7 @@ body::before {
 .auth__card,
 .pricing__banner,
 .pricing__current,
-.home__step,
-.home__feature {
+.home__step {
   background: var(--glass);
   box-shadow: var(--glass-shadow);
 }

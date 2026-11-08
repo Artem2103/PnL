@@ -53,6 +53,22 @@ the fourth.
 
 ---
 
+## Start here (2026-11-09 d) — "What Astra does" removed from the home page
+
+**What Artem asked for:** remove the *What Astra does* section from the home page.
+
+**Change.** The heading and its eight feature boxes are gone from `src/components/HomePage.tsx`, along
+with the `FEATURES` list and the `MAX_CLIP_SECONDS` import only it used. The `.home__feature` and
+`.home__features` rules are gone from `src/styles/global.css`; rules shared with *How it works* stay.
+The page now runs hero, *How it works*, closing call to action, footer (plans stay hidden behind
+`VITE_PLANS`).
+
+**Verified.** Typecheck clean, 382/382 tests pass. The home page was rendered in headless Chrome: the
+section's text is gone and *How it works* and the closing section are still there. Screenshot:
+`Desktop\Astra-home-page\home.png`.
+
+---
+
 ## Start here (2026-11-09 c) — the browser tab shows the Astra star
 
 **What Artem asked for:** a logo in the tab next to "Astra — PnL cards", instead of the browser's
