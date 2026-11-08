@@ -53,6 +53,43 @@ the fourth.
 
 ---
 
+## Start here (2026-11-09 c) — the browser tab shows the Astra star
+
+**What Artem asked for:** a logo in the tab next to "Astra — PnL cards", instead of the browser's
+default globe.
+
+**Cause and change.** `index.html` declared no icon, so browsers fell back to the globe. Added
+`public/favicon.svg` and a `<link rel="icon">` for it. The picture is the Astra star from
+`.brand__mark`, white on a black rounded square so it reads on light and dark browser tabs. It does
+not change with the site theme. The TradingView mark on the cards was not used: it is another
+company's logo.
+
+**Verified.** `npm run build` succeeds, the file lands in `dist/`, and the preview server returns it
+as `image/svg+xml`. The icon was screenshotted at 16, 32 and 128px on both tab colours:
+`Desktop\Astra-tab-icon\tab-icon.png`. Not seen in a real tab on the live site. Chrome caches tab
+icons, so an already-open tab may need a hard refresh (Ctrl+F5). Older Safari versions may not show
+an SVG icon.
+
+---
+
+## Start here (2026-11-09 b) — *no code* — sign-up sends a verification email right now
+
+**What Artem asked:** does creating an account send an email, given that no verification email is wanted?
+
+**Answer: yes.** The Supabase project in `.env.local` reports `mailer_autoconfirm: false` from its
+public `/auth/v1/settings` endpoint, which means *Confirm email* is on: sign-up sends a link, and the
+account cannot sign in until it is clicked. Not checked: that the live site on Vercel uses this same
+project, and no real sign-up was made.
+
+**To turn it off (Artem, in the dashboard):** Supabase → *Authentication → Providers → Email* → turn
+off *Confirm email* → save. No code or redeploy is needed: `signUp` in `src/lib/auth.tsx` already
+handles this case, and the new account is signed in straight away.
+
+**Worth checking afterwards:** anyone who registered and never clicked their link. Try signing in with
+one such account, or mark it confirmed under *Authentication → Users*.
+
+---
+
 ## Start here (2026-11-09) — the card's domain and wordmark can no longer be changed
 
 **What Artem asked for:** make the website domain and the wordmark impossible to change, remove the
