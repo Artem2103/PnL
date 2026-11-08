@@ -95,21 +95,6 @@ export const SPEC = {
     maxHeight: 41,
   },
 
-  wordmark: {
-    /** Right edge of the ink. */
-    right: 818,
-    /** Baseline held at the reference position as the size comes down. */
-    baseline: 70,
-    size: 34,
-    weight: 300,
-    /**
-     * The reference wordmark is tracked out well past the body text. Scaled
-     * with the size (3.75 was solved at 42px) so the spacing stays
-     * proportional instead of looking loose at the smaller size.
-     */
-    tracking: 3.04,
-  },
-
   title: {
     /** Left edge of the ink. */
     x: 35,

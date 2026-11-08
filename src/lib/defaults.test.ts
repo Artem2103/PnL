@@ -150,7 +150,7 @@ describe('hydrateState and the clip length', () => {
   });
 });
 
-describe('the fixed footer string', () => {
+describe('the fixed footer strings', () => {
   it('cannot be carried in by a save or a hand-edited row', () => {
     // The editor has no input for it, so the only way one could arrive is an
     // older save or a `cards` row someone wrote by hand. `merge` copies only
@@ -160,5 +160,16 @@ describe('the fixed footer string', () => {
     expect(state.brand.handle).toBe('@kept');
     expect(Object.keys(state.brand)).not.toContain('footerSecondary');
     expect(JSON.stringify(state)).not.toContain('Code: OTHER');
+  });
+
+  it('drops the domain and wordmark an older save set', () => {
+    const state = hydrateState({
+      brand: { handle: '@kept', footerPrimary: 'elsewhere.com', wordmark: 'OTHER' },
+      display: { showWordmark: true },
+    });
+    expect(state.brand.handle).toBe('@kept');
+    expect(JSON.stringify(state)).not.toContain('elsewhere.com');
+    expect(JSON.stringify(state)).not.toContain('OTHER');
+    expect(Object.keys(state.display)).not.toContain('showWordmark');
   });
 });

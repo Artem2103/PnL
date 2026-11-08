@@ -59,7 +59,7 @@ const STEPS = [
     title: 'Make it yours',
     body:
       'Pick the accent, drop in a photo or a clip, set the scrim so the text stays readable, frame ' +
-      'your avatar, add your handle, wordmark and footer. Hide anything you do not want on it.',
+      'your avatar, add your handle. Hide anything you do not want on it.',
   },
   {
     n: '03',
@@ -323,8 +323,8 @@ export function HomePage() {
             <div>
               <dt>What counts as a card</dt>
               <dd>
-                The result and the name on it — the trade or the period figures, and your handle,
-                wordmark and footer. Colour, background, frame and export size are not part of it,
+                The result and the name on it — the trade or the period figures, and your handle.
+                Colour, background, frame and export size are not part of it,
                 so your free card can be restyled and exported as often as you like. Different
                 numbers make a new card.
               </dd>

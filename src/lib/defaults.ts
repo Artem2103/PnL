@@ -23,7 +23,7 @@ const DEFAULT_SAMPLE_FRAME_COLOR = '#FFFFFF';
 /**
  * The sample card a new account starts from. Both balances are 10,000, so it
  * opens flat ("$10.0K" to "$10.0K") rather than claiming a result nobody had;
- * the wordmark is empty and the pin frame starts white.
+ * the pin frame starts white.
  */
 export function createDefaultState(): CardState {
   return {
@@ -43,9 +43,7 @@ export function createDefaultState(): CardState {
       endBalance: 10000,
     },
     brand: {
-      wordmark: '',
       handle: '@yourhandle',
-      footerPrimary: 'yoursite.com',
       currency: 'USD',
     },
     display: {
@@ -55,7 +53,6 @@ export function createDefaultState(): CardState {
       showRows: true,
       showHandle: true,
       showFooter: true,
-      showWordmark: true,
       showLogo: true,
       compactHero: true,
       frameId: DEFAULT_FRAME_ID,

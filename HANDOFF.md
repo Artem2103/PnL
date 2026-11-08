@@ -44,11 +44,65 @@ file easier to read:
 | 2026-11-08 (b) | **code**: Black is the default theme; plans hidden and everything free, behind `VITE_PLANS` | see **Start here (2026-11-08 b)** |
 | 2026-11-08 (c) | **code**: the Colour section works again on cards that had Style colours saved | see **Start here (2026-11-08 c)** |
 | 2026-11-08 (d) | **code**: adding a background no longer fails with "Failed to execute 'transaction' on 'IDBDatabase'" | see **Start here (2026-11-08 d)** |
+| 2026-11-09 | **code**: the card's domain is fixed to `astracards.app` and the wordmark is gone; both out of card state | see **Start here (2026-11-09)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-11-09) — the card's domain and wordmark can no longer be changed
+
+**What Artem asked for:** make the website domain and the wordmark impossible to change, remove the
+fields, and set the domain to `astracards.app`.
+
+**What a card shows now.** The footer always reads *astracards.app* and *Save 10% off fees*. There is
+no wordmark in the top-right corner, on any card.
+
+**How.** The same way the "Save 10% off fees" string was fixed on 2026-09-22 (b): the fields are gone
+from card state, not just from the panel. `FOOTER_PRIMARY` in `src/lib/content.ts` is the only place
+the domain exists, so changing it is a change to that line and a redeploy. `hydrateState` only copies
+keys the current model has, so an old save or a hand-edited `cards` row cannot bring a value back,
+and the renderer no longer reads one anyway.
+
+| file | what changed |
+|---|---|
+| `src/components/ControlPanel.tsx` | *Wordmark* and *Footer left* inputs and the *Wordmark* toggle deleted |
+| `src/types.ts`, `src/lib/defaults.ts` | `brand.wordmark`, `brand.footerPrimary` and `display.showWordmark` deleted |
+| `src/lib/content.ts` | new `FOOTER_PRIMARY = 'astracards.app'` |
+| `src/lib/canvas/draw.ts`, `spec.ts` | `drawWordmark` and its spec deleted; `drawFooter` paints the two constants |
+| `src/lib/fonts.ts`, `index.html` | Inter 300 no longer loaded: only the wordmark drew with it |
+| `src/components/HomePage.tsx`, `src/journal/ui/CustomizeDialog.tsx`, `README.md` | wording no longer offers a wordmark or footer to set |
+| `dev/align-shot.html`, `dev/colour-shot.html` | stop setting the removed fields |
+| `src/lib/canvas/draw.test.ts`, `src/lib/defaults.test.ts` | three obsolete cases removed; one added: an old save's domain and wordmark are dropped on load |
+
+**Worth knowing.**
+
+- **Anyone who had typed their own domain or wordmark loses it** on their next load, as requested.
+  Their saved cards show `astracards.app` and no wordmark.
+- **The wordmark was removed, not fixed to a word.** It was empty by default, so a new card looks the
+  same as before apart from the domain. If you want "ASTRA" printed there, that is a small change,
+  but `drawWordmark` has to come back from git history.
+- **The *Footer* toggle is still there.** The domain cannot be changed, but it can still be hidden,
+  along with the "Save 10% off fees" string. This is the hole noted on 2026-09-22 (b). Say if every
+  card must carry it, and the toggle goes too.
+- **The free-card limit:** `cardIdentity` hashes `state.brand` whole, so every `cardKey` changes once
+  with this deploy. It only matters when `VITE_PLANS=on`: a card exported before the deploy and again
+  after it would count as a second card that month.
+- **Not touched:** this is the text on the card only. No site URL or hosting setting was changed.
+  `.env.example` and `SETUP-PLANS.txt` still give old example addresses (`nexocards.vercel.app`,
+  `astracards.com`), and `SITE_URL` in Vercel still has to be set if it should point at the new domain.
+
+**Verified.** Typecheck clean, 382/382 tests pass (384 before, minus three, plus one). In headless
+Chrome, the card renders `astracards.app` in the footer with nothing top right, and the panel's
+Identity section lists only Handle, Avatar, Avatar frame and the toggles (Logo mark, Stat rows,
+Handle, Footer). Those checks used the dev harness pages, not a signed-in account with an old save;
+the old-save case is covered by the new test. Screenshots: `Desktop\Astra-fixed-domain\` — `card.png`,
+`panel.png`.
+
+**Committed and pushed on the branch `fixed-card-domain`, not merged into `main` yet.**
 
 ---
 

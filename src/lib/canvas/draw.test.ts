@@ -41,7 +41,7 @@ describe('the frame shapes', () => {
   /** Records where each rectangle lands, which is all the block needs. */
   function blockOrigin(aspect: CardState['display']['aspect']) {
     const state = createDefaultState();
-    state.display = { ...state.display, aspect, showLogo: false, showWordmark: false, showRows: false, showHandle: false, showFooter: false };
+    state.display = { ...state.display, aspect, showLogo: false, showRows: false, showHandle: false, showFooter: false };
     state.trade = { ...state.trade, symbol: '' };
     state.period = { ...state.period, title: '' };
     let y = 0;
@@ -123,9 +123,7 @@ describe('foregroundKey', () => {
     ['exit price', (s) => ({ ...s, mode: 'trade', trade: { ...s.trade, exitPrice: 43 } })],
     ['leverage', (s) => ({ ...s, mode: 'trade', trade: { ...s.trade, leverage: 5 } })],
     ['pnl sign', (s) => ({ ...s, mode: 'trade', trade: { ...s.trade, pnl: -100 } })],
-    ['wordmark', (s) => ({ ...s, brand: { ...s.brand, wordmark: 'OTHER' } })],
     ['handle', (s) => ({ ...s, brand: { ...s.brand, handle: '@someone' } })],
-    ['footer left', (s) => ({ ...s, brand: { ...s.brand, footerPrimary: 'elsewhere.com' } })],
     ['currency', (s) => ({ ...s, brand: { ...s.brand, currency: 'EUR' } })],
     ['theme', (s) => ({ ...s, display: { ...s.display, themeId: 'gold' } })],
     ['text tone', (s) => ({ ...s, display: { ...s.display, textTone: 'dark' } })],
@@ -139,7 +137,6 @@ describe('foregroundKey', () => {
     ['show rows', (s) => ({ ...s, display: { ...s.display, showRows: false } })],
     ['show handle', (s) => ({ ...s, display: { ...s.display, showHandle: false } })],
     ['show footer', (s) => ({ ...s, display: { ...s.display, showFooter: false } })],
-    ['show wordmark', (s) => ({ ...s, display: { ...s.display, showWordmark: false } })],
     ['show logo', (s) => ({ ...s, display: { ...s.display, showLogo: false } })],
   ];
 

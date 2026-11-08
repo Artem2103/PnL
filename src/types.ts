@@ -44,17 +44,14 @@ export interface PeriodState {
 }
 
 export interface BrandState {
-  /** Top-right wordmark. Empty hides it. */
-  wordmark: string;
   handle: string;
-  footerPrimary: string;
   currency: string;
 }
 
 /*
- * The footer's right-hand string is deliberately *not* here. It is fixed, and
- * a state field that must never vary is a lie the next reader has to check:
- * see `FOOTER_SECONDARY` in `lib/content.ts`.
+ * Neither footer string is here, deliberately. Both are fixed, and a state
+ * field that must never vary is a lie the next reader has to check: see
+ * `FOOTER_PRIMARY` and `FOOTER_SECONDARY` in `lib/content.ts`.
  */
 
 /**
@@ -75,7 +72,6 @@ export interface DisplayState {
   showRows: boolean;
   showHandle: boolean;
   showFooter: boolean;
-  showWordmark: boolean;
   showLogo: boolean;
   /** Compact "+$10.1K" instead of "+$10,148.00". */
   compactHero: boolean;

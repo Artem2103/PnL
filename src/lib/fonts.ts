@@ -11,8 +11,6 @@ import { clearTextMetricsCache } from './canvas/primitives';
  * awaiting `document.fonts.ready` would have done exactly that.
  */
 const REQUIRED = [
-  /** Wordmark. */
-  '300 24px Inter',
   /** Title, rows, handle, footer. */
   '400 24px Inter',
   /** The value inside the accent block. */

@@ -8,14 +8,16 @@ import {
 } from './format';
 
 /**
- * The footer's right-hand string, on every card, always.
+ * The footer's two strings, on every card, always: the site's domain on the
+ * left, the offer on the right.
  *
- * It is a constant rather than a field of `BrandState` on purpose: the editor
- * has no input for it, nothing in the app writes it, and an old save or a
- * hand-edited `cards` row cannot carry a different one, because there is no
- * longer a key for it to be carried in. Changing what the card says here is a
- * change to this line and a redeploy.
+ * They are constants rather than fields of `BrandState` on purpose: the editor
+ * has no input for them, nothing in the app writes them, and an old save or a
+ * hand-edited `cards` row cannot carry different ones, because there is no
+ * longer a key for them to be carried in. Changing what the card says here is
+ * a change to these lines and a redeploy.
  */
+export const FOOTER_PRIMARY = 'astracards.app';
 export const FOOTER_SECONDARY = 'Save 10% off fees';
 
 /**

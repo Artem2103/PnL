@@ -15,7 +15,7 @@ import { GROUND, PALETTE } from '../lib/canvas/spec';
 import { FramePicker } from './FramePicker';
 import { ScenePicker } from './ScenePicker';
 import { approximateLiquidationPrice, computeCard, signsDisagree } from '../lib/pnl';
-import { buildContent, FOOTER_SECONDARY, PERIOD_PRESETS } from '../lib/content';
+import { buildContent, PERIOD_PRESETS } from '../lib/content';
 import { formatPrice } from '../lib/format';
 import { MAX_CLIP_SECONDS, MAX_SOURCE_SECONDS } from '../lib/images';
 import { resolveClip } from '../lib/video';
@@ -554,14 +554,6 @@ export function ControlPanel({
       </Section>
 
       <Section title="Identity" hint="Your marks, not anyone else's.">
-        <Field label="Wordmark" hint="top right">
-          <TextInput
-            value={brand.wordmark}
-            onChange={(wordmark) => patchBrand({ wordmark })}
-            placeholder="Empty hides it"
-            maxLength={18}
-          />
-        </Field>
         <Field label="Handle">
           <TextInput
             value={brand.handle}
@@ -570,15 +562,6 @@ export function ControlPanel({
             maxLength={24}
           />
         </Field>
-        <Field label="Footer left" hint={`beside it, always: “${FOOTER_SECONDARY}”`}>
-          <TextInput
-            value={brand.footerPrimary}
-            onChange={(footerPrimary) => patchBrand({ footerPrimary })}
-            placeholder="yoursite.com"
-            maxLength={28}
-          />
-        </Field>
-
         <Field label="Avatar">
           <ImagePicker
             role="avatar"
@@ -611,11 +594,6 @@ export function ControlPanel({
           </div>
         ) : null}
         <div className="toggles">
-          <Toggle
-            label="Wordmark"
-            checked={display.showWordmark}
-            onChange={(showWordmark) => patchDisplay({ showWordmark })}
-          />
           <Toggle
             label="Logo mark"
             checked={display.showLogo}

@@ -181,12 +181,12 @@
           // `logoId` null `drawLogo` returns before painting, so the header is
           // untouched ground; the avatar slot still has its placeholder, which
           // the white probe differs from across the whole square.
-          const blank = await shot(bare({ logoId: null, avatarId: null, display: { showWordmark: false } }));
+          const blank = await shot(bare({ logoId: null, avatarId: null }));
           const W = blank.width;
           const header = { x: 0, y: 0, w: 320, h: 130 };
           const foot = { x: 0, y: 420, w: 120, h: 90 };
 
-          const wideShot = await shot(bare({ logoId: wide.id, avatarId: null, display: { showWordmark: false } }));
+          const wideShot = await shot(bare({ logoId: wide.id, avatarId: null }));
           const wideBox = diffBox(wideShot.data, blank.data, W, header, 8);
           // Width-limited: the mark fills the slot's width, centred in its
           // height. That height is fractional (49 * 100 / 400 = 12.25) and is
@@ -202,12 +202,12 @@
             h: Math.ceil(wideTop + wideH) - Math.floor(wideTop),
           };
 
-          const tallShot = await shot(bare({ logoId: tall.id, avatarId: null, display: { showWordmark: false } }));
+          const tallShot = await shot(bare({ logoId: tall.id, avatarId: null }));
           const tallBox = diffBox(tallShot.data, blank.data, W, header, 8);
           // Height-limited: the mark fills the slot's height, anchored left.
           const tallWant = { x: L.x, y: L.y, w: Math.round((L.maxHeight * 100) / 400), h: L.maxHeight };
 
-          const faceShot = await shot(bare({ logoId: null, avatarId: face.id, display: { showWordmark: false } }));
+          const faceShot = await shot(bare({ logoId: null, avatarId: face.id }));
           const avatarBox = diffBox(faceShot.data, blank.data, W, foot, 8);
 
           out.logoWide = { got: wideBox, want: wideWant };

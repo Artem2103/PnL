@@ -188,8 +188,8 @@ Exported at 1×, 2× or 3× (up to 2520 × 1710).
   seconds, trimmed with a start point and a length, the clip's own audio kept or dropped. The
   numbers, rows, accent and marks are painted on every frame by the same renderer that makes the
   PNG.
-- **Your own marks**: wordmark, handle, avatar, logo and the left footer string are yours to set.
-  The right one is fixed — see below.
+- **Your own marks**: handle and avatar are yours to set. The footer's two strings are fixed — see
+  below.
 - **Seven avatar frames.** The pin — a pip over a gradient ring — takes any colour, and the whole
   badge is worked out from that one colour: the ring's shading, the pip and its highlight keep the
   relationship the original red has. The tag is the frame the reference cards wear. Gilt is gold;
@@ -244,9 +244,7 @@ letterform shape: the reference face is not Inter and is not on Google Fonts, an
 **The pictures are the reference's own size.** The logo slot is 49 × 41 at (35, 34) and the avatar is
 54.5 × 54.5 at (30.5, 446) — both re-measured on 2026-08-25 from half-coverage edges rather than a luminance threshold,
 which is what the first pass used and which loses a pixel of the antialiased edge on each side. The
-logo was briefly grown to 66 × 54; at the reference size its optical centre lines up with the
-wordmark's again. One value deviates on purpose and is text rather than a picture: the wordmark is
-34px rather than the reference's 42px. It is a single number in `spec.ts`.
+logo was briefly grown to 66 × 54 and is back at the reference size.
 
 `dev/colour-shot.html` renders into both slots with deliberately wide and tall probe images and
 checks the resulting boxes against `spec.ts`, which is the only way to observe a slot; it also pins
@@ -259,13 +257,13 @@ are commissioned 3D artwork and an illustration; copying them pixel for pixel wo
 someone else's work in a product. The built-in sky is Astra's own picture of Astra's own name, and
 shares nothing with them but the idea of putting something behind the numbers.
 
-The layout is matched; the *branding* is not. The wordmark, logo mark, avatar and the left footer
-string are empty slots you fill with your own. The **right** footer string is the one fixed piece of
-text on the card: it always reads *Save 10% off fees*, there is no input for it, and it is not part
-of card state at all — `FOOTER_SECONDARY` in `src/lib/content.ts` is the only place it exists, so
-changing it is a change to that line and a redeploy. Shipping a generator preloaded with another company's mark and
+The layout is matched; the *branding* is not. The reference's top-right wordmark is not drawn at
+all, and the avatar is a slot you fill with your own. The **footer** is fixed text: it always reads
+*astracards.app* and *Save 10% off fees*, there is no input for either, and neither is part of card
+state at all — `FOOTER_PRIMARY` and `FOOTER_SECONDARY` in `src/lib/content.ts` are the only places
+they exist, so changing them is a change to those lines and a redeploy. Shipping a generator preloaded with another company's mark and
 domain would make it a tool for producing counterfeit cards attributed to them, which is a different
-product from this one. Put your own mark in and the card is identical in every other respect.
+product from this one.
 
 ## How the export is guaranteed to match the preview
 

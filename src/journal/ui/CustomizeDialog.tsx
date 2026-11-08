@@ -84,7 +84,7 @@ function Switch({ label, checked, onChange }: { label: string; checked: boolean;
  * "Customize Share PNL", laid out like the reference: text colour, PnL
  * colours, layout switches, the rectangle's text colour, and Continue. Under
  * it, everything the card editor can do — backgrounds and their placement,
- * colour themes, avatar, frames, wordmark, handle, footer — so nothing has to
+ * colour themes, avatar, frames, handle — so nothing has to
  * be done on another page.
  */
 export function CustomizeDialog({

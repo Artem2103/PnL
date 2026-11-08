@@ -1,5 +1,5 @@
 import type { BackgroundMedia, CardState, RenderAssets } from '../../types';
-import { FOOTER_SECONDARY, type CardContent } from '../content';
+import { FOOTER_PRIMARY, FOOTER_SECONDARY, type CardContent } from '../content';
 import type { PnlResult } from '../pnl';
 import { ensureContrast, readableOn, withAlpha } from '../color';
 import { resolveTheme, type Theme } from '../themes';
@@ -107,7 +107,6 @@ export function drawCardForeground(ctx: Ctx2D, input: DrawInput): void {
   // moves it, and only down: the left margin is the same in every shape.
   ctx.translate(0, cardTop(state.display.aspect));
   if (state.display.showLogo) drawLogo(ctx, input);
-  if (state.display.showWordmark) drawWordmark(ctx, input, ink);
   drawTitle(ctx, input, ink);
   drawHeroBlock(ctx, input, accent, accentInk);
   if (state.display.showRows) drawRows(ctx, input, accentInk, ink);
@@ -129,9 +128,7 @@ export function foregroundKey(input: DrawInput): string {
     content.title,
     content.hero,
     ...content.rows.flatMap((row) => [row.label, row.value, row.accent ? 1 : 0]),
-    state.brand.wordmark,
     state.brand.handle,
-    state.brand.footerPrimary,
     d.themeId,
     // Only meaningful for the custom slot, but cheap and unconditional beats a
     // branch that has to stay in step with `resolveTheme`.
@@ -142,7 +139,6 @@ export function foregroundKey(input: DrawInput): string {
     d.frameColor,
     result.isProfit ? 1 : 0,
     d.showLogo ? 1 : 0,
-    d.showWordmark ? 1 : 0,
     d.showRows ? 1 : 0,
     d.showHandle ? 1 : 0,
     d.showFooter ? 1 : 0,
@@ -278,24 +274,6 @@ function drawLogo(ctx: Ctx2D, input: DrawInput): void {
   const w = logo.width * scale;
   const h = logo.height * scale;
   ctx.drawImage(logo, x, y + (maxHeight - h) / 2, w, h);
-}
-
-function drawWordmark(ctx: Ctx2D, input: DrawInput, ink: string): void {
-  const text = input.state.brand.wordmark.trim();
-  if (!text) return;
-  const { right, baseline, size, weight, tracking } = SPEC.wordmark;
-  drawText(ctx, text, right, baseline, {
-    ...shadowFor(input.state),
-    size,
-    weight: weightFor(input.state, weight),
-    tracking,
-    align: 'right',
-    inkAlign: true,
-    baseline: 'alphabetic',
-    color: ink,
-    maxWidth: 300,
-    minSize: size * 0.5,
-  });
 }
 
 function drawTitle(ctx: Ctx2D, input: DrawInput, ink: string): void {
@@ -476,45 +454,31 @@ function drawGlobeIcon(ctx: Ctx2D, x: number, y: number, w: number, h: number, c
 }
 
 function drawFooter(ctx: Ctx2D, input: DrawInput, ink: string): void {
-  const { brand } = input.state;
   const { icon, x, baseline, size, weight, tracking, gap, maxWidth } = SPEC.footer;
-  const primary = brand.footerPrimary.trim();
-  // Fixed, and not read from state — see `FOOTER_SECONDARY`. So the footer row
-  // is never empty, and the early return below only survives for the reader:
-  // `drawFooter` is still the one place that decides there is nothing to paint.
-  const secondary = FOOTER_SECONDARY;
-  if (!primary && !secondary) return;
+  // Both strings are fixed and not read from state — see `FOOTER_PRIMARY`.
+  drawGlobeIcon(ctx, icon.x, icon.y, icon.width, icon.height, ink);
+  const width = drawText(ctx, FOOTER_PRIMARY, x, baseline, {
+    ...shadowFor(input.state),
+    size,
+    weight: weightFor(input.state, weight),
+    tracking,
+    inkAlign: true,
+    baseline: 'alphabetic',
+    color: ink,
+    maxWidth: maxWidth / 2,
+    minSize: size * 0.75,
+  });
+  const cursor = x + width + gap;
 
-  let cursor: number = x;
-  if (primary) {
-    drawGlobeIcon(ctx, icon.x, icon.y, icon.width, icon.height, ink);
-    const width = drawText(ctx, primary, cursor, baseline, {
-      ...shadowFor(input.state),
-      size,
-      weight: weightFor(input.state, weight),
-      tracking,
-      inkAlign: true,
-      baseline: 'alphabetic',
-      color: ink,
-      maxWidth: maxWidth / 2,
-      minSize: size * 0.75,
-    });
-    cursor += width + gap;
-  } else {
-    cursor = icon.x;
-  }
-
-  if (secondary) {
-    drawText(ctx, secondary, cursor, baseline, {
-      ...shadowFor(input.state),
-      size,
-      weight: weightFor(input.state, weight),
-      tracking,
-      inkAlign: true,
-      baseline: 'alphabetic',
-      color: ink,
-      maxWidth: CARD.width - cursor - SPEC.marginRight,
-      minSize: size * 0.75,
-    });
-  }
+  drawText(ctx, FOOTER_SECONDARY, cursor, baseline, {
+    ...shadowFor(input.state),
+    size,
+    weight: weightFor(input.state, weight),
+    tracking,
+    inkAlign: true,
+    baseline: 'alphabetic',
+    color: ink,
+    maxWidth: CARD.width - cursor - SPEC.marginRight,
+    minSize: size * 0.75,
+  });
 }
