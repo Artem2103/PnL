@@ -417,7 +417,8 @@ function drawHandle(ctx: Ctx2D, input: DrawInput, ink: string, accent: string): 
   ctx.restore();
 
   const handle = state.brand.handle.trim();
-  if (!handle) return;
+  // The editor keeps the "@", so an emptied field is a bare "@": draw nothing.
+  if (!handle || handle === '@') return;
   drawText(ctx, handle, SPEC.handle.x, SPEC.handle.baseline, {
     ...shadowFor(state),
     size: SPEC.handle.size,

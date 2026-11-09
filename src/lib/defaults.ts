@@ -160,6 +160,15 @@ function merge<T extends object>(base: T, saved: unknown): T {
  */
 const PREVIOUS_MAX_CLIP_SECONDS = 15;
 
+/**
+ * A card handle always starts with exactly one "@": the editor will not let it
+ * be deleted, and a handle saved without one gains it. Whitespace is dropped
+ * because a handle is one word.
+ */
+export function withAt(handle: string): string {
+  return `@${handle.replace(/\s+/g, '').replace(/^@+/, '')}`;
+}
+
 /** Merges a persisted blob over the defaults so new fields never break old saves. */
 export function hydrateState(raw: unknown): CardState {
   const base = createDefaultState();
@@ -177,7 +186,10 @@ export function hydrateState(raw: unknown): CardState {
     // Saved cards may carry an old leverage that can no longer be edited.
     trade: { ...merge(base.trade, saved.trade), leverage: FOREX_LEVERAGE },
     period: merge(base.period, saved.period),
-    brand: merge(base.brand, saved.brand),
+    brand: (() => {
+      const brand = merge(base.brand, saved.brand);
+      return { ...brand, handle: withAt(String(brand.handle ?? '')) };
+    })(),
     display: {
       ...display,
       // Always on: the editor no longer lets these be hidden, so a card saved

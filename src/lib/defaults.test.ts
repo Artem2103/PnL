@@ -8,6 +8,7 @@ import {
   loadLocalCard,
   saveLocalCard,
   takeOrphanCard,
+  withAt,
 } from './defaults';
 
 /**
@@ -184,5 +185,19 @@ describe('always-on card parts', () => {
     expect(state.display.showFooter).toBe(true);
     // The stats stay the user's choice.
     expect(state.display.showRows).toBe(false);
+  });
+});
+
+describe('withAt', () => {
+  it('keeps exactly one leading "@" whatever is typed', () => {
+    expect(withAt('trader')).toBe('@trader');
+    expect(withAt('@trader')).toBe('@trader');
+    expect(withAt('@@trader')).toBe('@trader');
+    expect(withAt('')).toBe('@');
+    expect(withAt(' my handle ')).toBe('@myhandle');
+  });
+
+  it('gives a saved handle without one its "@"', () => {
+    expect(hydrateState({ brand: { handle: 'kept' } }).brand.handle).toBe('@kept');
   });
 });

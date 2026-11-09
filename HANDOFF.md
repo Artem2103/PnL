@@ -51,11 +51,63 @@ file easier to read:
 | 2026-11-10 (d) | **code**: **50 MB in total per account**, 10 backgrounds, 3 avatars; accounts over 10 lose their oldest backgrounds on next sign-in | see **Start here (2026-11-10 d)** |
 | 2026-11-10 (e) | **code**: leverage field gone, always 100x and never printed; new trade cards start as EURUSD 1 → 1 | see **Start here (2026-11-10 e)** |
 | 2026-11-10 (f) | **code**: logo mark, handle and footer always shown; only the stat rows can be hidden | see **Start here (2026-11-10 f)** |
+| 2026-11-10 (g) | *no code* — is the site fast? Measured on the live site: yes; the live address is **www.astracards.app** | see **Start here (2026-11-10 g)** |
+| 2026-11-10 (h) | **code**: the card handle always starts with "@"; it can't be deleted | see **Start here (2026-11-10 h)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-11-10 h) — the handle's "@" can't be removed
+
+**What Artem asked:** make it so the "@" can't be removed when choosing a handle.
+
+**What changed** (the card editor's Identity → Handle field; the journal's Customize dialog uses the same panel):
+- New `withAt()` in `src/lib/defaults.ts`: drops spaces and any leading "@"s, then puts back exactly one.
+  The Handle field runs every keystroke through it (`ControlPanel.tsx`), so deleting the "@" or
+  selecting all and typing gives `@…` again.
+- Saved cards whose handle has no "@" get one when loaded (`hydrateState`).
+- An emptied field is a bare `@`; the card draws nothing for it (`draw.ts`), as it did for an empty handle.
+- Not touched: the community profile handle — it is typed without "@" and shown as `@name`.
+
+**Verified:** typecheck clean; `npx vitest run` 387/387 passing, including new `withAt` tests in
+`defaults.test.ts`. Not yet tried in the browser.
+
+---
+
+## Start here (2026-11-10 g) — *no code* — is the site fast?
+
+**What Artem asked:** is the site optimised for speed, including import and export? It works but
+feels a bit slow, possibly because many games are running.
+
+**The live site is `https://www.astracards.app`** (`astracards.app` redirects there). The
+`nexocards.vercel.app` address used throughout this file now returns 404. Use the new one.
+
+**Measured on the live site, in Artem's Chrome, on 2026-11-10 (with his games running):**
+- **Download:** ~175 KB of compressed code (React 60 KB, the app 114 KB). The community and journal load
+  only when opened. All code arrived within **0.4 s**. Vercel answers in ~27 ms.
+- **Page ready:** 0.75 s on a reload. 2.4 s on the first visit, which includes ~0.4 s of
+  scripts from **browser extensions** (not ours) and the first draw of the editor (~0.3–0.4 s).
+- **Supabase:** ~20 ms ping, so it is close. Loading the saved card took ~0.5–0.7 s once,
+  the media list ~0.2 s.
+- **Idle:** with a photo background the preview draws once and then stops (no CPU used). With a
+  clip, it redraws only when the clip shows a new frame, and lowers its own sharpness when frames
+  run slow (`CardPreview.tsx`).
+- **CPU test** in the page (30M-step loop): 173 ms. A free machine of this kind is usually around
+  60–100 ms, so the CPU looked busy, which fits "lots of games open". Not compared with the games
+  closed.
+
+**Conclusion:** nothing on the site is badly slow. The slowness most likely comes from the
+computer being busy: the preview of a clip and above all **video export** use the CPU and graphics
+card heavily, and games compete for both. On this laptop's Intel graphics, export already runs in
+software (see the README note on ~45–55 fps encoding).
+
+**Possible small wins (not done):** look at why the card request takes ~0.6 s; load the five
+built-in background pictures (~620 KB) only when the background picker is opened; use one font
+provider instead of two. Each would save fractions of a second, not change how it feels.
 
 ---
 

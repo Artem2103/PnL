@@ -19,6 +19,7 @@ import { buildContent, PERIOD_PRESETS } from '../lib/content';
 import { formatPrice } from '../lib/format';
 import { MAX_CLIP_SECONDS, MAX_SOURCE_SECONDS } from '../lib/images';
 import { resolveClip } from '../lib/video';
+import { withAt } from '../lib/defaults';
 import { ImagePicker } from './ImagePicker';
 import { Field, NumberInput, RgbPicker, Section, Segmented, Slider, TextInput, Toggle } from './ui';
 
@@ -538,7 +539,7 @@ export function ControlPanel({
         <Field label="Handle">
           <TextInput
             value={brand.handle}
-            onChange={(handle) => patchBrand({ handle })}
+            onChange={(handle) => patchBrand({ handle: withAt(handle) })}
             placeholder="@yourhandle"
             maxLength={24}
           />
