@@ -66,7 +66,7 @@ Only the stats can be shown or hidden.
 
 **Change:**
 - The *Logo mark*, *Handle* and *Footer* switches are gone from the editor's style section
-  (`src/components/ControlPanel.tsx`). *Stat rows* stays.
+  (`src/components/ControlPanel.tsx`). The one switch left, at the very bottom of the editor (end of *Identity*), is labelled **"Show stats"** (was "Stat rows").
 - `hydrateState` (`src/lib/defaults.ts`) turns all three back on for every saved card, so a card
   saved with one hidden can't stay that way with no switch to undo it. They were already on by
   default for new cards.

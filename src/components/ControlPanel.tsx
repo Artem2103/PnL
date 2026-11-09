@@ -577,7 +577,7 @@ export function ControlPanel({
         <div className="toggles">
           {/* Logo mark, handle and footer are always on; only the stats can be hidden. */}
           <Toggle
-            label="Stat rows"
+            label="Show stats"
             checked={display.showRows}
             onChange={(showRows) => patchDisplay({ showRows })}
           />
