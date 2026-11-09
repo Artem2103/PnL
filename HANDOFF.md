@@ -109,7 +109,7 @@ expose, so no user can read other users' emails through the site.
 **Verified.** In real Postgres (PGlite): the schema applies twice; the view lists both test accounts,
 newest first, with the name taken from sign-up; `anon` and `authenticated` are both refused.
 **Not verified:** running it on the live project. Nothing here can reach the database.
-Not committed yet.
+Pushed to `main` (`5c2d2d6`).
 
 ---
 
