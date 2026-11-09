@@ -48,7 +48,7 @@ const STEPS = [
     n: '01',
     title: 'Type the numbers',
     body:
-      'A single trade — symbol, direction, leverage, entry, exit — or a period: a month, a quarter, ' +
+      'A single trade — symbol, direction, entry, exit — or a period: a month, a quarter, ' +
       'a week, with the balance either side. Astra works out the percentage and the multiple; you ' +
       'never format a number yourself.',
   },

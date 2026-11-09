@@ -25,16 +25,21 @@ const DEFAULT_SAMPLE_FRAME_COLOR = '#FFFFFF';
  * opens flat ("$10.0K" to "$10.0K") rather than claiming a result nobody had;
  * the pin frame starts white.
  */
+/** The leverage every trade card assumes; the editor has no field for it. */
+export const FOREX_LEVERAGE = 100;
+
 export function createDefaultState(): CardState {
   return {
     mode: 'period',
     trade: {
-      symbol: 'BTCUSDT',
+      symbol: 'EURUSD',
       direction: 'long',
-      leverage: 20,
-      entryPrice: 61250,
-      exitPrice: 68420,
-      pnl: 5377,
+      // Forex is always traded at 100x here. Not editable and never printed;
+      // it only turns the price move into the card's percentage.
+      leverage: FOREX_LEVERAGE,
+      entryPrice: 1,
+      exitPrice: 1,
+      pnl: 0,
       showDirectionInTitle: true,
     },
     period: {
@@ -169,7 +174,8 @@ export function hydrateState(raw: unknown): CardState {
   const display = merge(base.display, saved.display);
   return {
     mode: saved.mode === 'trade' || saved.mode === 'period' ? saved.mode : base.mode,
-    trade: merge(base.trade, saved.trade),
+    // Saved cards may carry an old leverage that can no longer be edited.
+    trade: { ...merge(base.trade, saved.trade), leverage: FOREX_LEVERAGE },
     period: merge(base.period, saved.period),
     brand: merge(base.brand, saved.brand),
     display: {

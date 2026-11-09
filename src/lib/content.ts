@@ -80,11 +80,8 @@ export function buildContent(state: CardState, result: PnlResult): CardContent {
 
   const { trade } = state;
   const symbol = trade.symbol.trim().toUpperCase();
-  const leverage = Number.isInteger(trade.leverage)
-    ? String(trade.leverage)
-    : trade.leverage.toFixed(1);
-  const side = trade.direction === 'long' ? 'Long' : 'Short';
-  const suffix = trade.leverage > 1 ? `${side} ${leverage}×` : side;
+  // Leverage is never printed: always 100x for forex, so it says nothing.
+  const suffix = trade.direction === 'long' ? 'Long' : 'Short';
 
   return {
     title: trade.showDirectionInTitle && symbol ? `${symbol}  ${suffix}` : symbol,

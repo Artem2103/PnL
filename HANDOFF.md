@@ -49,11 +49,40 @@ file easier to read:
 | 2026-11-10 (b) | **code**: friendlier hero text on the home page ("Make your results look beautiful.") | see **Start here (2026-11-10 b)** |
 | 2026-11-10 (c) | *no code* — clip limits for the free plan tried and reverted; "clips stay on the device" written down for later | see **Start here (2026-11-10 c)** |
 | 2026-11-10 (d) | **code**: **50 MB in total per account**, 10 backgrounds, 3 avatars; accounts over 10 lose their oldest backgrounds on next sign-in | see **Start here (2026-11-10 d)** |
+| 2026-11-10 (e) | **code**: leverage field gone, always 100x and never printed; new trade cards start as EURUSD 1 → 1 | see **Start here (2026-11-10 e)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-11-10 e) — no leverage field; trade cards start as EURUSD
+
+**What Artem asked for:** remove *Leverage* from Cards → Trade. In forex the leverage is always
+100x, but it should not be shown: the title reads just "BTCUSDT  Long". New users should start on
+EURUSD with entry and exit at 1, not Bitcoin prices.
+
+**Change:**
+- **Leverage is fixed at 100x** (`FOREX_LEVERAGE` in `src/lib/defaults.ts`). The card's PNL % is still
+  price move × leverage, so a 1% move shows +100%. `hydrateState` forces 100 on every saved card too,
+  so an old card saved at 20x can't keep an invisible 20x. **This changes the % on old cards**,
+  e.g. one saved at 20x now shows 5× its old percentage.
+- **The title never prints leverage** (`src/lib/content.ts`): "EURUSD  Long" / "Short". The toggle is
+  now "Show direction in the title".
+- **Editor** (`src/components/ControlPanel.tsx`): the Leverage box is gone, Symbol is full width with
+  placeholder "EURUSD". The "Est. liq." price under the preview is gone too: it was worked out
+  from the leverage, which no longer means anything to the user.
+- **New trade defaults:** EURUSD, Long, entry 1, exit 1, profit 0. The card prints the prices as
+  "1.00" (two decimals minimum; a typed 1.08523 prints in full).
+- Home page "How it works" step 1 no longer lists leverage.
+- The journal's own share card (hidden) is unaffected: it sets its own % directly.
+
+**Verified.** Typecheck clean, 384/384 tests pass (new: EURUSD 1→1 default, +100% for a 1% move with
+no "×" in the title, an old 20x card opening at 100x). Trade tab checked in Chrome on a local dev
+server: no Leverage field, card reads "EURUSD  Long", +$0, +0.00%, 1.00 / 1.00. Screenshot:
+`Desktop\Astra-trade-no-leverage\trade-tab.jpg`. Not committed yet.
 
 ---
 

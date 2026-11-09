@@ -14,7 +14,7 @@ import { frameById } from '../lib/frames';
 import { GROUND, PALETTE } from '../lib/canvas/spec';
 import { FramePicker } from './FramePicker';
 import { ScenePicker } from './ScenePicker';
-import { approximateLiquidationPrice, computeCard, signsDisagree } from '../lib/pnl';
+import { computeCard, signsDisagree } from '../lib/pnl';
 import { buildContent, PERIOD_PRESETS } from '../lib/content';
 import { formatPrice } from '../lib/format';
 import { MAX_CLIP_SECONDS, MAX_SOURCE_SECONDS } from '../lib/images';
@@ -115,7 +115,6 @@ export function ControlPanel({
   const { trade, period, brand, display, artwork } = state;
   const result = useMemo(() => computeCard(state), [state]);
   const content = useMemo(() => buildContent(state, result), [state, result]);
-  const liquidation = state.mode === 'trade' ? approximateLiquidationPrice(trade) : null;
   const mismatch = state.mode === 'trade' && signsDisagree(trade);
   const isVideo = background?.kind === 'video';
   const clip = resolveClip(background?.duration ?? 0, artwork.clipStart, artwork.clipLength);
@@ -207,26 +206,14 @@ export function ControlPanel({
           </>
         ) : (
           <>
-            <div className="grid grid--2">
-              <Field label="Symbol">
-                <TextInput
-                  value={trade.symbol}
-                  onChange={(symbol) => patchTrade({ symbol })}
-                  placeholder="BTCUSDT"
-                  maxLength={20}
-                />
-              </Field>
-              <Field label="Leverage">
-                <NumberInput
-                  value={trade.leverage}
-                  onChange={(leverage) => patchTrade({ leverage })}
-                  min={1}
-                  max={200}
-                  step={1}
-                  suffix="×"
-                />
-              </Field>
-            </div>
+            <Field label="Symbol">
+              <TextInput
+                value={trade.symbol}
+                onChange={(symbol) => patchTrade({ symbol })}
+                placeholder="EURUSD"
+                maxLength={20}
+              />
+            </Field>
             <Field label="Direction">
               <Segmented
                 ariaLabel="Direction"
@@ -265,7 +252,7 @@ export function ControlPanel({
               </p>
             ) : null}
             <Toggle
-              label="Show direction and leverage in the title"
+              label="Show direction in the title"
               checked={trade.showDirectionInTitle}
               onChange={(showDirectionInTitle) => patchTrade({ showDirectionInTitle })}
             />
@@ -303,12 +290,6 @@ export function ControlPanel({
             <dt>PNL</dt>
             <dd className={result.isProfit ? 'is-profit' : 'is-loss'}>{content.rows[0]?.value}</dd>
           </div>
-          {liquidation ? (
-            <div>
-              <dt>Est. liq.</dt>
-              <dd className="is-muted">{formatPrice(liquidation)}</dd>
-            </div>
-          ) : null}
         </dl>
         {result.degenerate ? (
           <p className="warn">

@@ -70,7 +70,7 @@ describe('videoFileName', () => {
 
   it('names the file after the symbol in trade mode', () => {
     const state = { ...createDefaultState(), mode: 'trade' as const };
-    expect(videoFileName(state, 'webm')).toBe('btcusdt-pnl.webm');
+    expect(videoFileName(state, 'webm')).toBe('eurusd-pnl.webm');
   });
 });
 
