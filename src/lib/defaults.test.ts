@@ -173,3 +173,16 @@ describe('the fixed footer strings', () => {
     expect(Object.keys(state.display)).not.toContain('showWordmark');
   });
 });
+
+describe('always-on card parts', () => {
+  it('shows the logo, handle and footer even if a saved card hid them', () => {
+    const state = hydrateState({
+      display: { showLogo: false, showHandle: false, showFooter: false, showRows: false },
+    });
+    expect(state.display.showLogo).toBe(true);
+    expect(state.display.showHandle).toBe(true);
+    expect(state.display.showFooter).toBe(true);
+    // The stats stay the user's choice.
+    expect(state.display.showRows).toBe(false);
+  });
+});

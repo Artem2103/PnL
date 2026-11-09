@@ -575,25 +575,11 @@ export function ControlPanel({
           </div>
         ) : null}
         <div className="toggles">
-          <Toggle
-            label="Logo mark"
-            checked={display.showLogo}
-            onChange={(showLogo) => patchDisplay({ showLogo })}
-          />
+          {/* Logo mark, handle and footer are always on; only the stats can be hidden. */}
           <Toggle
             label="Stat rows"
             checked={display.showRows}
             onChange={(showRows) => patchDisplay({ showRows })}
-          />
-          <Toggle
-            label="Handle"
-            checked={display.showHandle}
-            onChange={(showHandle) => patchDisplay({ showHandle })}
-          />
-          <Toggle
-            label="Footer"
-            checked={display.showFooter}
-            onChange={(showFooter) => patchDisplay({ showFooter })}
           />
         </div>
       </Section>

@@ -180,6 +180,11 @@ export function hydrateState(raw: unknown): CardState {
     brand: merge(base.brand, saved.brand),
     display: {
       ...display,
+      // Always on: the editor no longer lets these be hidden, so a card saved
+      // with one off must not keep it hidden with no way back.
+      showLogo: true,
+      showHandle: true,
+      showFooter: true,
       aspect: ASPECTS.some((a) => a.id === display.aspect) ? display.aspect : base.display.aspect,
     },
     artwork:
