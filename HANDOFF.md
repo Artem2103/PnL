@@ -73,7 +73,7 @@ Not touched: the "How it works" steps and the closing section. They are still th
 more technical wording if Artem wants those loosened too.
 
 **Verified.** Typecheck clean, 382/382 tests pass. Screenshots of desktop and a true 390px phone
-width: `Desktop\Astra-home-text\`. Not committed yet.
+width: `Desktop\Astra-home-text\`. Pushed to `main` (`79ffbc2`).
 
 ---
 
