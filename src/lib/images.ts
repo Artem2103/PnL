@@ -6,7 +6,7 @@
  * bucket and `lib/library.ts` is what the app talks to. IndexedDB stays in
  * front of it because the renderer needs blob URLs — decoding a background
  * over the network on every frame is not a thing that can work — and because
- * re-downloading an 80 MB clip on every reload would be absurd.
+ * re-downloading a 50 MB clip on every reload would be absurd.
  *
  * Two consequences shape everything below:
  *
@@ -40,7 +40,25 @@ export type ImageRole = 'artwork' | 'avatar' | 'logo';
 export type MediaKind = 'image' | 'video';
 
 export const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
-export const MAX_VIDEO_BYTES = 80 * 1024 * 1024;
+export const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+/**
+ * Everything one account keeps, together: backgrounds, avatars and logos. Sized
+ * for the Supabase free plan (1 GB of files) and ~30 accounts; see HANDOFF.
+ */
+export const MAX_ACCOUNT_BYTES = 50 * 1024 * 1024;
+
+/** Bytes an account already keeps, as recorded at upload. */
+export async function usedBytes(userId: string): Promise<number> {
+  const records = await allRecordsFor(userId);
+  return records.reduce((sum, record) => sum + (record.byteSize || 0), 0);
+}
+
+export function megabytesLabel(bytes: number): string {
+  if (bytes <= 0) return '0 MB';
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  const mb = bytes / 1024 / 1024;
+  return mb >= 10 ? `${Math.round(mb)} MB` : `${mb.toFixed(1)} MB`;
+}
 
 /** The longest slice of a clip a card will ever use. */
 export const MAX_CLIP_SECONDS = 30;
@@ -48,8 +66,8 @@ export const MAX_CLIP_SECONDS = 30;
 export const MAX_SOURCE_SECONDS = 120;
 
 const ROLE_LIMITS: Record<ImageRole, { max: number; maxEdge: number }> = {
-  artwork: { max: 12, maxEdge: 2600 },
-  avatar: { max: 6, maxEdge: 512 },
+  artwork: { max: 10, maxEdge: 2600 },
+  avatar: { max: 3, maxEdge: 512 },
   logo: { max: 6, maxEdge: 512 },
 };
 
@@ -444,6 +462,16 @@ export async function addLocalMedia(
   const media = video
     ? { ...(await probeVideo(file)), blob: file as Blob }
     : { ...(await normalizeImage(file, limits.maxEdge)), duration: 0, poster: undefined };
+
+  // Checked on the final size: a photo shrinks a lot once re-encoded.
+  const used = await usedBytes(userId);
+  if (used + media.blob.size > MAX_ACCOUNT_BYTES) {
+    const left = Math.max(0, MAX_ACCOUNT_BYTES - used);
+    throw new ImageError(
+      `This file is ${megabytesLabel(media.blob.size)} but you have ${megabytesLabel(left)} of ` +
+        `${megabytesLabel(MAX_ACCOUNT_BYTES)} left — delete something first.`,
+    );
+  }
 
   const record: MediaRecord = {
     id: makeId(),

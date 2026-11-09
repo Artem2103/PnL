@@ -1,12 +1,15 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ImageError,
+  MAX_ACCOUNT_BYTES,
   acceptAttrFor,
   addMedia,
   deleteMedia,
   listMedia,
   maxImagesFor,
+  megabytesLabel,
   releaseThumbnails,
+  usedBytes,
   type ImageRole,
   type MediaSummary,
 } from '../lib/library';
@@ -39,6 +42,7 @@ function ImagePickerView({
   const { userId: owner, mode, librarySyncedAt } = useAuth();
   const userId = owner ?? '';
   const [items, setItems] = useState<MediaSummary[]>([]);
+  const [used, setUsed] = useState(0);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -68,6 +72,7 @@ function ImagePickerView({
       releaseThumbnails(itemsRef.current.filter((item) => item.remoteOnly));
       itemsRef.current = next;
       setItems(next);
+      setUsed(await usedBytes(userId));
     } catch (error) {
       onErrorRef.current(error instanceof Error ? error.message : 'Could not read your images.');
     }
@@ -207,6 +212,8 @@ function ImagePickerView({
       <p className="muted-note">
         {items.length}/{maxImagesFor(role)}{' '}
         {mode === 'local' ? 'saved in this browser' : 'saved to your account'}
+        {' · '}
+        {megabytesLabel(used)} / {megabytesLabel(MAX_ACCOUNT_BYTES)} used
       </p>
     </div>
   );

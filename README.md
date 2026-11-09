@@ -453,5 +453,5 @@ src/
   the Intel UHD graphics this was built on — and runs at roughly 45–55 frames a second at the
   card's 1680 × 1140. A 60 fps clip therefore exports at a little over real time; a 24 or 30 fps one
   well under it.
-- A clip is accepted up to 120 s and 80 MB, and the card plays at most 30 s of it. The limit is the
+- An account keeps at most 50 MB of uploads in total, 10 backgrounds and 3 avatars. A clip is accepted up to 120 s, and the card plays at most 30 s of it. The limit is the
   format's, not the encoder's: these cards are meant to be posted.

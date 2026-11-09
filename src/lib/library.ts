@@ -31,6 +31,7 @@ import {
   deleteRecord,
   getRecord,
   listRecords,
+  maxImagesFor,
   putRecord,
   setBlobResolver,
   type ImageRole,
@@ -47,7 +48,15 @@ import {
 } from './remote/media';
 import { isSupabaseConfigured } from './supabase';
 
-export { ImageError, acceptAttrFor, maxImagesFor, releaseThumbnails } from './images';
+export {
+  ImageError,
+  MAX_ACCOUNT_BYTES,
+  acceptAttrFor,
+  maxImagesFor,
+  megabytesLabel,
+  releaseThumbnails,
+  usedBytes,
+} from './images';
 export type { ImageRole, MediaSummary } from './images';
 
 /**
@@ -73,6 +82,8 @@ export interface SyncReport {
   removed: number;
   /** Pre-account uploads adopted into this account. */
   claimed: number;
+  /** Oldest backgrounds deleted because the account was over the limit. */
+  trimmed: number;
 }
 
 /**
@@ -86,7 +97,7 @@ export interface SyncReport {
  * before showing a single tile.
  */
 export async function syncLibrary(userId: string): Promise<SyncReport> {
-  const report: SyncReport = { added: 0, uploaded: 0, removed: 0, claimed: 0 };
+  const report: SyncReport = { added: 0, uploaded: 0, removed: 0, claimed: 0, trimmed: 0 };
   if (!isSupabaseConfigured || !userId) return report;
 
   // Anything uploaded before this browser had an account joins it now, so it
@@ -139,7 +150,28 @@ export async function syncLibrary(userId: string): Promise<SyncReport> {
     }
   }
 
+  report.trimmed = await trimBackgrounds(userId);
   return report;
+}
+
+/**
+ * Accounts made when the background limit was 12 may hold more than today's
+ * limit. The oldest go — from the account and its storage, not just this
+ * browser — so every account ends up within it. A card whose background was
+ * one of them simply draws without it.
+ */
+export async function trimBackgrounds(userId: string): Promise<number> {
+  const records = await listRecords('artwork', userId); // newest first
+  let trimmed = 0;
+  for (const record of records.slice(maxImagesFor('artwork'))) {
+    try {
+      await deleteMedia(record.id);
+      trimmed += 1;
+    } catch (error) {
+      console.warn(`Could not remove ${record.name}:`, error);
+    }
+  }
+  return trimmed;
 }
 
 function stubFrom(item: RemoteMedia): MediaRecord {
