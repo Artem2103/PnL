@@ -7,7 +7,6 @@ import { ThemeMenu } from './ThemeMenu';
 import { SiteNav } from './SiteNav';
 import { createDefaultState } from '../lib/defaults';
 import { THEMES } from '../lib/themes';
-import { CARD } from '../lib/render';
 import {
   CARD_PAYMENTS,
   FREE_CARDS_PER_MONTH,
@@ -110,11 +109,11 @@ export function HomePage() {
         <section className="home__hero">
           <div className="home__hero-copy">
             <p className="pricing__eyebrow">PnL cards for traders</p>
-            <h2>Your results, worth posting.</h2>
+            <h2>Make your results look beautiful.</h2>
             <p className="home__lede">
-              Astra turns a trade or a month into a card people stop for — your numbers, your
-              colours, your face, over your own photo or clip. It is drawn in your browser at{' '}
-              {CARD.width}×{CARD.height}, exports as a PNG or an MP4, and takes about a minute.
+              Had a good trade or a great month? Turn it into a card you'll actually want to share.
+              Add your numbers, pick your colours, drop in a photo or a clip, and you're done in about
+              a minute.
             </p>
             <div className="home__cta">
               <button type="button" className="btn btn--primary home__cta-btn" onClick={start}>
@@ -160,7 +159,7 @@ export function HomePage() {
                 ))}
               </div>
               <span className="home__swatches-note">
-                Live — this is the card renderer itself, not a picture of one.
+                Tap a colour to try it on.
               </span>
             </div>
           </div>

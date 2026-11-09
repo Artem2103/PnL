@@ -45,11 +45,71 @@ file easier to read:
 | 2026-11-08 (c) | **code**: the Colour section works again on cards that had Style colours saved | see **Start here (2026-11-08 c)** |
 | 2026-11-08 (d) | **code**: adding a background no longer fails with "Failed to execute 'transaction' on 'IDBDatabase'" | see **Start here (2026-11-08 d)** |
 | 2026-11-09 | **code**: the card's domain is fixed to `astracards.app` and the wordmark is gone; both out of card state | see **Start here (2026-11-09)** |
+| 2026-11-10 | **code (SQL only)**: `admin.users`, one owner-only list of every account; where users live in Supabase. **Needs the SQL run** | see **Start here (2026-11-10)** |
+| 2026-11-10 (b) | **code**: friendlier hero text on the home page ("Make your results look beautiful.") | see **Start here (2026-11-10 b)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-11-10 b) — friendlier hero text on the home page
+
+**What Artem asked for:** the main home page text read as AI-written; make it friendly and loose,
+something like "Make your results beautiful".
+
+**Change** (`src/components/HomePage.tsx`, hero only):
+- Headline: "Your results, worth posting." → **"Make your results look beautiful."**
+- Paragraph: the old one about "a card people stop for", the pixel size and file formats →
+  "Had a good trade or a great month? Turn it into a card you'll actually want to share. Add your
+  numbers, pick your colours, drop in a photo or a clip, and you're done in about a minute."
+- Under the colour dots: "Live — this is the card renderer itself, not a picture of one." →
+  "Tap a colour to try it on."
+- The `CARD` import was only used by the old paragraph and is removed.
+
+Not touched: the "How it works" steps and the closing section. They are still the older,
+more technical wording if Artem wants those loosened too.
+
+**Verified.** Typecheck clean, 382/382 tests pass. Screenshots of desktop and a true 390px phone
+width: `Desktop\Astra-home-text\`. Not committed yet.
+
+---
+
+## Start here (2026-11-10) — where the users are in Supabase, and a new `admin.users` list
+
+**What Artem asked:** Storage shows `community` (feed pictures) and `media` (card uploads), but there
+is no table of users. As the owner he wants to see each user's name, email and the other details
+given at sign-up.
+
+**Why Storage has no users.** Storage only holds files. Users are in two other places, both already
+there before today:
+- **Authentication → Users** (left sidebar). This is Supabase's own list of every account: email,
+  sign-up time, last sign-in. It is the master list.
+- **Table Editor → schema `public` → `profiles`**: one row per account with `email` and
+  `display_name` (the name typed at sign-up), added 2026-09-14.
+
+Sign-up only asks for **email, password and name**. The password is never visible to anyone, by
+design, so name and email are all the details there are.
+
+**New: `admin.users`.** One row per account with everything in one place: `signed_up_at`, `email`,
+`name`, `email_confirmed`, `last_sign_in_at`, `community_handle`, `community_name`, `paid_until`,
+`plan_active`, and counts of `cards`, `uploads` and `posts`. It is appended at the end of
+`supabase/schema.sql`. Like `admin.uploads`, it lives in the `admin` schema, which the API doesn't
+expose, so no user can read other users' emails through the site.
+
+**What to do (Artem):**
+1. Supabase → **SQL Editor** → New query → paste the last block of `supabase/schema.sql` (from
+   `-- ============================================================== admin: users` to the end) →
+   **Run**. Running the whole file again is also fine.
+2. **Table Editor** → the schema dropdown at the top left (it says `public`) → switch to **`admin`**
+   → **`users`**.
+
+**Verified.** In real Postgres (PGlite): the schema applies twice; the view lists both test accounts,
+newest first, with the name taken from sign-up; `anon` and `authenticated` are both refused.
+**Not verified:** running it on the live project. Nothing here can reach the database.
+Not committed yet.
 
 ---
 
