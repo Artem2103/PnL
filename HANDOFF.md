@@ -50,11 +50,31 @@ file easier to read:
 | 2026-11-10 (c) | *no code* — clip limits for the free plan tried and reverted; "clips stay on the device" written down for later | see **Start here (2026-11-10 c)** |
 | 2026-11-10 (d) | **code**: **50 MB in total per account**, 10 backgrounds, 3 avatars; accounts over 10 lose their oldest backgrounds on next sign-in | see **Start here (2026-11-10 d)** |
 | 2026-11-10 (e) | **code**: leverage field gone, always 100x and never printed; new trade cards start as EURUSD 1 → 1 | see **Start here (2026-11-10 e)** |
+| 2026-11-10 (f) | **code**: logo mark, handle and footer always shown; only the stat rows can be hidden | see **Start here (2026-11-10 f)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-11-10 f) — logo mark, handle and footer can't be hidden
+
+**What Artem asked for:** users should not be able to hide the logo mark, the handle or the footer.
+Only the stats can be shown or hidden.
+
+**Change:**
+- The *Logo mark*, *Handle* and *Footer* switches are gone from the editor's style section
+  (`src/components/ControlPanel.tsx`). *Stat rows* stays.
+- `hydrateState` (`src/lib/defaults.ts`) turns all three back on for every saved card, so a card
+  saved with one hidden can't stay that way with no switch to undo it. They were already on by
+  default for new cards.
+- The `showLogo` / `showHandle` / `showFooter` fields stay in the card state. The renderer still
+  reads them, they are just always true now.
+
+**Verified.** Typecheck and full test run, plus a new test: a saved card with all four hidden
+opens with logo, handle and footer shown and stat rows still hidden, 385/385 pass. Not looked at in a browser. Pushed to `main` (`993f426`).
 
 ---
 
@@ -82,7 +102,7 @@ EURUSD with entry and exit at 1, not Bitcoin prices.
 **Verified.** Typecheck clean, 384/384 tests pass (new: EURUSD 1→1 default, +100% for a 1% move with
 no "×" in the title, an old 20x card opening at 100x). Trade tab checked in Chrome on a local dev
 server: no Leverage field, card reads "EURUSD  Long", +$0, +0.00%, 1.00 / 1.00. Screenshot:
-`Desktop\Astra-trade-no-leverage\trade-tab.jpg`. Not committed yet.
+`Desktop\Astra-trade-no-leverage\trade-tab.jpg`. Pushed to `main` (`5777a5a`).
 
 ---
 
