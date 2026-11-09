@@ -47,11 +47,85 @@ file easier to read:
 | 2026-11-09 | **code**: the card's domain is fixed to `astracards.app` and the wordmark is gone; both out of card state | see **Start here (2026-11-09)** |
 | 2026-11-10 | **code (SQL only)**: `admin.users`, one owner-only list of every account; where users live in Supabase. **Needs the SQL run** | see **Start here (2026-11-10)** |
 | 2026-11-10 (b) | **code**: friendlier hero text on the home page ("Make your results look beautiful.") | see **Start here (2026-11-10 b)** |
+| 2026-11-10 (c) | *no code* — clip limits for the free plan tried and reverted; "clips stay on the device" written down for later | see **Start here (2026-11-10 c)** |
+| 2026-11-10 (d) | **code**: **50 MB in total per account**, 10 backgrounds, 3 avatars; accounts over 10 lose their oldest backgrounds on next sign-in | see **Start here (2026-11-10 d)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-11-10 d) — 10 backgrounds, 3 avatars, oldest extras removed
+
+**What Artem asked for:** at most 10 uploads per account (photos and clips together), not counting
+profile pictures; at most 3 profile pictures; accounts that already have 12 lose their oldest 2;
+clips at most 50 MB.
+
+**Then, same day:** a **50 MB total per account** instead of counting clips.
+
+**Change:**
+- **50 MB per account, everything together** (backgrounds, avatars, logos): `MAX_ACCOUNT_BYTES` and
+  `usedBytes` in `src/lib/images.ts`, checked in `addLocalMedia` on the file's final size (photos
+  shrink a lot once re-encoded). Refusal: "This file is 25 MB but you have 18 MB of 50 MB left —
+  delete something first." So one clip can never exceed 50 MB either (`MAX_VIDEO_BYTES` is 50 MB
+  too). A clip's poster is not counted (a few dozen KB).
+- **Count limits on top:** backgrounds **12 → 10** however small, avatars **6 → 3**, logos stay at 6
+  (`ROLE_LIMITS`). Refusals read "You can keep 10 artwork files — delete one first."
+- **Counter** under each picker: "4/10 saved to your account · 32 MB / 50 MB used"
+  (`src/components/ImagePicker.tsx`). The used figure is the account's total, and it updates on that
+  picker's own uploads and deletes.
+- **Space maths:** worst case = users × 50 MB, so 20 accounts fill 1 GB completely, 30 would
+  need 1.5 GB if every one were full. Realistic use fits 30. Watch *Project Settings → Usage*.
+- **Accounts already over 50 MB are not trimmed.** They keep their files but can't upload until
+  they delete enough.
+- **Trimming:** `trimBackgrounds` in `src/lib/library.ts` runs at the end of `syncLibrary`, i.e.
+  each time a signed-in user opens the site. If the account has more than 10 backgrounds, the oldest
+  extras are deleted through `deleteMedia` (Storage file, poster and `media` row, then the local
+  copy). So the space is freed in Supabase too, but only once that user comes back. Accounts that
+  never return keep their 12 until they do. A card whose background was trimmed draws without one.
+- **Avatars over 3 are not deleted** (not asked). Those users keep them but can't add more until
+  they are under 3.
+
+**Verified.** Typecheck clean, 382/382 tests pass. In Chrome on a dev server with Supabase switched
+off (so no real account was touched): 12 backgrounds → trim removed 2, the 10 left were bg3–bg12
+(oldest two gone); 10 tiny photos were accepted and the 11th refused; avatars 1–3 were added and the
+4th refused; with 36 MB used a small clip was still accepted; with 50 MB used a clip and an avatar
+were both refused with the "you have … left" message. The editor shows "0/10 … · 0 MB / 50 MB used"
+and "0/3 … · 0 MB / 50 MB used". The test records were deleted.
+**Not verified:** any of this against a real account, including trimming. The Supabase delete
+path is the same `deleteMedia` the × button uses. The limits are checked in the browser only, not
+in the database. Pushed to `main` (`f65544e`).
+
+---
+
+## Start here (2026-11-10 c) — *no code* — clip limits for the free plan: tried, reverted
+
+**What happened:** Supabase is on the **free plan** (about 1 GB of files). A 3-clips-per-account
+limit and a 25 MB-per-clip cap were built and tested, then **reverted at Artem's request**: clips
+should be any reasonable size. The limits stay as they were: 12 backgrounds per account (photos and
+clips mixed), clips up to 120 s, which already stops something like a 3 GB movie.
+**Then changed:** the per-clip cap went from 80 MB to **50 MB** (`MAX_VIDEO_BYTES` in
+`src/lib/images.ts`, note in `README.md`). Artem checked his own downloaded clips and the largest
+was 36 MB. Typecheck clean, 382/382 tests pass. There is no limit on how many of the 12 backgrounds
+can be clips, so the worst case is 12 × 50 MB = 600 MB for one account.
+Plan: stay on free, watch **Project Settings → Usage**, and move to Pro ($25/month, ~100 GB) if
+there is demand.
+
+### For later: keep clips only on the user's device (option 2)
+
+Discussed 2026-11-10, **not built**. Artem may come back to it.
+- **Idea:** photos sync to the account as now, but clips are never uploaded to Supabase. They stay
+  in the browser's own storage (IndexedDB), which already keeps a local copy of every upload.
+- **Gain:** clip storage on Supabase goes to zero, so the free plan could hold hundreds of users.
+- **Cost:** a clip added on a laptop does not appear on the phone. Clearing browser data, or
+  Safari's automatic clean-up of sites not visited for weeks, loses the clip. Users should be told,
+  e.g. "Clips are kept on this device only".
+- **Where it would go:** `src/lib/library.ts` (skip `uploadMedia` for `kind === 'video'`) and the
+  sync in `syncLibrary`, so it doesn't treat a local-only clip as missing from the account.
+  A cheaper middle ground is Cloudflare R2 (10 GB free) for clips only, but that is a second
+  storage provider to set up.
 
 ---
 
