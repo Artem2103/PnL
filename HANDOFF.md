@@ -54,6 +54,7 @@ file easier to read:
 | 2026-11-10 (g) | *no code* — is the site fast? Measured on the live site: yes; the live address is **www.astracards.app** | see **Start here (2026-11-10 g)** |
 | 2026-11-10 (h) | **code**: the card handle always starts with "@"; it can't be deleted | see **Start here (2026-11-10 h)** |
 | 2026-11-18 | **code**: Bold text and Text shadows switches under White / Black text | see **Start here (2026-11-18)** |
+| 2026-11-18 (b) | **code**: black TradingView mark; the card's logo follows White / Black text | see **Start here (2026-11-18 b)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
@@ -61,6 +62,21 @@ the two picture slots** the third, and **Local mode** and **The scroll trap in t
 the fourth.
 
 ---
+
+## Start here (2026-11-18 b) — the logo mark goes black with black text
+
+**What Artem asked:** make a black copy of the white TradingView logo, the same size, and have the
+card's logo follow the text colour: White text gives the white logo, Black text the black one.
+
+**What changed:**
+- New `reference/tradingview-black.png` and `src/assets/tradingview-mark-black.png`. Both are 1582×799
+  like the white ones. Every pixel keeps its exact transparency, so the edges match and only the colour differs.
+- `src/lib/render.ts` loads the white or black mark from `display.textTone`. Each one is loaded once and kept.
+- The card preview and the journal studio preview reload assets when the tone changes. PNG and video
+  exports read the tone as they render.
+- It follows the White / Black choice only. A custom "Main text" colour (from the hidden Style
+  section) doesn't change the logo.
+- Typecheck and all 387 tests pass. I looked at the black image on its own; I haven't checked it on a card in a browser.
 
 ## Start here (2026-11-18) — bold text and text shadows
 

@@ -7,6 +7,7 @@ import { loadImageElement, loadMedia, peekImageElement, peekMedia } from './imag
 import { computeCard } from './pnl';
 import { loadScene, sceneById } from './canvas/scenes';
 import logoMarkUrl from '../assets/tradingview-mark.png';
+import logoMarkBlackUrl from '../assets/tradingview-mark-black.png';
 
 /** Browsers cap canvas dimensions; 8192 is the safe floor across engines. */
 const MAX_CANVAS_EDGE = 8192;
@@ -27,21 +28,23 @@ async function resolve(id: string | null): Promise<HTMLImageElement | null> {
 /**
  * The top-left logo mark is always the TradingView mark; it ships with the
  * app rather than coming from the image library. The card can hide it
- * (`display.showLogo`) but not swap it.
+ * (`display.showLogo`) but not swap it. It comes in white and black, the same
+ * size, and follows the White / Black text choice.
  */
-let logoMark: Promise<HTMLImageElement | null> | null = null;
+const logoMarkUrls = { light: logoMarkUrl, dark: logoMarkBlackUrl } as const;
+const logoMarks: Partial<Record<keyof typeof logoMarkUrls, Promise<HTMLImageElement | null>>> = {};
 
-function loadLogoMark(): Promise<HTMLImageElement | null> {
-  logoMark ??= new Promise((done) => {
+function loadLogoMark(tone: keyof typeof logoMarkUrls): Promise<HTMLImageElement | null> {
+  logoMarks[tone] ??= new Promise((done) => {
     const img = new Image();
     img.onload = () => done(img);
     img.onerror = () => {
-      logoMark = null;
+      delete logoMarks[tone];
       done(null);
     };
-    img.src = logoMarkUrl;
+    img.src = logoMarkUrls[tone];
   });
-  return logoMark;
+  return logoMarks[tone];
 }
 
 /** Instrument logos by URL, loaded once each. They ship with the app (`/logos`). */
@@ -94,7 +97,7 @@ export async function prepareAssets(state: CardState): Promise<RenderAssets> {
   const [artwork, avatar, logo, token] = await Promise.all([
     resolveBackground(state.artwork.imageId, state.artwork.sceneId),
     resolve(state.avatarId),
-    loadLogoMark(),
+    loadLogoMark(state.display.textTone === 'dark' ? 'dark' : 'light'),
     loadToken(wantsToken ? state.trade.logoUrl : null),
   ]);
   return { artwork, avatar, logo, token };

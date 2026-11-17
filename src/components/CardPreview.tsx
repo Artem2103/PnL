@@ -239,6 +239,8 @@ export function CardPreview({
     state.artwork.imageId,
     state.artwork.sceneId,
     state.avatarId,
+    // The logo mark is white or black with the text.
+    state.display.textTone,
     // The instrument logo is an asset too, loaded only while the card shows it.
     state.mode,
     state.display.showTokenImage,

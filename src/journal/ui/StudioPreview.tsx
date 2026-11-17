@@ -97,7 +97,7 @@ export const StudioPreview = forwardRef<
     return () => {
       cancelled = true;
     };
-  }, [state.avatarId, state.mode, state.display.showTokenImage, state.trade.logoUrl]);
+  }, [state.avatarId, state.display.textTone, state.mode, state.display.showTokenImage, state.trade.logoUrl]);
 
   // Decode every clip on the timeline once; the library keeps them.
   const clipIds = studio.clips.map((c) => c.mediaId).join('|');
