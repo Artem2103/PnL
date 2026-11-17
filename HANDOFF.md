@@ -53,6 +53,7 @@ file easier to read:
 | 2026-11-10 (f) | **code**: logo mark, handle and footer always shown; only the stat rows can be hidden | see **Start here (2026-11-10 f)** |
 | 2026-11-10 (g) | *no code* — is the site fast? Measured on the live site: yes; the live address is **www.astracards.app** | see **Start here (2026-11-10 g)** |
 | 2026-11-10 (h) | **code**: the card handle always starts with "@"; it can't be deleted | see **Start here (2026-11-10 h)** |
+| 2026-11-18 | **code**: Bold text and Text shadows switches under White / Black text | see **Start here (2026-11-18)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
@@ -60,6 +61,20 @@ the two picture slots** the third, and **Local mode** and **The scroll trap in t
 the fourth.
 
 ---
+
+## Start here (2026-11-18) — bold text and text shadows
+
+**What Artem asked:** be able to make the text bold and give it a shadow, like Axiom, as switches under the text colour choice.
+
+**What changed** (`src/components/ControlPanel.tsx`, Colour section):
+- Two switches, **Bold text** and **Text shadows**, right under the White / Black text choice.
+- No drawing code changed. The card already had `boldText` (every weight +200, capped at 800) and
+  `textShadow` (a soft black shadow, blur 10, 2 px down) in `draw.ts`. They had no control in the
+  editor since the Style section was hidden (2026-11-07 d).
+- The two switches were taken out of the (hidden) Style section so they don't show up twice.
+- The journal's Customize dialog uses the same panel, so its "More settings" gets them too. Its own
+  "Use bold font weight" / "Use text shadows" switches are unchanged.
+- Typecheck and all 387 tests pass. Not checked in a browser.
 
 ## Start here (2026-11-10 h) — the handle's "@" can't be removed
 

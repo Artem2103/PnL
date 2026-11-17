@@ -355,6 +355,14 @@ export function ControlPanel({
             ]}
           />
         </Field>
+        <div className="toggles">
+          <Toggle label="Bold text" checked={display.boldText} onChange={(boldText) => patchDisplay({ boldText })} />
+          <Toggle
+            label="Text shadows"
+            checked={display.textShadow}
+            onChange={(textShadow) => patchDisplay({ textShadow })}
+          />
+        </div>
         <p className="muted-note">
           Black text turns the whole card over: the plain background goes light and the scrim over a
           photo lightens instead of darkening, so the words stay readable either way.
@@ -362,7 +370,7 @@ export function ControlPanel({
       </Section>
 
       {hideStyle ? null : (
-      <Section title="Style" hint="Text and PnL colours, weight, shadow, the block.">
+      <Section title="Style" hint="Text and PnL colours, the block.">
         <OverrideColour
           label="Main text"
           value={display.textColor}
@@ -388,12 +396,6 @@ export function ControlPanel({
           onChange={(blockTextColor) => patchDisplay({ blockTextColor })}
         />
         <div className="toggles">
-          <Toggle label="Bold text" checked={display.boldText} onChange={(boldText) => patchDisplay({ boldText })} />
-          <Toggle
-            label="Text shadows"
-            checked={display.textShadow}
-            onChange={(textShadow) => patchDisplay({ textShadow })}
-          />
           <Toggle
             label="Coloured PnL block"
             checked={display.showBlock}
