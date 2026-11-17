@@ -87,12 +87,17 @@ export const SPEC = {
    * optical centre (y37–91, centre 64) away from the wordmark's (~55) and left
    * the header looking untidy; at the reference size the centre is 54 and the
    * two line up again the way they do on the reference cards.
+   *
+   * 2026-11-18: 1.5× bigger on request (the wordmark it lined up with is
+   * gone). 49 × 41 → 73.5 × 61.5, left edge still x35, and the slot's centre
+   * kept at y54.5, so y34 → 23.75. The TradingView mark is wide (1582 × 799),
+   * so it fills the width: about 73.5 × 37 of ink.
    */
   logo: {
     x: 35,
-    y: 34,
-    maxWidth: 49,
-    maxHeight: 41,
+    y: 23.75,
+    maxWidth: 73.5,
+    maxHeight: 61.5,
   },
 
   title: {

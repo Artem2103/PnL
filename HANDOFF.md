@@ -55,6 +55,7 @@ file easier to read:
 | 2026-11-10 (h) | **code**: the card handle always starts with "@"; it can't be deleted | see **Start here (2026-11-10 h)** |
 | 2026-11-18 | **code**: Bold text and Text shadows switches under White / Black text | see **Start here (2026-11-18)** |
 | 2026-11-18 (b) | **code**: black TradingView mark; the card's logo follows White / Black text | see **Start here (2026-11-18 b)** |
+| 2026-11-18 (c) | **code**: the logo mark 1.5× bigger | see **Start here (2026-11-18 c)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
@@ -62,6 +63,16 @@ the two picture slots** the third, and **Local mode** and **The scroll trap in t
 the fourth.
 
 ---
+
+## Start here (2026-11-18 c) — the logo mark 1.5× bigger
+
+**What Artem asked:** make the logo about 1.5× bigger.
+
+**What changed** (`SPEC.logo` in `src/lib/canvas/spec.ts`): the slot went from 49 × 41 to 73.5 × 61.5.
+The left edge stays at x35, under the title's left edge. The vertical centre stays at y54.5, so the top moved from y34 to y23.75.
+The mark fills the slot's width, so on the card it's now about 73.5 × 37 instead of 49 × 25. That
+leaves plenty of room above the title, whose capitals start at y128.
+- Typecheck and 387 tests pass. Not checked in a browser.
 
 ## Start here (2026-11-18 b) — the logo mark goes black with black text
 
