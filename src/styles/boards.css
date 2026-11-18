@@ -47,6 +47,89 @@ body:has(.bd)::before {
   cursor: crosshair;
 }
 
+/* Pasted images: local only, on top of the screenshots and under the ink. */
+.bd-paste {
+  position: absolute;
+  cursor: move;
+}
+
+.bd-canvas.is-drawing .bd-paste,
+.bd-canvas.is-grab .bd-paste {
+  cursor: inherit;
+}
+
+.bd-paste img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 12px 30px -14px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+/* The outline and handles keep their screen size at any zoom (--bd-z). */
+.bd-paste.is-selected::after {
+  content: '';
+  position: absolute;
+  inset: calc(-2px / var(--bd-z, 1));
+  border: calc(2px / var(--bd-z, 1)) solid #2962ff;
+  border-radius: calc(7px / var(--bd-z, 1));
+  pointer-events: none;
+}
+
+.bd-paste__del,
+.bd-paste__resize {
+  position: absolute;
+  z-index: 1;
+  transform: scale(calc(1 / var(--bd-z, 1)));
+}
+
+.bd-paste__del {
+  top: 0;
+  right: 0;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #2962ff;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  transform: scale(calc(1 / var(--bd-z, 1))) translate(40%, -40%);
+  transform-origin: 100% 0;
+  cursor: pointer;
+}
+
+.bd-paste__del svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.bd-paste__del:hover {
+  background: #f23645;
+}
+
+.bd-paste__resize {
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #2962ff;
+  border-radius: 3px;
+  background: #ffffff;
+  transform: scale(calc(1 / var(--bd-z, 1))) translate(50%, 50%);
+  transform-origin: 100% 100%;
+  cursor: nwse-resize;
+}
+
 /* Drawings: board coordinates, above the screenshots, never in the way of a press. */
 .bd-ink {
   position: absolute;

@@ -62,11 +62,48 @@ file easier to read:
 | 2026-11-19 (b) | **code**: canvas dots removed; drawing on Boards (brush, colours, 1–4 px, remove all, Ctrl+Z), kept per browser | see **Start here (2026-11-19 b)** |
 | 2026-11-19 (c) | **code**: drawn lines are lightly smoothed (stabiliser) so they don't look shaky | see **Start here (2026-11-19 c)** |
 | 2026-11-19 (d) | **code**: the mouse wheel zooms Boards in/out at the cursor | see **Start here (2026-11-19 d)** |
+| 2026-11-19 (e) | **code**: paste images onto Boards with Ctrl/⌘+V — local only (IndexedDB), move, resize, delete | see **Start here (2026-11-19 e)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-11-19 e) — paste images (local only)
+
+**What Artem asked:** let a user paste an image onto the board. Local only: paste, not upload.
+
+**How it works:**
+- **Paste:** **Ctrl/⌘+V** with an image on the clipboard (a screenshot, "Copy image" from a browser) puts it on the board under the cursor, or in the middle of the view if the cursor isn't over the canvas.
+  - It lands at its own pixel size, or 520 px on the long side if that is smaller, at the current zoom.
+  - It arrives selected, and the brush turns off.
+  - Pastes are ignored while typing in a field.
+- **With the brush off:**
+  - Click an image to select it (blue outline).
+  - Drag it to move it.
+  - Drag the corner square to resize it (proportions kept).
+  - × or **Delete/Backspace** removes it.
+  - **Esc** or a click on empty space deselects it.
+- **With the brush on:** you draw over images. Ink is always above pasted images, and pasted images are above the screenshots.
+- The outline and handles stay the same size on screen at any zoom (`--bd-z`, the same trick as the ink).
+
+**Storage — never uploaded:**
+- Images are stored in this browser's **IndexedDB** (database `astra-board-pastes`, store `pastes`): the original file as a Blob, plus x/y/w/h in board coordinates. localStorage would be too small for images.
+- This reuses `src/lib/idb.ts`, so the 2026-11-08 (d) "connection is closing" fix applies here too.
+- Nothing touches Supabase.
+- The trash button still removes **drawings only**. Images are removed one at a time.
+
+**Files:** `pastes.ts` (storage, placement, resize maths), `pastes.test.ts`, `BoardCanvas.tsx` (paste/keyboard handlers, pointer handling, rendering), `boards.css` (`.bd-paste*`).
+
+**Verified:** typecheck clean, tests pass. In headless Chrome:
+- A synthetic clipboard paste of an 800×500 PNG landed at 520×325 under the cursor.
+- Dragging moved it, and the corner resized it to 370×231 with proportions kept.
+- It survived a reload at the same place and size.
+- Delete removed it, and it stayed gone after another reload.
+
+Screenshots: `Desktop\Boards\paste-*.png`. Not committed.
 
 ---
 

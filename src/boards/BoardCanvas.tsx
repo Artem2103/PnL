@@ -2,6 +2,20 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { DrawTools } from './DrawTools';
 import { loadStrokes, loadTool, saveStrokes, saveTool, strokeId, strokePath, type InkTool, type Stroke } from './drawing';
 import {
+  deletePaste,
+  imageFromClipboard,
+  imageSize,
+  loadPastes,
+  pasteId,
+  placePaste,
+  resizePaste,
+  savePaste,
+  type ShownPaste,
+} from './pastes';
+
+const isTyping = (target: EventTarget | null) =>
+  target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+import {
   COLUMN_WIDTH,
   HEADER_HEIGHT,
   PADDING,
@@ -94,6 +108,94 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [strokes.length]);
+
+  // ---- Pasted images (local only; see pastes.ts) ----
+  const [pastes, setPastes] = useState<ShownPaste[]>([]);
+  const [selected, setSelected] = useState<string | null>(null);
+  const pastesRef = useRef(pastes);
+  pastesRef.current = pastes;
+  /** Where the cursor last was over the canvas, so a paste lands under it. */
+  const hover = useRef<{ x: number; y: number } | null>(null);
+  /** A pasted image being moved or resized. */
+  const handle = useRef<{
+    pointerId: number;
+    kind: 'move' | 'resize';
+    id: string;
+    startX: number;
+    startY: number;
+    x0: number;
+    y0: number;
+    w0: number;
+    h0: number;
+    moved: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadPastes().then((stored) => {
+      if (cancelled) return;
+      setPastes((now) => [...stored.map((p) => ({ ...p, url: URL.createObjectURL(p.blob) })), ...now]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Object URLs are freed when the board goes away.
+  useEffect(() => () => pastesRef.current.forEach((p) => URL.revokeObjectURL(p.url)), []);
+
+  const removePaste = useCallback((id: string) => {
+    setPastes((all) => {
+      const gone = all.find((p) => p.id === id);
+      if (gone) URL.revokeObjectURL(gone.url);
+      return all.filter((p) => p.id !== id);
+    });
+    setSelected((s) => (s === id ? null : s));
+    void deletePaste(id).catch(() => {});
+  }, []);
+
+  // Ctrl/⌘+V with an image on the clipboard puts it on the board.
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      if (isTyping(event.target)) return;
+      const file = imageFromClipboard(event.clipboardData);
+      const viewport = viewportRef.current;
+      if (!file || !viewport) return;
+      event.preventDefault();
+      const rect = viewport.getBoundingClientRect();
+      const at = hover.current ?? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      const v = view.current;
+      const world = { x: (at.x - rect.left - v.x) / v.z, y: (at.y - rect.top - v.y) / v.z };
+      const url = URL.createObjectURL(file);
+      void imageSize(url)
+        .then(({ w, h }) => {
+          const paste: ShownPaste = { id: pasteId(), ...placePaste(w, h, world, v.z), blob: file, url };
+          setPastes((all) => [...all, paste]);
+          setSelected(paste.id);
+          setDrawing(false);
+          void savePaste(paste).catch(() => {});
+        })
+        .catch(() => URL.revokeObjectURL(url));
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, []);
+
+  // Delete/Backspace removes the selected image; Esc lets go of it.
+  useEffect(() => {
+    if (!selected) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (isTyping(event.target)) return;
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault();
+        removePaste(selected);
+      } else if (event.key === 'Escape') {
+        setSelected(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selected, removePaste]);
 
   const clamp = useCallback(
     (v: View) => clampView(v, size.current.w, size.current.h, layoutRef.current.width, layoutRef.current.height),
@@ -281,11 +383,37 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0 && event.button !== 1) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest('[data-paste-del]') && event.button === 0) {
+      const id = target.closest<HTMLElement>('[data-paste]')?.dataset.paste;
+      if (id) removePaste(id);
+      return;
+    }
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     stopMotion();
     if (pointers.current.size === 1) {
+      // With the brush off, a pasted image can be picked up (or resized by its corner).
+      const pasteEl = !drawing && !spaceHeld && event.button === 0 ? target?.closest<HTMLElement>('[data-paste]') : null;
+      const paste = pasteEl ? pastesRef.current.find((p) => p.id === pasteEl.dataset.paste) : undefined;
+      if (paste) {
+        setSelected(paste.id);
+        handle.current = {
+          pointerId: event.pointerId,
+          kind: target?.closest('[data-paste-resize]') ? 'resize' : 'move',
+          id: paste.id,
+          startX: event.clientX,
+          startY: event.clientY,
+          x0: paste.x,
+          y0: paste.y,
+          w0: paste.w,
+          h0: paste.h,
+          moved: false,
+        };
+        gesture.current = null;
+        return;
+      }
       if (drawing && !spaceHeld && event.button === 0) {
         const [x, y] = toWorld(event.clientX, event.clientY);
         ink.current = {
@@ -303,17 +431,40 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
       }
       gesture.current = { startX: event.clientX, startY: event.clientY, moved: false, vx: 0, vy: 0, t: event.timeStamp, pinch: null };
     } else {
-      // A second finger turns a stroke that just began into a pinch.
+      // A second finger turns a stroke (or an image move) that just began into a pinch.
       if (ink.current) cancelInk();
+      if (handle.current) finishHandle();
       gesture.current ??= { startX: event.clientX, startY: event.clientY, moved: true, vx: 0, vy: 0, t: event.timeStamp, pinch: null };
       gesture.current.moved = true;
       gesture.current.pinch = pinchOf();
     }
   };
 
+  /** Lets go of a moved/resized image and stores where it ended up. */
+  const finishHandle = () => {
+    const h = handle.current;
+    handle.current = null;
+    if (!h?.moved) return;
+    const paste = pastesRef.current.find((p) => p.id === h.id);
+    if (paste) void savePaste(paste).catch(() => {});
+  };
+
   const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    hover.current = { x: event.clientX, y: event.clientY };
     const prev = pointers.current.get(event.pointerId);
     if (!prev) return;
+    const h = handle.current;
+    if (h && h.pointerId === event.pointerId) {
+      pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      const sx = event.clientX - h.startX;
+      const sy = event.clientY - h.startY;
+      if (!h.moved && Math.hypot(sx, sy) <= TAP_SLOP) return;
+      h.moved = true;
+      const z = view.current.z;
+      const next = h.kind === 'move' ? { x: h.x0 + sx / z, y: h.y0 + sy / z } : resizePaste(h.w0, h.h0, sx / z, sy / z);
+      setPastes((all) => all.map((p) => (p.id === h.id ? { ...p, ...next } : p)));
+      return;
+    }
     const stroke = ink.current;
     if (stroke && stroke.pointerId === event.pointerId) {
       pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -364,6 +515,10 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
 
   const onPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!pointers.current.delete(event.pointerId)) return;
+    if (handle.current?.pointerId === event.pointerId) {
+      finishHandle();
+      return;
+    }
     const stroke = ink.current;
     if (stroke && stroke.pointerId === event.pointerId) {
       cancelInk();
@@ -390,6 +545,8 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
       return;
     }
 
+    // A click on empty space (or a screenshot) lets go of a selected image.
+    setSelected(null);
     const index = indexAt(event.clientX, event.clientY);
     const last = lastTap.current;
     if (
@@ -415,10 +572,31 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onPointerLeave={() => {
+          hover.current = null;
+        }}
         onContextMenu={(event) => event.preventDefault()}
       >
         <div ref={worldRef} className="bd-world" style={{ width: layout.width, height: layout.height }}>
           <Positions items={layout.items} sharp={sharp} />
+          {pastes.map((p) => (
+            <div
+              key={p.id}
+              className={`bd-paste${selected === p.id ? ' is-selected' : ''}`}
+              data-paste={p.id}
+              style={{ left: p.x, top: p.y, width: p.w, height: p.h }}
+            >
+              <img src={p.url} alt="Pasted image" draggable={false} />
+              {selected === p.id ? (
+                <>
+                  <button type="button" className="bd-paste__del" data-paste-del aria-label="Remove image" title="Remove image (Delete)">
+                    <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6" /></svg>
+                  </button>
+                  <span className="bd-paste__resize" data-paste-resize aria-hidden="true" />
+                </>
+              ) : null}
+            </div>
+          ))}
           <svg className="bd-ink" width={layout.width} height={layout.height} aria-hidden="true">
             <Strokes strokes={strokes} />
             <path ref={livePathRef} stroke={tool.color} style={{ strokeWidth: `calc(${tool.width}px / var(--bd-z, 1))` }} />
