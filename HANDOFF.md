@@ -97,6 +97,12 @@ the fourth.
 SQL Artem had run was an older copy of `schema.sql`, from before the Boards section was added. I gave him
 `Desktop\Boardsoards-setup.sql`: the Boards section on its own, plus his admin insert, safe to re-run.
 
+**Resolved:** a stale VS Code buffer had saved the pre-Boards `schema.sql` over the file. It was restored from git
+(1218 lines). Artem then ran the Boards SQL in project `zwrpcaoestatmshuconp`, and Manage now shows. Checked with the anon key:
+categories A–J exist, there are no positions yet, and `is_board_admin()` answers. Because there are no positions, the canvas still shows
+the demo board. **After the first upload, the canvas shows only the database**, so the GER40/NAS100 demo
+positions disappear until they are uploaded through Manage (with their links).
+
 **Verified:** typecheck clean; 397/397 tests. Headless Chrome screenshots in `Desktop\Boards\`:
 - `09`: the viewer, glass, with the Telegram button.
 - `08`: Boards in light.
