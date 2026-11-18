@@ -30,19 +30,235 @@ body:has(.bd)::before {
 /* ------------------------------------------------------------- canvas */
 
 .bd-canvas {
-  --bd-dot: color-mix(in srgb, var(--text) 13%, transparent);
   position: absolute;
   inset: 0;
   overflow: hidden;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
-  background-image: radial-gradient(circle, var(--bd-dot) 1px, transparent 1.3px);
   outline: none;
 }
 
 .bd-canvas.is-grab {
   cursor: grab;
+}
+
+.bd-canvas.is-drawing {
+  cursor: crosshair;
+}
+
+/* Drawings: board coordinates, above the screenshots, never in the way of a press. */
+.bd-ink {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.bd-ink path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ------------------------------------------------------- drawing tools */
+
+.bd-draw {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--glass-strong);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.bd-draw__item {
+  position: relative;
+}
+
+.bd-draw__btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.bd-draw__btn svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.bd-draw__btn:hover:not(:disabled),
+.bd-draw__btn.is-open {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+.bd-draw__btn.is-active {
+  background: #2962ff;
+  color: #ffffff;
+}
+
+.bd-draw__btn:disabled {
+  opacity: 0.35;
+}
+
+.bd-draw__swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 22%, transparent);
+}
+
+.bd-draw__btn .bd-draw__line {
+  width: 18px;
+  margin-top: -6px;
+}
+
+.bd-draw__line {
+  display: block;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.bd-draw__px {
+  position: absolute;
+  bottom: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.bd-draw__sep {
+  width: 22px;
+  height: 1px;
+  margin: 3px 0;
+  background: color-mix(in srgb, var(--text) 14%, transparent);
+}
+
+.bd-draw__clear.is-armed {
+  background: #f23645;
+  color: #ffffff;
+}
+
+.bd-draw__confirm {
+  position: absolute;
+  left: calc(100% + 10px);
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: #f23645;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.bd-draw__menu {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--glass-strong);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.bd-draw__menu--colors {
+  grid-template-columns: repeat(3, 24px);
+}
+
+.bd-draw__color,
+.bd-draw__custom {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 22%, transparent);
+  cursor: pointer;
+}
+
+.bd-draw__color.is-active {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.bd-draw__custom {
+  display: grid;
+  place-items: center;
+  background: conic-gradient(#f23645, #f7c600, #089981, #2962ff, #9c27b0, #f23645);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.6);
+}
+
+.bd-draw__custom input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.bd-draw__menu--widths {
+  gap: 2px;
+  padding: 4px;
+}
+
+.bd-draw__width {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 92px;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bd-draw__width .bd-draw__line {
+  flex: 1;
+}
+
+.bd-draw__width:hover,
+.bd-draw__width.is-active {
+  background: var(--bg-soft);
 }
 
 .bd-canvas.is-dragging {

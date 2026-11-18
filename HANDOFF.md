@@ -58,11 +58,64 @@ file easier to read:
 | 2026-11-18 (c) | **code**: logo mark tried 1.5× bigger, then put back to the original size | see **Start here (2026-11-18 c)** |
 | 2026-11-18 (d) | **code**: **Boards** at `/boards`: a canvas of trading positions (columns A–J), viewer with 5M/15M/1H, admin uploads. **Needs the SQL run** | see **Start here (2026-11-18 d)** |
 | 2026-11-18 (e) | **code**: **Light is the default theme** and is plain white; Boards has a solid background in every theme; glass viewer; about link removed | see **Start here (2026-11-18 e)** |
+| 2026-11-19 | *no code* — SQL to make `ruslanpowjwjwha@gmail.com` a Boards admin; **Artem runs it** | see **Start here (2026-11-19)** |
+| 2026-11-19 (b) | **code**: canvas dots removed; drawing on Boards (brush, colours, 1–4 px, remove all, Ctrl+Z), kept per browser | see **Start here (2026-11-19 b)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-11-19 b) — no dots; drawing on the board
+
+**What Artem asked:** remove the dots on the canvas. Add drawing like TradingView: a brush icon,
+a colour picker, sizes 1/2/3/4 px, and a button that removes ALL drawings.
+
+**What changed:**
+- **Dots gone:** the dot-grid background on `.bd-canvas` and the code that sized it on every pan/zoom (`DOT`) are removed. The canvas is now the theme's plain colour.
+- **Drawing toolbar** (`DrawTools.tsx`), a glass bar on the left edge, centred vertically:
+  - **Brush:** turns drawing on/off. Blue when on; the cursor becomes a crosshair.
+  - **Colour:** opens 8 swatches (red, orange, yellow, green, blue, purple, near-black, white) plus "+" for any custom colour.
+  - **Width:** 1px / 2px / 3px / 4px. The button shows the current width.
+  - **Trash:** removes all drawings. It takes two clicks: the first shows a red "Remove all?", which goes away after 3 s. This matches the other deletes on the site.
+  - Picking a colour or width turns the brush on.
+- **How drawing behaves** (`BoardCanvas.tsx`):
+  - With the brush on, a left-button or one-finger drag draws instead of panning; a single click leaves a dot.
+  - You can still pan with Space+drag, the middle mouse button, or the wheel, and zoom with Ctrl+wheel or pinch. A second finger turns a stroke that has just started into a pinch.
+  - Double-click to open a position is off while the brush is on.
+  - **Ctrl/⌘+Z** undoes the last stroke.
+- **Strokes are attached to the board:** they are stored in board coordinates, so they move and zoom with the screenshots. Their width stays at 1–4 **screen** px at every zoom, as in TradingView. This works through a `--bd-z` CSS variable on the world layer, and each stroke uses `stroke-width: calc(Npx / var(--bd-z))`.
+- **Drawings are per browser, not shared.** They are kept in `localStorage` (`astra.boards.drawings.v1`; the chosen colour and width in `astra.boards.ink.v1`). Nothing goes to Supabase, so other viewers never see them. Shared admin drawings would need a table; say if you want that.
+- Model and validation are in `drawing.ts`, tested in `drawing.test.ts`.
+
+**Verified:** typecheck clean; tests pass (403 + 6 new). Headless Chrome screenshots are in `Desktop\Boards\draw-*.png`:
+- Drew 3 strokes (blue 2px, red 4px, green 1px) and zoomed out to 64%: the strokes stay on the same candles and keep their screen width.
+- Reload: all 3 strokes are still there.
+- Remove all: 0 strokes, and the storage key is gone.
+
+Not committed.
+
+---
+
+## Start here (2026-11-19) — second Boards admin
+
+**What Artem asked:** add `ruslanpowjwjwha@gmail.com` to the admins.
+
+**What I did:** nothing in code. Admins are rows in `board_admins`, and the only key on this machine is
+the public one, which the table refuses. I wrote the SQL to `Desktop\Boards\add-admin-ruslan.sql`.
+Run it in the SQL editor of project `zwrpcaoestatmshuconp`:
+
+```sql
+insert into public.board_admins (user_id)
+select id from auth.users where lower(email) = lower('ruslanpowjwjwha@gmail.com')
+on conflict do nothing;
+```
+
+- The account has to exist first: Ruslan must have signed up on the site at least once. If not, the insert adds 0 rows and nothing fails.
+- The file also contains a check query, which should return one row.
+- After the insert, Ruslan signs out and back in (or reloads `/boards`), and the **Manage** button appears.
 
 ---
 

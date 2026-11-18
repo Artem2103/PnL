@@ -1,4 +1,6 @@
-import { memo, useCallback, useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { DrawTools } from './DrawTools';
+import { loadStrokes, loadTool, saveStrokes, saveTool, strokeId, strokePath, type InkTool, type Stroke } from './drawing';
 import {
   COLUMN_WIDTH,
   HEADER_HEIGHT,
@@ -21,6 +23,9 @@ import {
  *
  * The view lives in a ref and is written straight to the DOM. Panning re-renders
  * nothing in React; only the transform changes.
+ *
+ * With the brush on, a one-finger / left-button drag draws instead of panning.
+ * Panning still works with Space+drag, the middle button, the wheel and pinch.
  */
 
 interface Props {
@@ -40,7 +45,8 @@ const DOUBLE_TAP_MS = 380;
 const GLIDE_TAU = 70;
 /** A flick coasts for about this long. */
 const COAST_TAU = 260;
-const DOT = 26;
+/** Points closer than this on screen are skipped while drawing. */
+const INK_STEP = 1.5;
 
 export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -59,6 +65,29 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
   const onSharpRef = useRef(onSharpChange);
   onSharpRef.current = onSharpChange;
 
+  const [drawing, setDrawing] = useState(false);
+  const [tool, setTool] = useState<InkTool>(loadTool);
+  const [strokes, setStrokes] = useState<Stroke[]>(loadStrokes);
+  const livePathRef = useRef<SVGPathElement>(null);
+  const ink = useRef<{ pointerId: number; points: number[]; lastX: number; lastY: number } | null>(null);
+
+  useEffect(() => saveStrokes(strokes), [strokes]);
+  useEffect(() => saveTool(tool), [tool]);
+
+  // Ctrl/⌘+Z takes back the last stroke.
+  useEffect(() => {
+    if (strokes.length === 0) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.key.toLowerCase() !== 'z') return;
+      const t = event.target;
+      if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      event.preventDefault();
+      setStrokes((all) => all.slice(0, -1));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [strokes.length]);
+
   const clamp = useCallback(
     (v: View) => clampView(v, size.current.w, size.current.h, layoutRef.current.width, layoutRef.current.height),
     [],
@@ -70,9 +99,8 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
     const viewport = viewportRef.current;
     if (!world || !viewport) return;
     world.style.transform = `translate3d(${v.x}px, ${v.y}px, 0) scale(${v.z})`;
-    const dot = DOT * v.z * (v.z < 0.55 ? 2 : 1);
-    viewport.style.backgroundSize = `${dot}px ${dot}px`;
-    viewport.style.backgroundPosition = `${v.x}px ${v.y}px`;
+    // Stroke widths divide by this, so ink stays 1–4 screen px at every zoom.
+    world.style.setProperty('--bd-z', String(v.z));
 
     // Column letters follow the columns sideways and stick to the top.
     const labels = labelsRef.current;
@@ -230,6 +258,18 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
     return { d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
   };
 
+  /** Screen point → board point. */
+  const toWorld = (clientX: number, clientY: number) => {
+    const rect = viewportRef.current!.getBoundingClientRect();
+    const v = view.current;
+    return [(clientX - rect.left - v.x) / v.z, (clientY - rect.top - v.y) / v.z] as const;
+  };
+
+  const cancelInk = () => {
+    ink.current = null;
+    livePathRef.current?.setAttribute('d', '');
+  };
+
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0 && event.button !== 1) return;
     event.preventDefault();
@@ -237,8 +277,18 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
     pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     stopMotion();
     if (pointers.current.size === 1) {
+      if (drawing && !spaceHeld && event.button === 0) {
+        const [x, y] = toWorld(event.clientX, event.clientY);
+        ink.current = { pointerId: event.pointerId, points: [x, y], lastX: event.clientX, lastY: event.clientY };
+        livePathRef.current?.setAttribute('d', strokePath([x, y]));
+        gesture.current = null;
+        return;
+      }
       gesture.current = { startX: event.clientX, startY: event.clientY, moved: false, vx: 0, vy: 0, t: event.timeStamp, pinch: null };
-    } else if (gesture.current) {
+    } else {
+      // A second finger turns a stroke that just began into a pinch.
+      if (ink.current) cancelInk();
+      gesture.current ??= { startX: event.clientX, startY: event.clientY, moved: true, vx: 0, vy: 0, t: event.timeStamp, pinch: null };
       gesture.current.moved = true;
       gesture.current.pinch = pinchOf();
     }
@@ -246,8 +296,24 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
 
   const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const prev = pointers.current.get(event.pointerId);
+    if (!prev) return;
+    const stroke = ink.current;
+    if (stroke && stroke.pointerId === event.pointerId) {
+      pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      // Coalesced events keep fast strokes smooth where the browser offers them.
+      const samples = event.nativeEvent.getCoalescedEvents?.() ?? [];
+      for (const e of samples.length ? samples : [event.nativeEvent]) {
+        if (Math.hypot(e.clientX - stroke.lastX, e.clientY - stroke.lastY) < INK_STEP) continue;
+        const [x, y] = toWorld(e.clientX, e.clientY);
+        stroke.points.push(x, y);
+        stroke.lastX = e.clientX;
+        stroke.lastY = e.clientY;
+      }
+      livePathRef.current?.setAttribute('d', strokePath(stroke.points));
+      return;
+    }
     const g = gesture.current;
-    if (!prev || !g) return;
+    if (!g) return;
     pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
     if (pointers.current.size >= 2) {
@@ -277,6 +343,14 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
 
   const onPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!pointers.current.delete(event.pointerId)) return;
+    const stroke = ink.current;
+    if (stroke && stroke.pointerId === event.pointerId) {
+      cancelInk();
+      if (event.type !== 'pointercancel') {
+        setStrokes((all) => [...all, { id: strokeId(), color: tool.color, width: tool.width, points: stroke.points }]);
+      }
+      return;
+    }
     const g = gesture.current;
     if (pointers.current.size > 0) {
       if (g) g.pinch = pinchOf();
@@ -315,7 +389,7 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
     <div className="bd-stage">
       <div
         ref={viewportRef}
-        className={`bd-canvas${spaceHeld ? ' is-grab' : ''}`}
+        className={`bd-canvas${spaceHeld ? ' is-grab' : drawing ? ' is-drawing' : ''}`}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -324,6 +398,10 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
       >
         <div ref={worldRef} className="bd-world" style={{ width: layout.width, height: layout.height }}>
           <Positions items={layout.items} sharp={sharp} />
+          <svg className="bd-ink" width={layout.width} height={layout.height} aria-hidden="true">
+            <Strokes strokes={strokes} />
+            <path ref={livePathRef} stroke={tool.color} style={{ strokeWidth: `calc(${tool.width}px / var(--bd-z, 1))` }} />
+          </svg>
         </div>
         <div ref={labelsRef} className="bd-labels" aria-hidden="true">
           {layout.columns.map((column) => (
@@ -333,6 +411,17 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
           ))}
         </div>
       </div>
+      <DrawTools
+        active={drawing}
+        onActive={setDrawing}
+        tool={tool}
+        onTool={setTool}
+        hasDrawings={strokes.length > 0}
+        onClear={() => {
+          cancelInk();
+          setStrokes([]);
+        }}
+      />
       <div className="bd-zoom" role="group" aria-label="Zoom">
         <button type="button" className="bd-zoom__btn" onClick={() => zoomBy(1 / 1.25)} aria-label="Zoom out">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9" /></svg>
@@ -347,6 +436,17 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
     </div>
   );
 }
+
+/** Finished strokes; re-rendered only when one is added or removed. */
+const Strokes = memo(function Strokes({ strokes }: { strokes: Stroke[] }) {
+  return (
+    <>
+      {strokes.map((s) => (
+        <path key={s.id} d={strokePath(s.points)} stroke={s.color} style={{ strokeWidth: `calc(${s.width}px / var(--bd-z, 1))` }} />
+      ))}
+    </>
+  );
+});
 
 /** Re-rendered only when the board or the sharpness changes, never by panning. */
 const Positions = memo(function Positions({ items, sharp }: { items: PlacedPosition[]; sharp: boolean }) {
