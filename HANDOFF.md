@@ -93,6 +93,10 @@ the fourth.
 - **Admin:** I can't add rows to `board_admins` from here. The only key on this machine is the public one,
   which the table refuses by design. Artem runs the insert line from (d) in the SQL editor.
 
+**Follow-up:** the admin insert failed with `relation "public.board_admins" does not exist`. The
+SQL Artem had run was an older copy of `schema.sql`, from before the Boards section was added. I gave him
+`Desktop\Boardsoards-setup.sql`: the Boards section on its own, plus his admin insert, safe to re-run.
+
 **Verified:** typecheck clean; 397/397 tests. Headless Chrome screenshots in `Desktop\Boards\`:
 - `09`: the viewer, glass, with the Telegram button.
 - `08`: Boards in light.
