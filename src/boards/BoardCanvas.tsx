@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { DrawTools } from './DrawTools';
-import { loadStrokes, loadTool, saveStrokes, saveTool, strokeId, strokePath, type InkTool, type Stroke } from './drawing';
+import { INK_STEP, INK_TAU, loadStrokes, saveStrokes, strokeId, strokePath, type InkTool, type Stroke } from './drawing';
 import {
   clearPastes,
   deletePaste,
@@ -51,6 +51,13 @@ interface Props {
   onSharpChange?: (sharp: boolean) => void;
   sharp: boolean;
   onOpen(index: number): void;
+  /** Brush on (true) or the cursor tool (false); shared with the viewer. */
+  drawing: boolean;
+  onDrawing(drawing: boolean): void;
+  tool: InkTool;
+  onTool(tool: InkTool): void;
+  /** A position is open on top: the board's keys and toolbar stand down. */
+  covered: boolean;
 }
 
 /** How far a press may wander and still count as a click, in screen pixels. */
@@ -60,16 +67,7 @@ const DOUBLE_TAP_MS = 380;
 const GLIDE_TAU = 70;
 /** A flick coasts for about this long. */
 const COAST_TAU = 260;
-/** Points closer than this on screen are skipped while drawing. */
-const INK_STEP = 2.5;
-/**
- * Stabiliser time constant (ms): the pen eases toward the pointer, which irons
- * out hand tremor. Time-based, so it feels the same at any mouse polling rate.
- * Higher = smoother but laggier.
- */
-const INK_TAU = 20;
-
-export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }: Props) {
+export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen, drawing, onDrawing: setDrawing, tool, onTool: setTool, covered }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<HTMLDivElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
@@ -86,19 +84,16 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
   const onSharpRef = useRef(onSharpChange);
   onSharpRef.current = onSharpChange;
 
-  const [drawing, setDrawing] = useState(false);
-  const [tool, setTool] = useState<InkTool>(loadTool);
   const [strokes, setStrokes] = useState<Stroke[]>(loadStrokes);
   const livePathRef = useRef<SVGPathElement>(null);
   /** sx/sy: the smoothed pen, lastX/lastY: the last point kept (screen px). */
   const ink = useRef<{ pointerId: number; points: number[]; sx: number; sy: number; t: number; lastX: number; lastY: number } | null>(null);
 
   useEffect(() => saveStrokes(strokes), [strokes]);
-  useEffect(() => saveTool(tool), [tool]);
 
   // Ctrl/⌘+Z takes back the last stroke.
   useEffect(() => {
-    if (strokes.length === 0) return;
+    if (strokes.length === 0 || covered) return;
     const onKey = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.key.toLowerCase() !== 'z') return;
       const t = event.target;
@@ -108,7 +103,7 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [strokes.length]);
+  }, [strokes.length, covered]);
 
   // ---- Pasted images (local only; see pastes.ts) ----
   const [pastes, setPastes] = useState<ShownPaste[]>([]);
@@ -157,6 +152,7 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
 
   // Ctrl/⌘+V with an image on the clipboard puts it on the board.
   useEffect(() => {
+    if (covered) return;
     const onPaste = (event: ClipboardEvent) => {
       if (isTyping(event.target)) return;
       const file = imageFromClipboard(event.clipboardData);
@@ -180,11 +176,11 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
     };
     window.addEventListener('paste', onPaste);
     return () => window.removeEventListener('paste', onPaste);
-  }, []);
+  }, [covered, setDrawing]);
 
   // Delete/Backspace removes the selected image; Esc lets go of it.
   useEffect(() => {
-    if (!selected) return;
+    if (!selected || covered) return;
     const onKey = (event: KeyboardEvent) => {
       if (isTyping(event.target)) return;
       if (event.key === 'Delete' || event.key === 'Backspace') {
@@ -196,7 +192,7 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selected, removePaste]);
+  }, [selected, removePaste, covered]);
 
   const clamp = useCallback(
     (v: View) => clampView(v, size.current.w, size.current.h, layoutRef.current.width, layoutRef.current.height),
@@ -612,6 +608,7 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
         </div>
       </div>
       <DrawTools
+        hidden={covered}
         active={drawing}
         onActive={setDrawing}
         tool={tool}

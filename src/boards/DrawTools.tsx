@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { INK_COLORS, INK_WIDTHS, type InkTool } from './drawing';
 
 /**
- * The drawing toolbar, down the left edge like TradingView's: the brush (on/off),
- * colour, line width, and a trash menu: "Delete all drawings" / "Delete all photos".
+ * The drawing toolbar, down the left edge like TradingView's: the cursor (move
+ * the canvas, open positions), the brush, colour, line width, and a trash menu:
+ * "Delete all drawings" / "Delete all photos". The board and the position
+ * viewer each show one; the photos item appears only where photos exist.
  */
 
 interface Props {
@@ -13,11 +15,13 @@ interface Props {
   onTool(tool: InkTool): void;
   hasDrawings: boolean;
   onClearDrawings(): void;
-  hasPhotos: boolean;
-  onClearPhotos(): void;
+  hasPhotos?: boolean;
+  onClearPhotos?: () => void;
+  hidden?: boolean;
+  className?: string;
 }
 
-export function DrawTools({ active, onActive, tool, onTool, hasDrawings, onClearDrawings, hasPhotos, onClearPhotos }: Props) {
+export function DrawTools({ active, onActive, tool, onTool, hasDrawings, onClearDrawings, hasPhotos = false, onClearPhotos, hidden, className }: Props) {
   const [menu, setMenu] = useState<'color' | 'width' | 'clear' | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -31,16 +35,41 @@ export function DrawTools({ active, onActive, tool, onTool, hasDrawings, onClear
     return () => window.removeEventListener('pointerdown', close);
   }, [menu]);
 
+  // Hidden behind the viewer: a menu left open would come back with it.
+  useEffect(() => {
+    if (hidden) setMenu(null);
+  }, [hidden]);
+
   const toggle = (which: 'color' | 'width' | 'clear') => setMenu((m) => (m === which ? null : which));
 
   return (
-    <div ref={rootRef} className="bd-draw" role="toolbar" aria-label="Drawing" aria-orientation="vertical">
+    <div
+      ref={rootRef}
+      className={`bd-draw${className ? ` ${className}` : ''}`}
+      role="toolbar"
+      aria-label="Drawing"
+      aria-orientation="vertical"
+      hidden={hidden}
+    >
+      <button
+        type="button"
+        className={`bd-draw__btn${active ? '' : ' is-active'}`}
+        onClick={() => onActive(false)}
+        aria-pressed={!active}
+        title="Cursor"
+        aria-label="Cursor"
+      >
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M5.5 3.2v12.6l3.2-3.1 2.2 4.9 2.1-.9-2.2-4.8h4.5z" />
+        </svg>
+      </button>
+
       <button
         type="button"
         className={`bd-draw__btn${active ? ' is-active' : ''}`}
-        onClick={() => onActive(!active)}
+        onClick={() => onActive(true)}
         aria-pressed={active}
-        title={active ? 'Stop drawing' : 'Draw'}
+        title="Draw"
         aria-label="Brush"
       >
         <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -133,7 +162,7 @@ export function DrawTools({ active, onActive, tool, onTool, hasDrawings, onClear
           type="button"
           className={`bd-draw__btn bd-draw__clear${menu === 'clear' ? ' is-open' : ''}`}
           onClick={() => toggle('clear')}
-          disabled={!hasDrawings && !hasPhotos}
+          disabled={!hasDrawings && !(onClearPhotos && hasPhotos)}
           title="Delete…"
           aria-label="Delete…"
           aria-expanded={menu === 'clear'}
@@ -155,17 +184,19 @@ export function DrawTools({ active, onActive, tool, onTool, hasDrawings, onClear
             >
               Delete all drawings
             </button>
-            <button
-              type="button"
-              className="bd-draw__danger"
-              disabled={!hasPhotos}
-              onClick={() => {
-                onClearPhotos();
-                setMenu(null);
-              }}
-            >
-              Delete all photos
-            </button>
+            {onClearPhotos ? (
+              <button
+                type="button"
+                className="bd-draw__danger"
+                disabled={!hasPhotos}
+                onClick={() => {
+                  onClearPhotos();
+                  setMenu(null);
+                }}
+              >
+                Delete all photos
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>

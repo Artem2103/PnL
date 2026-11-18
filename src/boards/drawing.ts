@@ -25,6 +25,15 @@ export const INK_COLORS = ['#f23645', '#ff9800', '#f7c600', '#089981', '#2962ff'
 export const INK_WIDTHS = [1, 2, 3, 4] as const;
 export const DEFAULT_TOOL: InkTool = { color: '#2962ff', width: 2 };
 
+/** Points closer than this on screen are skipped while drawing. */
+export const INK_STEP = 2.5;
+/**
+ * Stabiliser time constant (ms): the pen eases toward the pointer, which irons
+ * out hand tremor. Time-based, so it feels the same at any mouse polling rate.
+ * Higher = smoother but laggier.
+ */
+export const INK_TAU = 20;
+
 const STROKES_KEY = 'astra.boards.drawings.v1';
 const TOOL_KEY = 'astra.boards.ink.v1';
 const HEX = /^#[0-9a-f]{6}$/i;

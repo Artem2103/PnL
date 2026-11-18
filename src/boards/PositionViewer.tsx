@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { DrawTools } from './DrawTools';
+import { INK_STEP, INK_TAU, strokeId, strokePath, type InkTool, type Stroke } from './drawing';
 import { TIMEFRAMES, TIMEFRAME_LABEL, pickTimeframe, type PlacedPosition, type Timeframe } from './model';
 
 /**
@@ -6,6 +8,10 @@ import { TIMEFRAMES, TIMEFRAME_LABEL, pickTimeframe, type PlacedPosition, type T
  * timeframe buttons swap the screenshot in place — same position, same modal —
  * with a crossfade; every timeframe of this trade and of its neighbours is
  * fetched ahead so the swap never waits on the network.
+ *
+ * With the brush on, you can draw on the screenshot. These are scratch marks:
+ * kept per trade and timeframe while the viewer is open, gone when it closes.
+ * Nothing is stored.
  */
 
 interface Props {
@@ -15,7 +21,14 @@ interface Props {
   onClose(): void;
   /** Space is held: the viewer lets go of the pointer so the canvas can be dragged. */
   peek: boolean;
+  drawing: boolean;
+  onDrawing(drawing: boolean): void;
+  tool: InkTool;
+  onTool(tool: InkTool): void;
 }
+
+/** Scratch strokes, per `${position id}:${timeframe}`, in the screenshot's own pixels. */
+type Scratch = Record<string, Stroke[]>;
 
 const preloaded = new Set<string>();
 function preload(url: string) {
@@ -26,7 +39,7 @@ function preload(url: string) {
   img.src = url;
 }
 
-export function PositionViewer({ items, index, onIndex, onClose, peek }: Props) {
+export function PositionViewer({ items, index, onIndex, onClose, peek, drawing, onDrawing, tool, onTool }: Props) {
   const item = items[index];
   const [wanted, setWanted] = useState<Timeframe>('15m');
   const [fullscreen, setFullscreen] = useState(false);
@@ -34,6 +47,14 @@ export function PositionViewer({ items, index, onIndex, onClose, peek }: Props) 
   const position = item?.position;
   const tf = position ? pickTimeframe(position, wanted) : null;
   const frame = position && tf ? position.frames[tf] : undefined;
+  const [scratch, setScratch] = useState<Scratch>({});
+  const key = position && tf ? `${position.id}:${tf}` : '';
+  const keyRef = useRef(key);
+  keyRef.current = key;
+  const inkRef = useRef<SVGSVGElement>(null);
+  const livePathRef = useRef<SVGPathElement>(null);
+  const pen = useRef<{ pointerId: number; key: string; points: number[]; sx: number; sy: number; t: number; lastX: number; lastY: number } | null>(null);
+  const hasDrawings = Object.values(scratch).some((list) => list.length > 0);
 
   // Opening always starts on 15M (the viewer mounts fresh each time); moving to
   // a neighbour keeps the chosen timeframe where that trade has it.
@@ -51,6 +72,18 @@ export function PositionViewer({ items, index, onIndex, onClose, peek }: Props) 
 
   const prev = index > 0 ? index - 1 : null;
   const next = index < items.length - 1 ? index + 1 : null;
+
+  // Ctrl/⌘+Z takes back the last stroke on the screenshot shown.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.key.toLowerCase() !== 'z') return;
+      event.preventDefault();
+      const k = keyRef.current;
+      setScratch((all) => (all[k]?.length ? { ...all, [k]: all[k].slice(0, -1) } : all));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -82,8 +115,84 @@ export function PositionViewer({ items, index, onIndex, onClose, peek }: Props) 
     else void modalRef.current?.requestFullscreen?.().catch(() => undefined);
   };
 
+  /** Screen point → screenshot pixels (the ink layer's viewBox). */
+  const toImage = (clientX: number, clientY: number) => {
+    const m = inkRef.current?.getScreenCTM();
+    if (!m) return null;
+    const p = new DOMPoint(clientX, clientY).matrixTransform(m.inverse());
+    return [p.x, p.y] as const;
+  };
+
+  const endPen = () => {
+    pen.current = null;
+    livePathRef.current?.setAttribute('d', '');
+  };
+
+  const onInkDown = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (!drawing || pen.current || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    const at = toImage(event.clientX, event.clientY);
+    if (!at) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pen.current = {
+      pointerId: event.pointerId,
+      key,
+      points: [at[0], at[1]],
+      sx: event.clientX,
+      sy: event.clientY,
+      t: event.timeStamp,
+      lastX: event.clientX,
+      lastY: event.clientY,
+    };
+    livePathRef.current?.setAttribute('d', strokePath(pen.current.points));
+  };
+
+  const onInkMove = (event: React.PointerEvent<SVGSVGElement>) => {
+    const p = pen.current;
+    if (!p || p.pointerId !== event.pointerId) return;
+    // Same stabiliser as the board: the pen eases toward the pointer.
+    const samples = event.nativeEvent.getCoalescedEvents?.() ?? [];
+    for (const e of samples.length ? samples : [event.nativeEvent]) {
+      const k = 1 - Math.exp(-Math.max(1, e.timeStamp - p.t) / INK_TAU);
+      p.t = Math.max(p.t, e.timeStamp);
+      p.sx += (e.clientX - p.sx) * k;
+      p.sy += (e.clientY - p.sy) * k;
+      if (Math.hypot(p.sx - p.lastX, p.sy - p.lastY) < INK_STEP) continue;
+      const at = toImage(p.sx, p.sy);
+      if (!at) continue;
+      p.points.push(at[0], at[1]);
+      p.lastX = p.sx;
+      p.lastY = p.sy;
+    }
+    livePathRef.current?.setAttribute('d', strokePath(p.points));
+  };
+
+  const onInkUp = (event: React.PointerEvent<SVGSVGElement>) => {
+    const p = pen.current;
+    if (!p || p.pointerId !== event.pointerId) return;
+    endPen();
+    if (event.type === 'pointercancel') return;
+    const stroke: Stroke = { id: strokeId(), color: tool.color, width: tool.width, points: p.points };
+    setScratch((all) => ({ ...all, [p.key]: [...(all[p.key] ?? []), stroke] }));
+  };
+
   if (!item || !position || !frame || !tf) return null;
   const name = item.category.name;
+
+  const tools = (
+    <DrawTools
+      className="bv-draw"
+      active={drawing}
+      onActive={onDrawing}
+      tool={tool}
+      onTool={onTool}
+      hasDrawings={hasDrawings}
+      onClearDrawings={() => {
+        endPen();
+        setScratch({});
+      }}
+    />
+  );
 
   return (
     <div
@@ -95,7 +204,10 @@ export function PositionViewer({ items, index, onIndex, onClose, peek }: Props) 
         if (event.target === event.currentTarget) onClose();
       }}
     >
+      {/* In full screen only the modal is shown, so the toolbar moves into it. */}
+      {fullscreen ? null : tools}
       <div ref={modalRef} className={`bv-modal${fullscreen ? ' is-fullscreen' : ''}`}>
+        {fullscreen ? tools : null}
         <header className="bv-bar">
           <h2 className="bv-title">{item.category.name}</h2>
           <div className="bv-tfs" role="tablist" aria-label="Timeframe">
@@ -147,6 +259,21 @@ export function PositionViewer({ items, index, onIndex, onClose, peek }: Props) 
               />
             );
           })}
+          <svg
+            ref={inkRef}
+            className={`bv-ink${drawing ? ' is-drawing' : ''}`}
+            viewBox={`0 0 ${frame.w} ${frame.h}`}
+            onPointerDown={onInkDown}
+            onPointerMove={onInkMove}
+            onPointerUp={onInkUp}
+            onPointerCancel={onInkUp}
+            aria-hidden="true"
+          >
+            {(scratch[key] ?? []).map((s) => (
+              <path key={s.id} d={strokePath(s.points)} stroke={s.color} strokeWidth={s.width} />
+            ))}
+            <path ref={livePathRef} stroke={tool.color} strokeWidth={tool.width} />
+          </svg>
         </div>
 
         <button

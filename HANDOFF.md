@@ -64,11 +64,41 @@ file easier to read:
 | 2026-11-19 (d) | **code**: the mouse wheel zooms Boards in/out at the cursor | see **Start here (2026-11-19 d)** |
 | 2026-11-19 (e) | **code**: paste images onto Boards with Ctrl/⌘+V — local only (IndexedDB), move, resize, delete | see **Start here (2026-11-19 e)** |
 | 2026-11-19 (f) | **code**: the trash button opens "Delete all drawings" / "Delete all photos" | see **Start here (2026-11-19 f)** |
+| 2026-11-19 (g) | **code**: draw on an open position (scratch, gone on close); a **cursor** tool above the brush | see **Start here (2026-11-19 g)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-11-19 g) — drawing in the viewer; cursor tool
+
+**What Artem asked:** when a position's image window is open, let him draw on it too, and have those drawings disappear when the window closes. Also add a cursor icon above the brush in the left toolbar, for the normal mode: move the canvas, click positions, and so on.
+
+**What changed:**
+- **Cursor tool** (`DrawTools.tsx`): a new arrow button at the top of the toolbar. Cursor and brush now work as a pair: exactly one is blue.
+  - Cursor = the old "brush off": drag pans, double-click opens a position, pasted photos can be moved.
+  - Clicking the brush always turns drawing on (it no longer toggles off). To stop drawing, click the cursor.
+- **Drawing in the viewer** (`PositionViewer.tsx`):
+  - While a position is open, the same toolbar shows at the top of the left gutter, kept clear of the ← arrow. In full screen it moves inside the window.
+  - Cursor/brush, colour and width are shared with the board, so whatever is chosen carries over in both directions. That state moved up to `BoardsPage.tsx`.
+  - Each screenshot keeps its own drawings, per trade and per timeframe. Switching 5M/15M/1H or ←/→ shows that image's own marks, and coming back shows them again.
+  - **Closing the window throws them all away.** They are never stored anywhere.
+  - Same smoothing as the board. Line width stays 1–4 screen px at any window size (`vector-effect: non-scaling-stroke`).
+  - **Ctrl/⌘+Z** undoes the last stroke on the image shown.
+  - The trash menu offers only "Delete all drawings", which clears everything drawn in this window.
+- **While the viewer is open**, the board's own toolbar is hidden and its keys stand down. Ctrl+Z, paste and Delete no longer reach the board behind, so undo in the viewer can't remove a board stroke. This is the `covered` prop on `BoardCanvas`.
+- The smoothing constants `INK_STEP` and `INK_TAU` moved from `BoardCanvas.tsx` to `drawing.ts`, so both places use them.
+
+**Verified:** typecheck clean; 408/408 tests. In headless Chrome at 1440×900:
+- Double-clicked position A, picked the brush in the viewer toolbar, and drew 2 strokes. The viewer had 2 strokes and the board 0.
+- Closed the window, switched to the cursor, and double-clicked A again: it reopened with 0 strokes.
+
+Screenshots: `Desktop\Boards1`–`v4-*.png`. Full screen can't be tested headless.
+
+**Known limit:** on a phone-width screen, the viewer's toolbar overlaps the window's top-left corner (the column letter), because there is no gutter.
 
 ---
 

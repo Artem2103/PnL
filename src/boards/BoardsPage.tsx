@@ -7,6 +7,7 @@ import { STUDIO_PATH, navigate, setAfterSignIn } from '../lib/route';
 import { AdminPanel } from './AdminPanel';
 import { BoardCanvas } from './BoardCanvas';
 import { demoBoard } from './demo';
+import { loadTool, saveTool, type InkTool } from './drawing';
 import { layoutBoard } from './model';
 import { PositionViewer } from './PositionViewer';
 import { hasPositions, isBoardAdmin, loadBoard, toBoard, type BoardSource } from './repository';
@@ -25,6 +26,8 @@ export function BoardsPage() {
   const [open, setOpen] = useState<number | null>(null);
   const [space, setSpace] = useState(false);
   const [sharp, setSharp] = useState(false);
+  const [drawing, setDrawing] = useState(false);
+  const [tool, setTool] = useState<InkTool>(loadTool);
   const [toast, setToast] = useState<{ text: string; error: boolean } | null>(null);
   const signedIn = mode === 'local' || Boolean(session);
   const accountId = session?.user.id ?? null;
@@ -37,6 +40,8 @@ export function BoardsPage() {
       setToast({ text: messageOf(error), error: true });
     }
   }, []);
+
+  useEffect(() => saveTool(tool), [tool]);
 
   useEffect(() => {
     void reload();
@@ -124,10 +129,31 @@ export function BoardsPage() {
       </header>
 
       <main className="bd-main">
-        <BoardCanvas layout={layout} spaceHeld={space} sharp={sharp} onSharpChange={setSharp} onOpen={setOpen} />
+        <BoardCanvas
+          layout={layout}
+          spaceHeld={space}
+          sharp={sharp}
+          onSharpChange={setSharp}
+          onOpen={setOpen}
+          drawing={drawing}
+          onDrawing={setDrawing}
+          tool={tool}
+          onTool={setTool}
+          covered={open != null}
+        />
 
         {open != null ? (
-          <PositionViewer items={layout.items} index={open} onIndex={setOpen} onClose={() => setOpen(null)} peek={space} />
+          <PositionViewer
+            items={layout.items}
+            index={open}
+            onIndex={setOpen}
+            onClose={() => setOpen(null)}
+            peek={space}
+            drawing={drawing}
+            onDrawing={setDrawing}
+            tool={tool}
+            onTool={setTool}
+          />
         ) : null}
 
         {managing && admin && source?.kind === 'remote' ? (
