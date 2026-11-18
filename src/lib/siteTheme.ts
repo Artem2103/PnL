@@ -26,10 +26,12 @@ export interface SiteTheme {
   /** The two soft washes behind the page, which give the glass something to show. */
   glowA: string;
   glowB: string;
+  /** No washes: the page is the plain background colour. */
+  flat?: boolean;
 }
 
 export const SITE_THEMES: readonly SiteTheme[] = [
-  { id: 'light', label: 'Light', dark: false, bg: '#f4f4f6', card: '#ffffff', soft: '#efeff1', strong: '#e5e5e8', border: '#e6e6ea', borderStrong: '#d2d2d8', text: '#0b0b0c', muted: '#55565c', faint: '#5f6067', accent: '#0b0b0c', accentInk: '#ffffff', glowA: '#a9b8f5', glowB: '#f3b7d6' },
+  { id: 'light', label: 'Light', dark: false, flat: true, bg: '#ffffff', card: '#ffffff', soft: '#efeff1', strong: '#e5e5e8', border: '#e6e6ea', borderStrong: '#d2d2d8', text: '#0b0b0c', muted: '#55565c', faint: '#5f6067', accent: '#0b0b0c', accentInk: '#ffffff', glowA: '#a9b8f5', glowB: '#f3b7d6' },
   { id: 'sand', label: 'Sand', dark: false, bg: '#f3eee4', card: '#fffcf6', soft: '#efe8da', strong: '#e4dbc9', border: '#e8dfce', borderStrong: '#d6cbb6', text: '#241d12', muted: '#5c5243', faint: '#625847', accent: '#3b2f1e', accentInk: '#fffcf6', glowA: '#eec48a', glowB: '#d9b8a0' },
   { id: 'sky', label: 'Sky', dark: false, bg: '#eaf1fa', card: '#ffffff', soft: '#e3ecf8', strong: '#d3e0f2', border: '#dbe6f4', borderStrong: '#c3d4ea', text: '#0d1b2e', muted: '#3e4d62', faint: '#4b5b73', accent: '#1f5fd0', accentInk: '#ffffff', glowA: '#8fc0f7', glowB: '#a9a6f5' },
   { id: 'graphite', label: 'Graphite', dark: true, bg: '#1b1c20', card: '#26272c', soft: '#303137', strong: '#3b3c43', border: '#34353b', borderStrong: '#46474f', text: '#f2f2f4', muted: '#bcbdc5', faint: '#9b9ca5', accent: '#f2f2f4', accentInk: '#1b1c20', glowA: '#5b6275', glowB: '#6d5b75' },
@@ -39,7 +41,7 @@ export const SITE_THEMES: readonly SiteTheme[] = [
   { id: 'wine', label: 'Wine', dark: true, bg: '#180b12', card: '#25121c', soft: '#321a27', strong: '#422433', border: '#381e2c', borderStrong: '#50303f', text: '#f7e9ef', muted: '#cdb0bd', faint: '#ad909d', accent: '#f08fb4', accentInk: '#180b12', glowA: '#a12c63', glowB: '#6a2f9a' },
 ];
 
-export const DEFAULT_SITE_THEME = 'black';
+export const DEFAULT_SITE_THEME = 'light';
 
 /**
  * How much of the page shows through. Kept low on purpose: the look should read
@@ -78,8 +80,8 @@ export function tokensFor(theme: SiteTheme): Record<string, string> {
     '--glass-shadow': theme.dark
       ? 'inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 0 0 1px rgba(255, 255, 255, 0.07), 0 10px 30px rgba(0, 0, 0, 0.3)'
       : 'inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 0 0 1px rgba(255, 255, 255, 0.55), 0 10px 30px rgba(30, 30, 60, 0.08)',
-    '--glow-a': `${theme.glowA}${alpha(theme.dark ? GLOW_OPACITY.dark : GLOW_OPACITY.light)}`,
-    '--glow-b': `${theme.glowB}${alpha(theme.dark ? GLOW_OPACITY.dark : GLOW_OPACITY.light)}`,
+    '--glow-a': theme.flat ? 'transparent' : `${theme.glowA}${alpha(theme.dark ? GLOW_OPACITY.dark : GLOW_OPACITY.light)}`,
+    '--glow-b': theme.flat ? 'transparent' : `${theme.glowB}${alpha(theme.dark ? GLOW_OPACITY.dark : GLOW_OPACITY.light)}`,
     '--profit': theme.dark ? '#4ade80' : '#0f8a44',
     '--loss': theme.dark ? '#fb7185' : '#d42a41',
     '--error-ink': theme.dark ? '#fda4af' : '#b3172d',

@@ -30,6 +30,13 @@ describe.each(SITE_THEMES.map((theme) => [theme.label, theme] as const))('the %s
     expect(contrastRatio(theme.accent, theme.card)).toBeGreaterThanOrEqual(3);
   });
 
+  if (theme.flat) {
+    it('has no wash behind the page', () => {
+      expect(tokensFor(theme)['--glow-a']).toBe('transparent');
+      expect(tokensFor(theme)['--glow-b']).toBe('transparent');
+    });
+  }
+
   it('stays readable on the glass, at the strongest part of the wash', () => {
     const strength = theme.dark ? GLOW_OPACITY.dark : GLOW_OPACITY.light;
     for (const glow of [theme.glowA, theme.glowB]) {
@@ -54,7 +61,7 @@ describe('the theme list', () => {
     const ids = SITE_THEMES.map((theme) => theme.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toContain(DEFAULT_SITE_THEME);
-    expect(DEFAULT_SITE_THEME).toBe('black');
+    expect(DEFAULT_SITE_THEME).toBe('light');
   });
 
   it('sets the same variables in every theme', () => {

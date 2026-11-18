@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useRef } from 'react';
 import {
   COLUMN_WIDTH,
   HEADER_HEIGHT,
@@ -31,8 +31,6 @@ interface Props {
   onSharpChange?: (sharp: boolean) => void;
   sharp: boolean;
   onOpen(index: number): void;
-  /** Laid over the canvas, outside the area that pans (the about link). */
-  children?: ReactNode;
 }
 
 /** How far a press may wander and still count as a click, in screen pixels. */
@@ -44,7 +42,7 @@ const GLIDE_TAU = 70;
 const COAST_TAU = 260;
 const DOT = 26;
 
-export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen, children }: Props) {
+export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<HTMLDivElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
@@ -346,7 +344,6 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen, c
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9M8 3.5v9" /></svg>
         </button>
       </div>
-      {children}
     </div>
   );
 }

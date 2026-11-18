@@ -12,12 +12,6 @@ import { PositionViewer } from './PositionViewer';
 import { hasPositions, isBoardAdmin, loadBoard, toBoard, type BoardSource } from './repository';
 import '../styles/boards.css';
 
-/**
- * Where "About this collection" goes: the community's Telegram group. Set
- * `VITE_BOARDS_ABOUT_URL` in Vercel to change it without touching code.
- */
-const ABOUT_URL = import.meta.env.VITE_BOARDS_ABOUT_URL?.trim() || 'https://t.me/';
-
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : 'That did not work.');
 
 const isTyping = (target: EventTarget | null) =>
@@ -130,11 +124,7 @@ export function BoardsPage() {
       </header>
 
       <main className="bd-main">
-        <BoardCanvas layout={layout} spaceHeld={space} sharp={sharp} onSharpChange={setSharp} onOpen={setOpen}>
-          <a className="bd-about" href={ABOUT_URL} target="_blank" rel="noopener noreferrer">
-            About this collection ↗
-          </a>
-        </BoardCanvas>
+        <BoardCanvas layout={layout} spaceHeld={space} sharp={sharp} onSharpChange={setSharp} onOpen={setOpen} />
 
         {open != null ? (
           <PositionViewer items={layout.items} index={open} onIndex={setOpen} onClose={() => setOpen(null)} peek={space} />

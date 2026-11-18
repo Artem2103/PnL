@@ -83,29 +83,21 @@ export function PositionViewer({ items, index, onIndex, onClose, peek }: Props) 
   };
 
   if (!item || !position || !frame || !tf) return null;
-  const number = String(item.number).padStart(2, '0');
+  const name = item.category.name;
 
   return (
     <div
       className={`bv${peek ? ' is-peek' : ''}`}
       role="dialog"
       aria-modal="true"
-      aria-label={`${item.category.name} ${number}`}
+      aria-label={name}
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
       <div ref={modalRef} className={`bv-modal${fullscreen ? ' is-fullscreen' : ''}`}>
         <header className="bv-bar">
-          <div className="bv-title">
-            <span className="bv-cat">{item.category.name}</span>
-            <span className="bv-num">{number}</span>
-            {position.link ? (
-              <a className="bv-link" href={position.link} target="_blank" rel="noopener noreferrer">
-                Telegram ↗
-              </a>
-            ) : null}
-          </div>
+          <h2 className="bv-title">{item.category.name}</h2>
           <div className="bv-tfs" role="tablist" aria-label="Timeframe">
             {TIMEFRAMES.map((t) => (
               <button
@@ -122,6 +114,11 @@ export function PositionViewer({ items, index, onIndex, onClose, peek }: Props) 
             ))}
           </div>
           <div className="bv-tools">
+            {position.link ? (
+              <a className="bv-icon" href={position.link} target="_blank" rel="noopener noreferrer" aria-label="Open on Telegram" title="Open on Telegram">
+                <TelegramIcon />
+              </a>
+            ) : null}
             <button type="button" className="bv-icon" onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit full screen' : 'Full screen'}>
               <svg viewBox="0 0 20 20" aria-hidden="true">
                 {fullscreen ? <path d="M8 3v5H3M12 3v5h5M8 17v-5H3M12 17v-5h5" /> : <path d="M3 8V3h5M17 8V3h-5M3 12v5h5M17 12v5h-5" />}
@@ -143,7 +140,7 @@ export function PositionViewer({ items, index, onIndex, onClose, peek }: Props) 
               <img
                 key={t}
                 src={f.full}
-                alt={`${item.category.name} ${number} · ${TIMEFRAME_LABEL[t]}`}
+                alt={`${name} · ${TIMEFRAME_LABEL[t]}`}
                 className={t === tf ? 'is-shown' : undefined}
                 draggable={false}
                 decoding="async"
@@ -176,5 +173,14 @@ export function PositionViewer({ items, index, onIndex, onClose, peek }: Props) 
         </button>
       </div>
     </div>
+  );
+}
+
+/** Telegram's paper plane. */
+function TelegramIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="bv-tg">
+      <path d="M21.6 3.4 2.9 10.6c-1.3.5-1.3 1.2-.2 1.5l4.8 1.5 1.8 5.6c.2.6.4.8.9.8.4 0 .6-.2.9-.4l2.3-2.2 4.7 3.5c.9.5 1.5.2 1.7-.8l3.1-14.7c.3-1.3-.5-1.9-1.3-1.5ZM8.8 13.3l9.9-6.3c.5-.3.9-.1.5.2l-8.4 7.6-.3 3.6-1.7-5.1Z" />
+    </svg>
   );
 }

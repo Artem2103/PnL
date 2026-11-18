@@ -57,11 +57,47 @@ file easier to read:
 | 2026-11-18 (b) | **code**: black TradingView mark; the card's logo follows White / Black text | see **Start here (2026-11-18 b)** |
 | 2026-11-18 (c) | **code**: logo mark tried 1.5× bigger, then put back to the original size | see **Start here (2026-11-18 c)** |
 | 2026-11-18 (d) | **code**: **Boards** at `/boards`: a canvas of trading positions (columns A–J), viewer with 5M/15M/1H, admin uploads. **Needs the SQL run** | see **Start here (2026-11-18 d)** |
+| 2026-11-18 (e) | **code**: **Light is the default theme** and is plain white; Boards has a solid background in every theme; glass viewer; about link removed | see **Start here (2026-11-18 e)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-11-18 e) — light default, flat backgrounds, glass viewer
+
+**What Artem asked:**
+- Make him a Boards admin.
+- Remove "About this collection".
+- In the viewer, show just the category name, with a Telegram logo that links to the position's post.
+- Restyle the viewer like `reference/openwindowexample.png`: glass, no black border.
+- Light theme: plain white, no gradient. Boards: a solid background in every theme.
+- Make Light the default theme for the whole site.
+
+**What changed:**
+- **Default theme is now `light`** (`DEFAULT_SITE_THEME`; `index.html` paints white before
+  scripts load). This replaces the Black default from 2026-11-08 (b). People who already picked a
+  theme keep it, because the choice is stored in their browser.
+- **The Light theme is flat:** the page is `#ffffff` (was `#f4f4f6`), and the new `flat: true` flag turns the two
+  coloured washes off (`--glow-a/b: transparent`). The other themes keep their washes everywhere except Boards.
+- **Boards:** `body:has(.bd)::before { display: none }` plus `background: var(--bg)`, so the
+  canvas is the theme's solid colour in every theme.
+- **Viewer** (`PositionViewer.tsx`, `boards.css`):
+  - Header: only the category name (no "01").
+  - Timeframe switch: a soft grey pill with a white active tab.
+  - Round grey buttons: a Telegram paper-plane button (a link to the position's post, shown only when it has one), fullscreen, close.
+  - The panel is frosted glass (`--glass-strong`, blur 28px) with a light edge. The black border around the screenshot is gone; it now has rounded corners.
+- **"About this collection ↗" removed**, along with the `VITE_BOARDS_ABOUT_URL` variable.
+- **Admin:** I can't add rows to `board_admins` from here. The only key on this machine is the public one,
+  which the table refuses by design. Artem runs the insert line from (d) in the SQL editor.
+
+**Verified:** typecheck clean; 397/397 tests. Headless Chrome screenshots in `Desktop\Boards\`:
+- `09`: the viewer, glass, with the Telegram button.
+- `08`: Boards in light.
+- `12`: Boards in black, solid.
+- `11`: Community in light, white.
 
 ---
 
