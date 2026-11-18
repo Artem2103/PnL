@@ -95,7 +95,7 @@ a colour picker, sizes 1/2/3/4 px, and a button that removes ALL drawings.
 - Reload: all 3 strokes are still there.
 - Remove all: 0 strokes, and the storage key is gone.
 
-Not committed.
+Committed and pushed as `cff3543`.
 
 ---
 
