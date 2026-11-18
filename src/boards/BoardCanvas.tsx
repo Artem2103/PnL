@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { DrawTools } from './DrawTools';
 import { loadStrokes, loadTool, saveStrokes, saveTool, strokeId, strokePath, type InkTool, type Stroke } from './drawing';
 import {
+  clearPastes,
   deletePaste,
   imageFromClipboard,
   imageSize,
@@ -616,9 +617,17 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
         tool={tool}
         onTool={setTool}
         hasDrawings={strokes.length > 0}
-        onClear={() => {
+        onClearDrawings={() => {
           cancelInk();
           setStrokes([]);
+        }}
+        hasPhotos={pastes.length > 0}
+        onClearPhotos={() => {
+          handle.current = null;
+          pastesRef.current.forEach((p) => URL.revokeObjectURL(p.url));
+          setPastes([]);
+          setSelected(null);
+          void clearPastes().catch(() => {});
         }}
       />
       <div className="bd-zoom" role="group" aria-label="Zoom">

@@ -61,6 +61,10 @@ export async function deletePaste(id: string): Promise<void> {
   await db.run('readwrite', (store) => store.delete(id));
 }
 
+export async function clearPastes(): Promise<void> {
+  await db.run('readwrite', (store) => store.clear());
+}
+
 /**
  * Where a freshly pasted image goes: centred on `at` (board coordinates),
  * shrunk so it is no bigger than PASTE_MAX_SCREEN on screen at zoom `z`,

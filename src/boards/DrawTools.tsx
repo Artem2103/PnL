@@ -3,7 +3,7 @@ import { INK_COLORS, INK_WIDTHS, type InkTool } from './drawing';
 
 /**
  * The drawing toolbar, down the left edge like TradingView's: the brush (on/off),
- * colour, line width, and "remove all drawings" (two clicks, like every delete here).
+ * colour, line width, and a trash menu: "Delete all drawings" / "Delete all photos".
  */
 
 interface Props {
@@ -12,12 +12,13 @@ interface Props {
   tool: InkTool;
   onTool(tool: InkTool): void;
   hasDrawings: boolean;
-  onClear(): void;
+  onClearDrawings(): void;
+  hasPhotos: boolean;
+  onClearPhotos(): void;
 }
 
-export function DrawTools({ active, onActive, tool, onTool, hasDrawings, onClear }: Props) {
-  const [menu, setMenu] = useState<'color' | 'width' | null>(null);
-  const [armed, setArmed] = useState(false);
+export function DrawTools({ active, onActive, tool, onTool, hasDrawings, onClearDrawings, hasPhotos, onClearPhotos }: Props) {
+  const [menu, setMenu] = useState<'color' | 'width' | 'clear' | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
   // A click anywhere else closes an open menu.
@@ -30,13 +31,7 @@ export function DrawTools({ active, onActive, tool, onTool, hasDrawings, onClear
     return () => window.removeEventListener('pointerdown', close);
   }, [menu]);
 
-  useEffect(() => {
-    if (!armed) return;
-    const timer = setTimeout(() => setArmed(false), 3000);
-    return () => clearTimeout(timer);
-  }, [armed]);
-
-  const toggle = (which: 'color' | 'width') => setMenu((m) => (m === which ? null : which));
+  const toggle = (which: 'color' | 'width' | 'clear') => setMenu((m) => (m === which ? null : which));
 
   return (
     <div ref={rootRef} className="bd-draw" role="toolbar" aria-label="Drawing" aria-orientation="vertical">
@@ -133,26 +128,47 @@ export function DrawTools({ active, onActive, tool, onTool, hasDrawings, onClear
 
       <span className="bd-draw__sep" aria-hidden="true" />
 
-      <button
-        type="button"
-        className={`bd-draw__btn bd-draw__clear${armed ? ' is-armed' : ''}`}
-        onClick={() => {
-          if (!armed) {
-            setArmed(true);
-            return;
-          }
-          setArmed(false);
-          onClear();
-        }}
-        disabled={!hasDrawings}
-        title={armed ? 'Click again to remove all drawings' : 'Remove all drawings'}
-        aria-label={armed ? 'Click again to remove all drawings' : 'Remove all drawings'}
-      >
-        <svg viewBox="0 0 20 20" aria-hidden="true">
-          <path d="M3.5 5.5h13M8 5.5V3.8h4v1.7M5.2 5.5l.8 11h8l.8-11M8.5 8.5v5M11.5 8.5v5" />
-        </svg>
-        {armed ? <span className="bd-draw__confirm">Remove all?</span> : null}
-      </button>
+      <div className="bd-draw__item">
+        <button
+          type="button"
+          className={`bd-draw__btn bd-draw__clear${menu === 'clear' ? ' is-open' : ''}`}
+          onClick={() => toggle('clear')}
+          disabled={!hasDrawings && !hasPhotos}
+          title="Delete…"
+          aria-label="Delete…"
+          aria-expanded={menu === 'clear'}
+        >
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M3.5 5.5h13M8 5.5V3.8h4v1.7M5.2 5.5l.8 11h8l.8-11M8.5 8.5v5M11.5 8.5v5" />
+          </svg>
+        </button>
+        {menu === 'clear' ? (
+          <div className="bd-draw__menu bd-draw__menu--clear">
+            <button
+              type="button"
+              className="bd-draw__danger"
+              disabled={!hasDrawings}
+              onClick={() => {
+                onClearDrawings();
+                setMenu(null);
+              }}
+            >
+              Delete all drawings
+            </button>
+            <button
+              type="button"
+              className="bd-draw__danger"
+              disabled={!hasPhotos}
+              onClick={() => {
+                onClearPhotos();
+                setMenu(null);
+              }}
+            >
+              Delete all photos
+            </button>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

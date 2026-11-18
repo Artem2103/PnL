@@ -242,22 +242,32 @@ body:has(.bd)::before {
   background: color-mix(in srgb, var(--text) 14%, transparent);
 }
 
-.bd-draw__clear.is-armed {
+.bd-draw__menu--clear {
+  gap: 2px;
+  padding: 4px;
+}
+
+.bd-draw__danger {
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #f23645;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.bd-draw__danger:hover:not(:disabled) {
   background: #f23645;
   color: #ffffff;
 }
 
-.bd-draw__confirm {
-  position: absolute;
-  left: calc(100% + 10px);
-  padding: 5px 10px;
-  border-radius: 8px;
-  background: #f23645;
-  color: #ffffff;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-  pointer-events: none;
+.bd-draw__danger:disabled {
+  color: var(--text-muted);
+  opacity: 0.5;
 }
 
 .bd-draw__menu {

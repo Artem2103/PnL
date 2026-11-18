@@ -63,11 +63,33 @@ file easier to read:
 | 2026-11-19 (c) | **code**: drawn lines are lightly smoothed (stabiliser) so they don't look shaky | see **Start here (2026-11-19 c)** |
 | 2026-11-19 (d) | **code**: the mouse wheel zooms Boards in/out at the cursor | see **Start here (2026-11-19 d)** |
 | 2026-11-19 (e) | **code**: paste images onto Boards with Ctrl/⌘+V — local only (IndexedDB), move, resize, delete | see **Start here (2026-11-19 e)** |
+| 2026-11-19 (f) | **code**: the trash button opens "Delete all drawings" / "Delete all photos" | see **Start here (2026-11-19 f)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-11-19 f) — trash menu
+
+**What Artem asked:** clicking the trash icon should offer two things: delete all drawings, and delete all photos.
+
+**What changed:**
+- The trash button (`DrawTools.tsx`) now opens a small menu beside it, like the colour and width menus: **Delete all drawings** and **Delete all photos**.
+- Each option is greyed out when there is nothing of that kind. The trash button itself is disabled when there are neither.
+- Choosing an option is the confirmation, so the old two-click "Remove all?" is gone.
+- "Delete all photos" removes every pasted image and empties the IndexedDB store (`clearPastes()` in `pastes.ts`).
+
+**Verified:** typecheck clean. In headless Chrome, with 1 drawing and 1 photo:
+- Delete all photos left the drawing.
+- Delete all drawings then left nothing, and the trash button became disabled.
+- After a reload, both were still empty.
+
+**Also noticed:** Boards now loads **12 real positions from Supabase**, so the demo board no longer shows. In headless Chrome they took about 6 s to appear, so screenshots taken earlier than that show an empty canvas. That isn't a bug.
+
+Committed and pushed.
 
 ---
 
