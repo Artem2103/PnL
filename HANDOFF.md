@@ -103,7 +103,7 @@ the fourth.
 - It survived a reload at the same place and size.
 - Delete removed it, and it stayed gone after another reload.
 
-Screenshots: `Desktop\Boards\paste-*.png`. Not committed.
+Screenshots: `Desktop\Boards\paste-*.png`. Committed and pushed as `2759760`.
 
 ---
 
