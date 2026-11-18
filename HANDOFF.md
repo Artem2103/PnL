@@ -96,7 +96,7 @@ the fourth.
 - Double-clicked position A, picked the brush in the viewer toolbar, and drew 2 strokes. The viewer had 2 strokes and the board 0.
 - Closed the window, switched to the cursor, and double-clicked A again: it reopened with 0 strokes.
 
-Screenshots: `Desktop\Boards1`–`v4-*.png`. Full screen can't be tested headless.
+Screenshots: `DesktopBoards1-*.png` to `v4-*.png`. Full screen can't be tested headless. Committed and pushed as `e046612`.
 
 **Known limit:** on a phone-width screen, the viewer's toolbar overlaps the window's top-left corner (the column letter), because there is no gutter.
 
