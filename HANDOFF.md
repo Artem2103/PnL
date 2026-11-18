@@ -56,11 +56,92 @@ file easier to read:
 | 2026-11-18 | **code**: Bold text and Text shadows switches under White / Black text | see **Start here (2026-11-18)** |
 | 2026-11-18 (b) | **code**: black TradingView mark; the card's logo follows White / Black text | see **Start here (2026-11-18 b)** |
 | 2026-11-18 (c) | **code**: logo mark tried 1.5× bigger, then put back to the original size | see **Start here (2026-11-18 c)** |
+| 2026-11-18 (d) | **code**: **Boards** at `/boards`: a canvas of trading positions (columns A–J), viewer with 5M/15M/1H, admin uploads. **Needs the SQL run** | see **Start here (2026-11-18 d)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-11-18 d) — Boards
+
+**What Artem asked:** a new section, **Boards**: a visual library of trading positions on a
+Miro-like canvas with ten fixed columns (A–J). Drag/wheel/zoom navigation, double-click opens a
+large viewer with 5M | 15M | 1H screenshots of the same trade. Public is read-only; only admins
+manage it. The real GER40 screenshot must be shown as the original file. A small
+"About this collection ↗" link to the Telegram group.
+
+**Where it lives:** `/boards`, a "Boards" link between Community and Cards in every topbar
+(`SiteNav.tsx`, `route.ts`, lazy-loaded in `main.tsx`). Code in `src/boards/`, styles in
+`src/styles/boards.css`. No new dependencies.
+
+| file | what it does |
+|---|---|
+| `model.ts` | Types (Position = one trade, frames per timeframe), column layout, pan/zoom maths. Tested in `model.test.ts`. |
+| `BoardCanvas.tsx` | The canvas. One layer moved by a CSS transform written straight to the DOM (no React re-render while panning). Pointer drag (with a flick coast), pinch, wheel, zoom buttons. |
+| `PositionViewer.tsx` | The modal: 89% of the window wide, canvas blurred behind, A · 01 at the top, 5M/15M/1H (15M default), crossfade, fullscreen, arrows. Preloads every timeframe of this and the neighbouring positions. |
+| `demo.ts`, `demoChart.ts` | The demo board: 10 × 10 positions. Drawn SVG placeholders, made only when first shown. |
+| `repository.ts` | Supabase reads and admin writes. |
+| `AdminPanel.tsx` | The "Manage" drawer. |
+
+**Layout:** columns 380 px wide, 104 px apart, positions 18 px apart. At 100% zoom a 1440 px
+screen shows 3 columns, 1920 px shows 4. A phone opens at ~79% with one column. The column letters
+follow the columns sideways and stick to the top of the canvas when you scroll down.
+
+**Controls:** drag anywhere (empty space or a screenshot) pans. Wheel = up/down, Shift+wheel =
+sideways, Ctrl/⌘+wheel (and trackpad pinch) zooms at the cursor. −/+ buttons bottom-right; the % between
+them resets the view. Space+drag works too. With the viewer open, holding Space fades it so the canvas
+behind can be dragged. Double-click (or double-tap) opens a position. Its own click detection
+ignores a press that moved more than 5 px, so a drag never opens anything. In the viewer: ←/→ go to the
+previous/next position (down column A, then on to B…), Esc closes.
+
+**Update (same day): Telegram links, repeated trades.** Each position can now have a `link`.
+It shows as a faint "Telegram ↗" next to "A 01" in the viewer, and nowhere on the canvas.
+- In the demo, column **A** has the GER40 trade 3 times, linked to `https://t.me/c/3816809698/308`.
+  Column **B** has the NAS100 trade 3 times, linked to `…/307`. So they are in separate categories,
+  and the repeats are on purpose: they test how a column of real screenshots behaves.
+- These are `t.me/c/…` links to a private group, so they only open for members.
+- Database: new `board_positions.link` column. Only http(s) is accepted, both in SQL and in `cleanLink()`.
+- Admins edit it in the Manage drawer: a "Telegram link" field under each position.
+- Checked in headless Chrome: A 1–3 are `ger40_15m.jpg`, B 1–3 are `nq1_15m.jpg`, and B 02 opens with the 307 link.
+  Typecheck clean; 396/396 tests pass.
+
+**Real screenshots:** `reference/Trades/` is copied byte for byte (checked by md5) into
+`src/assets/boards/` and shown as image files, never redrawn. In the demo:
+- **A 01** is GER40 (15M only, so 5M and 1H are greyed out).
+- **B 01** is NQ1 (5M + 15M).
+
+The other 98 are placeholders.
+
+**Data and admin (needs the SQL run):** the new Boards section at the end of `supabase/schema.sql`:
+- `board_categories` (seeded A–J), and `board_positions`. A position is one row; its `frames` jsonb
+  holds per timeframe the original's path, the thumbnail's path and the size.
+- Public bucket `boards` holds the image files. The originals are stored exactly as uploaded; a ≤1000 px WebP
+  thumbnail is made for the canvas. The canvas switches to the originals when zoomed in far enough
+  that the thumbnail would look soft.
+- Anyone can read. Writes (tables and bucket) need `public.is_board_admin()`, i.e. a row in
+  `board_admins`. To make an account admin, run in the SQL editor:
+  `insert into public.board_admins (user_id) select id from auth.users where email = '…';`
+- When an admin is signed in, a **Manage** button appears in the topbar. It opens a drawer where they can:
+  rename, add, delete or reorder (↑↓) categories; add, delete or reorder positions; upload or replace
+  a screenshot per 5M/15M/1H slot (click the slot) and remove one (×). Deletes take two clicks.
+- Until the tables exist or the first screenshot is uploaded, everyone sees the demo board.
+
+**The Telegram link:** `VITE_BOARDS_ABOUT_URL` (set it in Vercel). **It is not set yet**, so the link
+goes to plain `https://t.me/`. Artem needs to give the group's address.
+
+**Verified:**
+- Typecheck clean; `npx vitest run` 396/396 (9 new).
+- `npm run build` passes; Boards loads as its own ~10 KB gzip chunk, only on `/boards`.
+- Driven in headless Chrome at 1440×900 and 390×844 (the Chrome extension wasn't connected):
+  drag on a screenshot pans; wheel, Shift+wheel and Ctrl+wheel move and zoom as described; reset; a double-click
+  opens A 01 on 15M at 1282 px = 89% wide; → steps from A 10 to B 01; 5M shows the NQ1 5M file; Esc
+  closes; no console errors. Screenshots in `Desktop\Boards\`.
+- **Not tested:** the admin upload flow and the RLS policies. Both need the SQL run and an admin
+  row, so they have never run against the database. Real-mouse feel (wheel smoothness, flick)
+  needs a try by hand.
 
 ---
 

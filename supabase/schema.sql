@@ -1101,3 +1101,118 @@ left join public.subscriptions s       on s.user_id = u.id
 order by u.created_at desc;
 
 revoke all on admin.users from public, anon, authenticated;
+
+-- ================================================================== boards
+
+-- The Boards page: a public library of trading positions on one canvas.
+-- Everyone (signed in or not) can read it. Only accounts listed in
+-- public.board_admins can change it. To make someone an admin, run in the SQL
+-- editor:
+--
+--   insert into public.board_admins (user_id)
+--   select id from auth.users where email = '<their email>';
+--
+-- A position is one row. Its screenshots are files in the public "boards"
+-- bucket; the row only holds, per timeframe ("5m", "15m", "1h"), the path of
+-- the original, the path of its canvas thumbnail and the original's size:
+--   {"15m": {"path": "<id>/15m-x.jpg", "thumb": "<id>/15m-x-thumb.webp", "w": 1290, "h": 860}}
+
+create table if not exists public.board_admins (
+  user_id  uuid primary key references auth.users (id) on delete cascade,
+  added_at timestamptz not null default now()
+);
+
+-- No policies: the API roles can neither read nor write this table. It is
+-- edited from the dashboard, and read only through is_board_admin().
+alter table public.board_admins enable row level security;
+revoke all on public.board_admins from anon, authenticated;
+
+create or replace function public.is_board_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (select 1 from public.board_admins where user_id = auth.uid());
+$$;
+
+grant execute on function public.is_board_admin() to anon, authenticated;
+
+create table if not exists public.board_categories (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null check (char_length(name) between 1 and 40),
+  sort       integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.board_positions (
+  id          uuid primary key default gen_random_uuid(),
+  category_id uuid not null references public.board_categories (id) on delete cascade,
+  sort        integer not null default 0,
+  frames      jsonb not null default '{}'::jsonb check (jsonb_typeof(frames) = 'object'),
+  created_at  timestamptz not null default now()
+);
+
+-- Where the trade was posted (a Telegram message). Shown in the viewer. Web
+-- links only: a javascript: address would run when clicked.
+alter table public.board_positions add column if not exists link text;
+alter table public.board_positions drop constraint if exists board_positions_link_is_web;
+alter table public.board_positions add constraint board_positions_link_is_web
+  check (link is null or (link ~ '^https?://' and char_length(link) <= 500));
+
+create index if not exists board_positions_category_sort on public.board_positions (category_id, sort);
+
+alter table public.board_categories enable row level security;
+alter table public.board_positions  enable row level security;
+
+drop policy if exists "board categories are readable by anyone" on public.board_categories;
+drop policy if exists "board categories are managed by admins"  on public.board_categories;
+drop policy if exists "board positions are readable by anyone"  on public.board_positions;
+drop policy if exists "board positions are managed by admins"   on public.board_positions;
+
+create policy "board categories are readable by anyone" on public.board_categories
+  for select to anon, authenticated using (true);
+create policy "board categories are managed by admins" on public.board_categories
+  for all to authenticated using (public.is_board_admin()) with check (public.is_board_admin());
+create policy "board positions are readable by anyone" on public.board_positions
+  for select to anon, authenticated using (true);
+create policy "board positions are managed by admins" on public.board_positions
+  for all to authenticated using (public.is_board_admin()) with check (public.is_board_admin());
+
+grant select on public.board_categories, public.board_positions to anon, authenticated;
+grant insert, update, delete on public.board_categories, public.board_positions to authenticated;
+
+-- The ten columns, A to J, the first time this runs.
+insert into public.board_categories (name, sort)
+select letter, ord::integer
+from unnest(array['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']) with ordinality as t(letter, ord)
+where not exists (select 1 from public.board_categories);
+
+-- Public bucket, images only (never SVG). 20 MB leaves room for a large
+-- original screenshot, which is stored as uploaded.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('boards', 'boards', true, 20971520, array['image/webp', 'image/png', 'image/jpeg'])
+on conflict (id) do update
+  set public = true,
+      file_size_limit = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "boards objects are readable by anyone"  on storage.objects;
+drop policy if exists "boards objects are written by admins"   on storage.objects;
+drop policy if exists "boards objects are updated by admins"   on storage.objects;
+drop policy if exists "boards objects are deleted by admins"   on storage.objects;
+
+create policy "boards objects are readable by anyone" on storage.objects
+  for select to anon, authenticated
+  using (bucket_id = 'boards');
+create policy "boards objects are written by admins" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'boards' and public.is_board_admin());
+create policy "boards objects are updated by admins" on storage.objects
+  for update to authenticated
+  using (bucket_id = 'boards' and public.is_board_admin())
+  with check (bucket_id = 'boards' and public.is_board_admin());
+create policy "boards objects are deleted by admins" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'boards' and public.is_board_admin());

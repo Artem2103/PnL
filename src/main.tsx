@@ -13,6 +13,7 @@ import './styles/global.css';
 const CommunityPage = lazy(() =>
   import('./community/CommunityPage').then((module) => ({ default: module.CommunityPage })),
 );
+const BoardsPage = lazy(() => import('./boards/BoardsPage').then((module) => ({ default: module.BoardsPage })));
 
 applySiteTheme();
 
@@ -20,7 +21,7 @@ const container = document.getElementById('root');
 if (!container) throw new Error('Root element is missing from index.html.');
 
 /**
- * Four pages. The front page, the plans page and the community are public — a
+ * Five pages. The front page, the plans page, the community and the boards are public — a
  * stranger can read what this is before making an account — and the editor sits
  * behind the sign-in gate. Acting in the community asks for an account then.
  */
@@ -39,6 +40,13 @@ function Root() {
   // With plans off, an old link to /pricing lands on the front page.
   if (page === 'home' || (page === 'pricing' && !PLANS_ENABLED)) return <HomePage />;
   if (page === 'pricing') return <PricingPage search={search} />;
+  if (page === 'boards') {
+    return (
+      <Suspense fallback={null}>
+        <BoardsPage />
+      </Suspense>
+    );
+  }
   if (page === 'community') {
     return (
       <Suspense fallback={null}>

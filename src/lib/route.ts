@@ -12,18 +12,20 @@ import { useEffect, useState } from 'react';
  * a stranger who mistypes should land on the page that explains what this is.
  */
 
-export type Page = 'home' | 'studio' | 'pricing' | 'community';
+export type Page = 'home' | 'studio' | 'pricing' | 'community' | 'boards';
 
 export const HOME_PATH = '/';
 export const STUDIO_PATH = '/cards';
 export const PRICING_PATH = '/pricing';
 export const COMMUNITY_PATH = '/community';
 export const PROFILE_PATH = '/profile';
+export const BOARDS_PATH = '/boards';
 
 export function pageFor(pathname: string): Page {
   const path = pathname.replace(/\/+$/, '');
   if (path === PRICING_PATH) return 'pricing';
   if (path === STUDIO_PATH) return 'studio';
+  if (path === BOARDS_PATH) return 'boards';
   if (path === PROFILE_PATH || path === COMMUNITY_PATH || path.startsWith(`${COMMUNITY_PATH}/`) || path.startsWith('/u/')) {
     return 'community';
   }

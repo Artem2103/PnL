@@ -11,6 +11,8 @@ interface ImportMetaEnv {
   readonly VITE_PLANS?: string;
   /** "on" brings back the trading journal, calendar and share sheet. */
   readonly VITE_JOURNAL?: string;
+  /** Where Boards' "About this collection" link goes: the Telegram group. */
+  readonly VITE_BOARDS_ABOUT_URL?: string;
 }
 
 interface ImportMeta {

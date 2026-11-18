@@ -1,5 +1,5 @@
 import { PLANS_ENABLED } from '../lib/billing';
-import { COMMUNITY_PATH, HOME_PATH, PRICING_PATH, STUDIO_PATH, navigate, type Page } from '../lib/route';
+import { BOARDS_PATH, COMMUNITY_PATH, HOME_PATH, PRICING_PATH, STUDIO_PATH, navigate, type Page } from '../lib/route';
 
 /**
  * The left half of the topbar, shared by all three pages: the wordmark, which
@@ -13,6 +13,7 @@ import { COMMUNITY_PATH, HOME_PATH, PRICING_PATH, STUDIO_PATH, navigate, type Pa
 
 const LINKS = [
   { page: 'community', href: COMMUNITY_PATH, label: 'Community' },
+  { page: 'boards', href: BOARDS_PATH, label: 'Boards' },
   { page: 'studio', href: STUDIO_PATH, label: 'Cards' },
   { page: 'pricing', href: PRICING_PATH, label: 'Plans' },
 ] as const satisfies readonly { page: Page; href: string; label: string }[];
