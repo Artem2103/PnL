@@ -25,7 +25,7 @@ import {
  * nothing in React; only the transform changes.
  *
  * With the brush on, a one-finger / left-button drag draws instead of panning.
- * Panning still works with Space+drag, the middle button, the wheel and pinch.
+ * Panning still works with Space+drag and the middle button; the wheel and pinch zoom.
  */
 
 interface Props {
@@ -46,7 +46,13 @@ const GLIDE_TAU = 70;
 /** A flick coasts for about this long. */
 const COAST_TAU = 260;
 /** Points closer than this on screen are skipped while drawing. */
-const INK_STEP = 1.5;
+const INK_STEP = 2.5;
+/**
+ * Stabiliser time constant (ms): the pen eases toward the pointer, which irons
+ * out hand tremor. Time-based, so it feels the same at any mouse polling rate.
+ * Higher = smoother but laggier.
+ */
+const INK_TAU = 20;
 
 export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -69,7 +75,8 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
   const [tool, setTool] = useState<InkTool>(loadTool);
   const [strokes, setStrokes] = useState<Stroke[]>(loadStrokes);
   const livePathRef = useRef<SVGPathElement>(null);
-  const ink = useRef<{ pointerId: number; points: number[]; lastX: number; lastY: number } | null>(null);
+  /** sx/sy: the smoothed pen, lastX/lastY: the last point kept (screen px). */
+  const ink = useRef<{ pointerId: number; points: number[]; sx: number; sy: number; t: number; lastX: number; lastY: number } | null>(null);
 
   useEffect(() => saveStrokes(strokes), [strokes]);
   useEffect(() => saveTool(tool), [tool]);
@@ -207,7 +214,7 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
     if (frame.current != null) cancelAnimationFrame(frame.current);
   }, []);
 
-  // Wheel: scroll down/up, Shift for sideways, Ctrl/⌘ (and trackpad pinch) to zoom.
+  // Wheel: zooms at the cursor. Shift+wheel (or a sideways scroll) pans sideways.
   // Not a React handler: those are passive, and the page must not scroll or zoom.
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -216,19 +223,21 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
       event.preventDefault();
       const unit = event.deltaMode === 1 ? 18 : event.deltaMode === 2 ? size.current.h : 1;
       const g = goal();
-      if (event.ctrlKey || event.metaKey) {
-        const rect = viewport.getBoundingClientRect();
-        const factor = Math.exp(-event.deltaY * unit * 0.0022);
-        glideTo(zoomAt(g, clampZoom(g.z * factor), event.clientX - rect.left, event.clientY - rect.top), 60);
-        return;
-      }
       if (event.shiftKey) {
         // Some browsers turn Shift+wheel into deltaX themselves; take whichever came.
         const d = (Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY) * unit;
         glideTo({ ...g, x: g.x - d });
         return;
       }
-      glideTo({ ...g, x: g.x - event.deltaX * unit, y: g.y - event.deltaY * unit });
+      // A sideways-only scroll (trackpad swipe, tilt wheel) still pans sideways.
+      if (Math.abs(event.deltaX) > Math.abs(event.deltaY) && !(event.ctrlKey || event.metaKey)) {
+        glideTo({ ...g, x: g.x - event.deltaX * unit });
+        return;
+      }
+      // The wheel zooms at the cursor (Ctrl/⌘ and trackpad pinch too).
+      const rect = viewport.getBoundingClientRect();
+      const factor = Math.exp(-event.deltaY * unit * 0.0022);
+      glideTo(zoomAt(g, clampZoom(g.z * factor), event.clientX - rect.left, event.clientY - rect.top), 60);
     };
     viewport.addEventListener('wheel', onWheel, { passive: false });
     return () => viewport.removeEventListener('wheel', onWheel);
@@ -279,7 +288,15 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
     if (pointers.current.size === 1) {
       if (drawing && !spaceHeld && event.button === 0) {
         const [x, y] = toWorld(event.clientX, event.clientY);
-        ink.current = { pointerId: event.pointerId, points: [x, y], lastX: event.clientX, lastY: event.clientY };
+        ink.current = {
+          pointerId: event.pointerId,
+          points: [x, y],
+          sx: event.clientX,
+          sy: event.clientY,
+          t: event.timeStamp,
+          lastX: event.clientX,
+          lastY: event.clientY,
+        };
         livePathRef.current?.setAttribute('d', strokePath([x, y]));
         gesture.current = null;
         return;
@@ -303,11 +320,15 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen }:
       // Coalesced events keep fast strokes smooth where the browser offers them.
       const samples = event.nativeEvent.getCoalescedEvents?.() ?? [];
       for (const e of samples.length ? samples : [event.nativeEvent]) {
-        if (Math.hypot(e.clientX - stroke.lastX, e.clientY - stroke.lastY) < INK_STEP) continue;
-        const [x, y] = toWorld(e.clientX, e.clientY);
+        const k = 1 - Math.exp(-Math.max(1, e.timeStamp - stroke.t) / INK_TAU);
+        stroke.t = Math.max(stroke.t, e.timeStamp);
+        stroke.sx += (e.clientX - stroke.sx) * k;
+        stroke.sy += (e.clientY - stroke.sy) * k;
+        if (Math.hypot(stroke.sx - stroke.lastX, stroke.sy - stroke.lastY) < INK_STEP) continue;
+        const [x, y] = toWorld(stroke.sx, stroke.sy);
         stroke.points.push(x, y);
-        stroke.lastX = e.clientX;
-        stroke.lastY = e.clientY;
+        stroke.lastX = stroke.sx;
+        stroke.lastY = stroke.sy;
       }
       livePathRef.current?.setAttribute('d', strokePath(stroke.points));
       return;

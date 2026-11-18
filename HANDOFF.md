@@ -60,11 +60,41 @@ file easier to read:
 | 2026-11-18 (e) | **code**: **Light is the default theme** and is plain white; Boards has a solid background in every theme; glass viewer; about link removed | see **Start here (2026-11-18 e)** |
 | 2026-11-19 | *no code* — SQL to make `ruslanpowjwjwha@gmail.com` a Boards admin; **Artem runs it** | see **Start here (2026-11-19)** |
 | 2026-11-19 (b) | **code**: canvas dots removed; drawing on Boards (brush, colours, 1–4 px, remove all, Ctrl+Z), kept per browser | see **Start here (2026-11-19 b)** |
+| 2026-11-19 (c) | **code**: drawn lines are lightly smoothed (stabiliser) so they don't look shaky | see **Start here (2026-11-19 c)** |
+| 2026-11-19 (d) | **code**: the mouse wheel zooms Boards in/out at the cursor | see **Start here (2026-11-19 d)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-11-19 c) — smoother drawing
+
+**What Artem asked:** make the drawn line a little smoother; it looked like a shaking hand.
+
+**What changed** (`BoardCanvas.tsx`, pointer-move while drawing):
+- **Stabiliser:** the pen no longer jumps straight to the pointer. It eases toward it with a time constant `INK_TAU = 20` ms (an exponential moving average, `k = 1 − e^(−dt/τ)`). Because it's time-based, a 60 Hz mouse and a 1000 Hz one feel the same.
+- **Fewer points:** a point is kept only after the pen has moved `INK_STEP = 2.5` screen px (was 1.5). This stops the pixel-by-pixel staircase when you draw slowly.
+- The existing curve through the midpoints (`strokePath`) is unchanged.
+- **Tuning:** raise `INK_TAU` for smoother but laggier, lower it for crisper.
+
+**Verified:** typecheck clean. In headless Chrome I drew a stroke with ±3 px random jitter, before and after: the after line is visibly calmer.
+
+---
+
+## Start here (2026-11-19 d) — wheel zooms
+
+**What Artem asked:** scrolling should zoom in and out.
+
+**What changed** (`BoardCanvas.tsx`, the wheel handler):
+- **Plain wheel zooms at the cursor:** down zooms out, up zooms in. The rate and glide are the same as Ctrl+wheel had.
+- **Up/down panning by wheel is gone.** To move the board, drag it (or Space+drag or the middle button while the brush is on).
+- **Sideways still pans:** Shift+wheel does, and so does a scroll that is mostly sideways (trackpad swipe, tilt wheel).
+- **Trackpads:** a two-finger vertical scroll now zooms too, and pinch still zooms.
+
+**Verified:** typecheck clean, tests pass. Committed and pushed together with (b)'s handoff edits and (c).
 
 ---
 
@@ -90,7 +120,7 @@ a colour picker, sizes 1/2/3/4 px, and a button that removes ALL drawings.
 - **Drawings are per browser, not shared.** They are kept in `localStorage` (`astra.boards.drawings.v1`; the chosen colour and width in `astra.boards.ink.v1`). Nothing goes to Supabase, so other viewers never see them. Shared admin drawings would need a table; say if you want that.
 - Model and validation are in `drawing.ts`, tested in `drawing.test.ts`.
 
-**Verified:** typecheck clean; tests pass (403 + 6 new). Headless Chrome screenshots are in `Desktop\Boards\draw-*.png`:
+**Verified:** typecheck clean; tests pass (403, including 6 new). Headless Chrome screenshots are in `Desktop\Boards\draw-*.png`:
 - Drew 3 strokes (blue 2px, red 4px, green 1px) and zoomed out to 64%: the strokes stay on the same candles and keep their screen width.
 - Reload: all 3 strokes are still there.
 - Remove all: 0 strokes, and the storage key is gone.
