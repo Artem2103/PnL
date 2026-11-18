@@ -98,6 +98,8 @@ the fourth.
 
 Screenshots: `Desktop\Boards\v1-*.png` to `v4-*.png`. Full screen can't be tested headless. Committed and pushed as `e046612`.
 
+**Follow-up (same day):** closing the viewer (×, Esc or a click outside) now always switches back to the **cursor**, even if the brush was on inside it (`BoardsPage.tsx`, the viewer's `onClose`). Checked in headless Chrome: after closing with the brush on, Cursor is active and the board is not in drawing mode.
+
 **Known limit:** on a phone-width screen, the viewer's toolbar overlaps the window's top-left corner (the column letter), because there is no gutter.
 
 ---

@@ -147,7 +147,11 @@ export function BoardsPage() {
             items={layout.items}
             index={open}
             onIndex={setOpen}
-            onClose={() => setOpen(null)}
+            onClose={() => {
+              // Back on the board, the cursor is equipped, whatever was used in the viewer.
+              setOpen(null);
+              setDrawing(false);
+            }}
             peek={space}
             drawing={drawing}
             onDrawing={setDrawing}
