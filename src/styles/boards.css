@@ -956,6 +956,17 @@ body:has(.bd)::before {
   font-weight: 700;
 }
 
+.bd-slot.is-saving .bd-slot__pick img {
+  opacity: 0.55;
+}
+
+.bd-slot__link {
+  width: 100%;
+  margin-top: 4px;
+  padding: 4px 6px;
+  font-size: 11px;
+}
+
 .bd-slot__remove {
   position: absolute;
   top: -6px;
@@ -971,6 +982,24 @@ body:has(.bd)::before {
   color: #ffffff;
   font-size: 12px;
   line-height: 1;
+}
+
+.bd-admin__new {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+}
+
+.bd-admin__new-link {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.bd-admin__new-preview {
+  width: 100%;
+  border-radius: 8px;
+  opacity: 0.6;
 }
 
 .bd-admin__busy {

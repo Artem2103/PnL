@@ -66,6 +66,7 @@ file easier to read:
 | 2026-11-19 (f) | **code**: the trash button opens "Delete all drawings" / "Delete all photos" | see **Start here (2026-11-19 f)** |
 | 2026-11-19 (g) | **code**: draw on an open position (scratch, gone on close); a **cursor** tool above the brush | see **Start here (2026-11-19 g)** |
 | 2026-11-19 (h) | **code**: Boards columns sit 1.5× further apart (gap 104 → 156 board px) | see **Start here (2026-11-19 h)** |
+| 2026-11-19 (i) | **code**: Manage drawer: paste a TradingView snapshot link (or a picture) into a slot instead of uploading; preview shows at once; a link alone adds a position. Tested with a real link. **FX Replay waits on a sample link** | see **Start here (2026-11-19 i)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
@@ -73,6 +74,40 @@ the two picture slots** the third, and **Local mode** and **The scroll trap in t
 the fourth.
 
 ---
+
+## Start here (2026-11-19 i) — paste chart links into Manage
+
+**What Artem asked:** in Boards' Manage drawer, paste a TradingView or FX Replay link instead of
+uploading a screenshot each time, and see the picture straight away.
+
+**What it does:**
+- **Adding a position = pasting a link.** Under a category's positions there's a box, "Paste a TradingView
+  link to add a position". Pasting creates the position with that picture in its **15M** slot. The
+  picture shows (dimmed) the moment it's pasted. If the download or upload fails, the half-made position
+  is deleted again. "Add empty position" is still there.
+- Each 5M/15M/1H slot also has a small **Paste link** box under it, to fill or replace that timeframe.
+- **TradingView snapshot link** (`https://www.tradingview.com/x/AbCd1234/`, any language subdomain):
+  converted to the picture behind it, `https://s3.tradingview.com/snapshots/a/AbCd1234.png` (first
+  letter of the id, lower-cased). The browser downloads it directly — TradingView's image host sends
+  `Access-Control-Allow-Origin: *` (checked with curl), so no server is needed.
+- **A direct picture link** (ending .png/.jpg/.jpeg/.webp) works the same way.
+- **A copied image** (e.g. TradingView's "Copy image") pasted into the box is used directly.
+- The picture appears in the slot the moment it's pasted (dimmed while saving). Then it goes through
+  the normal upload: the original is stored in the `boards` bucket plus a thumbnail. So the board
+  doesn't depend on the link staying alive.
+- Anything else gives an error saying which links work. Clicking the slot to upload a file still works.
+
+Code: `src/boards/links.ts` (link → image URL, download), `links.test.ts`, `Slot` in
+`AdminPanel.tsx`, `.bd-slot__link` / `.is-saving` in `boards.css`.
+
+**Not yet:**
+- **FX Replay:** I couldn't find how their share links look or whether a picture can be read from
+  them. **Artem: send one FX Replay share link** and I'll add it.
+- **Tested with Artem's link** `https://www.tradingview.com/x/e7Qpaqln/`: the app's own `links.ts` turned
+  it into `…/snapshots/e/e7Qpaqln.png` and downloaded it in a one-off run. The result was a 186 KB,
+  3362×1990 PNG (a GER40 chart), and the server sent `Access-Control-Allow-Origin: *`. That link is now
+  in `links.test.ts`. I did **not** click through the Manage drawer, which needs an admin login.
+  Typecheck clean; 411/411 tests.
 
 ## Start here (2026-11-19 h) — wider column gap
 

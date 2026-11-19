@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { TIMEFRAMES, TIMEFRAME_LABEL, type Timeframe } from './model';
+import { DEFAULT_TIMEFRAME, TIMEFRAMES, TIMEFRAME_LABEL, type Timeframe } from './model';
 import {
   BOARD_ACCEPT,
   addCategory,
@@ -15,6 +15,7 @@ import {
   type RawCategory,
   type RawPosition,
 } from './repository';
+import { chartImageUrl, fetchChartImage } from './links';
 
 /**
  * Board management, for accounts in `board_admins` only. The database refuses
@@ -39,13 +40,16 @@ export function AdminPanel({ raw, showingDemo, onChanged, onError, onClose }: Pr
     if (!selected && raw[0]) setSelected(raw[0].id);
   }, [raw, selected]);
 
-  const run = async (work: () => Promise<unknown>) => {
+  /** Resolves true when the change was saved. */
+  const run = async (work: () => Promise<unknown>): Promise<boolean> => {
     setBusy(true);
     try {
       await work();
       await onChanged();
+      return true;
     } catch (error) {
       onError(error);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -113,6 +117,8 @@ export function AdminPanel({ raw, showingDemo, onChanged, onError, onClose }: Pr
                       tf={tf}
                       disabled={busy}
                       onFile={(file) => run(() => setFrame(p, tf, file))}
+                      onLink={(imageUrl) => run(async () => setFrame(p, tf, await fetchChartImage(imageUrl)))}
+                      onError={onError}
                       onRemove={() => run(() => removeFrame(p, tf))}
                     />
                   ))}
@@ -131,8 +137,25 @@ export function AdminPanel({ raw, showingDemo, onChanged, onError, onClose }: Pr
               </li>
             ))}
           </ul>
+          <NewPositionField
+            disabled={busy}
+            onError={onError}
+            onLink={(imageUrl) =>
+              run(async () => {
+                const file = await fetchChartImage(imageUrl);
+                const id = await addPosition(category);
+                const fresh: RawPosition = { id, categoryId: category.id, sort: 0, frames: {}, link: null };
+                try {
+                  await setFrame(fresh, DEFAULT_TIMEFRAME, file);
+                } catch (error) {
+                  await deletePosition(fresh).catch(() => undefined);
+                  throw error;
+                }
+              })
+            }
+          />
           <button type="button" className="btn btn--small" disabled={busy} onClick={() => run(() => addPosition(category))}>
-            Add position
+            Add empty position
           </button>
         </section>
       ) : null}
@@ -208,6 +231,56 @@ function LinkField({ value, disabled, onSave }: { value: string; disabled: boole
   );
 }
 
+/** Paste a chart link here and it becomes a new position, its picture in the 15M slot. */
+function NewPositionField({
+  disabled,
+  onLink,
+  onError,
+}: {
+  disabled: boolean;
+  onLink(imageUrl: string): Promise<boolean>;
+  onError(error: unknown): void;
+}) {
+  const [draft, setDraft] = useState('');
+  const [preview, setPreview] = useState<string | null>(null);
+  const submit = async (text: string) => {
+    if (!text.trim()) return;
+    const imageUrl = chartImageUrl(text);
+    if (!imageUrl) {
+      onError(new Error('Paste a TradingView snapshot link (tradingview.com/x/…) or a direct link to a picture.'));
+      return;
+    }
+    setPreview(imageUrl);
+    const ok = await onLink(imageUrl);
+    setPreview(null);
+    if (ok) setDraft('');
+  };
+  return (
+    <div className="bd-admin__new">
+      {preview ? <img className="bd-admin__new-preview" src={preview} alt="" /> : null}
+      <input
+        className="input bd-admin__new-link"
+        value={draft}
+        placeholder="Paste a TradingView link to add a position"
+        disabled={disabled}
+        aria-label="Chart link for a new position"
+        onChange={(event) => setDraft(event.target.value)}
+        onPaste={(event) => {
+          const text = event.clipboardData.getData('text');
+          if (!chartImageUrl(text)) return;
+          event.preventDefault();
+          setDraft(text.trim());
+          void submit(text);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') void submit(draft);
+          if (event.key === 'Escape') setDraft('');
+        }}
+      />
+    </div>
+  );
+}
+
 function MoveButtons({ disabled, onUp, onDown }: { disabled: boolean; onUp: (() => void) | null; onDown: (() => void) | null }) {
   return (
     <span className="bd-admin__move">
@@ -252,33 +325,90 @@ function Slot({
   tf,
   disabled,
   onFile,
+  onLink,
+  onError,
   onRemove,
 }: {
   position: RawPosition;
   tf: Timeframe;
   disabled: boolean;
-  onFile(file: File): void;
+  onFile(file: File): Promise<boolean>;
+  onLink(imageUrl: string): Promise<boolean>;
+  onError(error: unknown): void;
   onRemove(): void;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const frame = position.frames[tf];
+  const label = TIMEFRAME_LABEL[tf];
+  /** Shown the moment something is pasted, until the saved copy replaces it. */
+  const [preview, setPreview] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+
+  useEffect(() => {
+    if (!preview?.startsWith('blob:')) return;
+    return () => URL.revokeObjectURL(preview);
+  }, [preview]);
+
+  const save = async (shown: string, work: () => Promise<boolean>) => {
+    setPreview(shown);
+    const ok = await work();
+    setPreview(null);
+    if (ok) setDraft('');
+  };
+
+  const fromFile = (file: File) => void save(URL.createObjectURL(file), () => onFile(file));
+
+  const fromText = (text: string) => {
+    if (!text.trim()) return;
+    const imageUrl = chartImageUrl(text);
+    if (!imageUrl) {
+      onError(new Error('Paste a TradingView snapshot link (tradingview.com/x/…) or a direct link to a picture.'));
+      return;
+    }
+    void save(imageUrl, () => onLink(imageUrl));
+  };
+
+  const shown = preview ?? (frame ? thumbUrl(frame) : null);
   return (
-    <div className={`bd-slot${frame ? ' is-filled' : ''}`}>
+    <div className={`bd-slot${shown ? ' is-filled' : ''}${preview ? ' is-saving' : ''}`}>
       <button
         type="button"
         className="bd-slot__pick"
         disabled={disabled}
         onClick={() => input.current?.click()}
-        aria-label={frame ? `Replace ${TIMEFRAME_LABEL[tf]} screenshot` : `Upload ${TIMEFRAME_LABEL[tf]} screenshot`}
+        aria-label={frame ? `Replace ${label} screenshot` : `Upload ${label} screenshot`}
       >
-        {frame ? <img src={thumbUrl(frame)} alt="" /> : <span>+</span>}
-        <em>{TIMEFRAME_LABEL[tf]}</em>
+        {shown ? <img src={shown} alt="" /> : <span>+</span>}
+        <em>{label}</em>
       </button>
-      {frame ? (
-        <button type="button" className="bd-slot__remove" disabled={disabled} onClick={onRemove} aria-label={`Remove ${TIMEFRAME_LABEL[tf]} screenshot`}>
+      {frame && !preview ? (
+        <button type="button" className="bd-slot__remove" disabled={disabled} onClick={onRemove} aria-label={`Remove ${label} screenshot`}>
           ×
         </button>
       ) : null}
+      <input
+        className="input bd-slot__link"
+        value={draft}
+        placeholder="Paste link"
+        disabled={disabled}
+        aria-label={`${label} chart link`}
+        onChange={(event) => setDraft(event.target.value)}
+        onPaste={(event) => {
+          const file = Array.from(event.clipboardData.files).find((f) => f.type.startsWith('image/'));
+          const text = event.clipboardData.getData('text');
+          if (!file && !chartImageUrl(text)) return; // let it paste as text; Enter will explain
+          event.preventDefault();
+          if (file) fromFile(file);
+          else {
+            setDraft(text.trim());
+            fromText(text);
+          }
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') fromText(draft);
+          if (event.key === 'Escape') setDraft('');
+        }}
+      />
       <input
         ref={input}
         type="file"
@@ -287,7 +417,7 @@ function Slot({
         onChange={(event) => {
           const file = event.target.files?.[0];
           event.target.value = '';
-          if (file) onFile(file);
+          if (file) fromFile(file);
         }}
       />
     </div>
