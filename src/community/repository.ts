@@ -92,7 +92,8 @@ export interface CommunityRepository {
   setBookmark(userId: string, postId: string, on: boolean): Promise<void>;
   setFollow(userId: string, memberId: string, on: boolean): Promise<void>;
   report(userId: string, postId: string, reason: ReportReason): Promise<void>;
-  suggestions(viewerId: string | null): Promise<Member[]>;
+  /** Every member except the viewer, newest first, with whether the viewer follows them. */
+  members(viewerId: string | null): Promise<{ member: Member; following: boolean }[]>;
   trending(): Promise<{ tag: string; uses: number }[]>;
   notifications(userId: string): Promise<Notice[]>;
   markRead(userId: string): Promise<void>;
@@ -343,20 +344,30 @@ export class SupabaseCommunity implements CommunityRepository {
     if (error && error.code !== '23505') fail('Could not send that report', error);
   }
 
-  async suggestions(viewerId: string | null): Promise<Member[]> {
-    const { data, error } = await this.db
-      .from('community_profiles')
-      .select(MEMBER_COLUMNS)
-      .order('created_at', { ascending: false })
-      .limit(12);
-    if (error) fail('Could not load suggestions', error);
-    let members = (data as MemberRow[]).map(fromMember).filter((m) => m.id !== viewerId);
-    if (viewerId) {
-      const followed = await this.db.from('follows').select('followee_id').eq('follower_id', viewerId);
-      const ids = new Set((followed.data ?? []).map((row: { followee_id: string }) => row.followee_id));
-      members = members.filter((m) => !ids.has(m.id));
+  async members(viewerId: string | null): Promise<{ member: Member; following: boolean }[]> {
+    // Supabase answers at most 1000 rows at a time, so read in pages until a short one.
+    const PAGE = 1000;
+    const rows: MemberRow[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await this.db
+        .from('community_profiles')
+        .select(MEMBER_COLUMNS)
+        .order('created_at', { ascending: false })
+        .order('id')
+        .range(from, from + PAGE - 1);
+      if (error) fail('Could not load members', error);
+      rows.push(...(data as MemberRow[]));
+      if (data.length < PAGE) break;
     }
-    return members.slice(0, 4);
+    let followed = new Set<string>();
+    if (viewerId) {
+      const { data } = await this.db.from('follows').select('followee_id').eq('follower_id', viewerId);
+      followed = new Set((data ?? []).map((row: { followee_id: string }) => row.followee_id));
+    }
+    return rows
+      .map(fromMember)
+      .filter((m) => m.id !== viewerId)
+      .map((member) => ({ member, following: followed.has(member.id) }));
   }
 
   async trending(): Promise<{ tag: string; uses: number }[]> {
@@ -631,9 +642,11 @@ export class LocalCommunity implements CommunityRepository {
     /* Nobody to tell in local mode. */
   }
 
-  async suggestions(viewerId: string | null): Promise<Member[]> {
+  async members(viewerId: string | null): Promise<{ member: Member; following: boolean }[]> {
     const data = this.read();
-    return data.members.filter((m) => m.id !== viewerId && !data.follows.includes(`${viewerId}>${m.id}`)).slice(0, 4);
+    return data.members
+      .filter((m) => m.id !== viewerId)
+      .map((member) => ({ member, following: data.follows.includes(`${viewerId}>${member.id}`) }));
   }
 
   async trending(): Promise<{ tag: string; uses: number }[]> {

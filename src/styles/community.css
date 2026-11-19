@@ -791,6 +791,18 @@
   text-transform: uppercase;
 }
 
+/* Everyone is listed, so the list scrolls inside its card and the rail stays put. */
+.cm-who__list {
+  display: grid;
+  gap: 12px;
+  max-height: calc(100vh - var(--topbar-h) - 280px);
+  min-height: 120px;
+  margin-right: -8px;
+  padding-right: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .cm-who__row {
   display: flex;
   align-items: center;

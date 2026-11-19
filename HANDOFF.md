@@ -71,6 +71,7 @@ file easier to read:
 | 2026-11-19 (k) | **code**: FX Replay share links (`fxreplay.com/s/…`) work in the Manage link boxes, through a new `/api/chart-image` function | see **Start here (2026-11-19 k)** |
 | 2026-11-19 (l) | *no code* — why the Boards pictures look soft on the canvas, and three fixes besides making them bigger | see **Start here (2026-11-19 l)** |
 | 2026-11-19 (m) | **code**: sharper Boards canvas without bigger pictures: repaint when still, pixel-aligned, exact-size copies (5 widths), picked by zoom × screen; old pictures upgraded on an admin visit | see **Start here (2026-11-19 m)** |
+| 2026-11-19 (n) | **code**: Community "Who to follow" lists every member except you, with Follow / Following | see **Start here (2026-11-19 n)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
@@ -78,6 +79,26 @@ the two picture slots** the third, and **Local mode** and **The scroll trap in t
 the fourth.
 
 ---
+
+## Start here (2026-11-19 n) — "Who to follow" shows everyone
+
+**What Artem asked:** in Community, "Who to follow" should show all users except himself, not a few.
+
+**Before:** the 12 newest profiles, minus you and anyone you follow, cut to **4**.
+
+**Now:**
+- **Who's listed:** every profile in `community_profiles` except you, newest first.
+  `CommunityRepo.members(viewerId)` replaces `suggestions()`. It reads in pages of 1000, because
+  Supabase answers at most 1000 rows at a time.
+- **Buttons:** people you already follow stay in the list with a light **Following** button; clicking
+  it unfollows. Everyone else has the dark **Follow** button. The button flips at once, and flips back
+  if the save fails.
+- **Scrolling:** the list scrolls inside its card (`.cm-who__list`, max height = window − topbar −
+  280 px), so the sticky right rail stays usable.
+- **Same data as before:** it only reads `community_profiles` (no emails) and `follows`. No SQL change.
+- **Local mode** behaves the same.
+
+Typecheck clean; 418/418 tests. Not clicked through in a browser.
 
 ## Start here (2026-11-19 m) — sharper canvas pictures (fixes a–c from (l))
 

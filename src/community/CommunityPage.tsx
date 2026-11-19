@@ -492,21 +492,24 @@ function MemberView({
 /* ------------------------------------------------------------------ */
 
 function Rail({ app, stamp }: { app: Community; stamp: number }) {
-  const [members, setMembers] = useState<Member[]>([]);
+  const [members, setMembers] = useState<{ member: Member; following: boolean }[]>([]);
   const me = app.me;
 
   useEffect(() => {
-    app.repo.suggestions(me?.id ?? null).then(setMembers, () => setMembers([]));
+    app.repo.members(me?.id ?? null).then(setMembers, () => setMembers([]));
   }, [app.repo, me?.id, stamp]);
 
-  const follow = async (member: Member) => {
+  const setFollowing = (id: string, following: boolean) =>
+    setMembers((list) => list.map((row) => (row.member.id === id ? { ...row, following } : row)));
+
+  const toggleFollow = async (member: Member, on: boolean) => {
     const userId = app.requireMember();
     if (!userId) return;
-    setMembers((list) => list.filter((m) => m.id !== member.id));
+    setFollowing(member.id, on);
     try {
-      await app.repo.setFollow(userId, member.id, true);
+      await app.repo.setFollow(userId, member.id, on);
     } catch (error) {
-      setMembers((list) => [member, ...list]);
+      setFollowing(member.id, !on);
       app.fail(error);
     }
   };
@@ -540,7 +543,8 @@ function Rail({ app, stamp }: { app: Community; stamp: number }) {
       {members.length ? (
         <section className="cm-card cm-who">
           <h3>Who to follow</h3>
-          {members.map((member) => (
+          <div className="cm-who__list">
+            {members.map(({ member, following }) => (
             <div key={member.id} className="cm-who__row">
               <button type="button" className="cm-avatar" onClick={() => app.go(`/u/${member.handle}`)} aria-label={`Open ${member.handle}`}>
                 <Avatar path={member.avatarPath} />
@@ -549,11 +553,17 @@ function Rail({ app, stamp }: { app: Community; stamp: number }) {
                 <strong>{member.displayName || member.handle}</strong>
                 <span className="cm-faint">@{member.handle}</span>
               </div>
-              <button type="button" className="cm-pill cm-pill--dark" onClick={() => void follow(member)}>
-                Follow
+              <button
+                type="button"
+                className={`cm-pill${following ? '' : ' cm-pill--dark'}`}
+                onClick={() => void toggleFollow(member, !following)}
+                aria-pressed={following}
+              >
+                {following ? 'Following' : 'Follow'}
               </button>
             </div>
           ))}
+          </div>
         </section>
       ) : null}
     </aside>
