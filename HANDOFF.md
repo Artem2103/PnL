@@ -68,6 +68,7 @@ file easier to read:
 | 2026-11-19 (h) | **code**: Boards columns sit 1.5× further apart (gap 104 → 156 board px) | see **Start here (2026-11-19 h)** |
 | 2026-11-19 (i) | **code**: Manage drawer: paste a TradingView snapshot link (or a picture) into a slot instead of uploading; preview shows at once; a link alone adds a position. Tested with a real link. **FX Replay waits on a sample link** | see **Start here (2026-11-19 i)** |
 | 2026-11-19 (j) | **code**: Manage slots are link-only — each 5M/15M/1H is a grey preview box with a **TradingView link** box under it; no file uploads, no shared "add a position" box | see **Start here (2026-11-19 j)** |
+| 2026-11-19 (k) | **code**: FX Replay share links (`fxreplay.com/s/…`) work in the Manage link boxes, through a new `/api/chart-image` function | see **Start here (2026-11-19 k)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
@@ -75,6 +76,32 @@ the two picture slots** the third, and **Local mode** and **The scroll trap in t
 the fourth.
 
 ---
+
+## Start here (2026-11-19 k) — FX Replay links
+
+**What Artem asked:** FX Replay links in the Boards link boxes, e.g. `https://fxreplay.com/s/36df68fe64`.
+
+**How FX Replay links work:** the share page's `og:image` is the same address plus `.png`
+(`https://fxreplay.com/s/36df68fe64.png`, a 3206×1718 PNG). Unlike TradingView, FX Replay sends **no
+`Access-Control-Allow-Origin`**, so the browser can't read that picture from our site.
+
+**What was added:**
+- `api/chart-image.ts`, a Vercel function: `GET /api/chart-image?fx=<id>` fetches
+  `https://fxreplay.com/s/<id>.png` and passes it through, cached for a day (a week on the CDN).
+  - It only ever fetches that one FX Replay address. The id must be 6–32 letters/digits, so it can't
+    be used as an open proxy.
+  - It refuses non-images and anything over 4 MB (Vercel caps a function's answer at 4.5 MB).
+- `links.ts`: `fxreplay.com/s/<id>` (also `www.`, a trailing `/`, or `.png`) → `/api/chart-image?fx=<id>`.
+  From there it's the same as a TradingView link: instant preview, then the picture is stored in the
+  `boards` bucket with the link kept as `frames[tf].source`.
+- Link boxes now say "TradingView / FX Replay link".
+- **Local dev:** `/api/*` only runs on Vercel (or `vercel dev`), so FX Replay links fail under plain
+  `npm run dev`. TradingView links still work there.
+
+**Verified:** the handler, run once against the real link, answered 200 `image/png` 279,947 bytes.
+`tests/api/chart-image.test.ts` covers the pass-through, refusing bad ids, and refusing non-images.
+`links.test.ts` covers the link forms. Typecheck clean (app and API); 415/415 tests. Not clicked through
+in Manage (admin login).
 
 ## Start here (2026-11-19 j) — positions are added by links only
 

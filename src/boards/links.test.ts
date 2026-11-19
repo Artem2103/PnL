@@ -9,6 +9,13 @@ describe('chartImageUrl', () => {
     expect(chartImageUrl('https://ru.tradingview.com/x/kLm0NoPq/')).toBe('https://s3.tradingview.com/snapshots/k/kLm0NoPq.png');
   });
 
+  it('sends an FX Replay share link through our own image function', () => {
+    expect(chartImageUrl('https://fxreplay.com/s/36df68fe64')).toBe('/api/chart-image?fx=36df68fe64');
+    expect(chartImageUrl('https://www.fxreplay.com/s/36df68fe64/')).toBe('/api/chart-image?fx=36df68fe64');
+    expect(chartImageUrl('https://fxreplay.com/s/36df68fe64.png')).toBe('/api/chart-image?fx=36df68fe64');
+    expect(chartImageUrl('https://fxreplay.com/pricing')).toBeNull();
+  });
+
   it('keeps a direct picture link as it is', () => {
     expect(chartImageUrl('https://s3.tradingview.com/snapshots/a/AbCd1234.png')).toBe(
       'https://s3.tradingview.com/snapshots/a/AbCd1234.png',

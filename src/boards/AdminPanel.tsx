@@ -288,7 +288,7 @@ function Slot({
     }
     const imageUrl = chartImageUrl(link);
     if (!imageUrl) {
-      onError(new Error('Paste a TradingView snapshot link (tradingview.com/x/…) or a direct link to a picture.'));
+      onError(new Error('Paste a TradingView (tradingview.com/x/…) or FX Replay (fxreplay.com/s/…) link, or a direct link to a picture.'));
       setDraft(value);
       return;
     }
@@ -308,9 +308,9 @@ function Slot({
       <input
         className="input bd-slot__link"
         value={draft}
-        placeholder="TradingView link"
+        placeholder="TradingView / FX Replay link"
         disabled={disabled}
-        aria-label={`${label} TradingView link`}
+        aria-label={`${label} chart link`}
         onChange={(event) => setDraft(event.target.value)}
         onPaste={(event) => {
           const text = event.clipboardData.getData('text');
