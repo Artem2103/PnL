@@ -52,7 +52,7 @@ export function pickTimeframe(position: Position, wanted: Timeframe = DEFAULT_TI
 
 export const COLUMN_WIDTH = 380;
 /** Between columns: generous, so each column reads as its own category. */
-export const COLUMN_GAP = 104;
+export const COLUMN_GAP = 156;
 /** Between positions in a column: tight, so a column reads as one list. */
 export const ROW_GAP = 18;
 /** Room above the first position for the column's letter. */

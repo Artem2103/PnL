@@ -65,6 +65,7 @@ file easier to read:
 | 2026-11-19 (e) | **code**: paste images onto Boards with Ctrl/⌘+V — local only (IndexedDB), move, resize, delete | see **Start here (2026-11-19 e)** |
 | 2026-11-19 (f) | **code**: the trash button opens "Delete all drawings" / "Delete all photos" | see **Start here (2026-11-19 f)** |
 | 2026-11-19 (g) | **code**: draw on an open position (scratch, gone on close); a **cursor** tool above the brush | see **Start here (2026-11-19 g)** |
+| 2026-11-19 (h) | **code**: Boards columns sit 1.5× further apart (gap 104 → 156 board px) | see **Start here (2026-11-19 h)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
@@ -72,6 +73,17 @@ the two picture slots** the third, and **Local mode** and **The scroll trap in t
 the fourth.
 
 ---
+
+## Start here (2026-11-19 h) — wider column gap
+
+Artem asked how big the space between Boards columns was and to make it 1.5× bigger. It was
+`COLUMN_GAP = 104` board pixels (columns are `COLUMN_WIDTH = 380`); it is now **156**, in
+`src/boards/model.ts`. Positions inside a column (`ROW_GAP = 18`) are unchanged. Tests and the
+typecheck pass.
+
+One side effect: drawings and pasted images are stored in board coordinates, so anything already
+drawn next to column B onwards stays where it was while the columns move right — 52 px per column
+(column J moves 468 px). Clear and redraw if old marks no longer line up.
 
 ## Start here (2026-11-19 g) — drawing in the viewer; cursor tool
 
