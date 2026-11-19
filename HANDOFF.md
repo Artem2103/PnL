@@ -67,6 +67,7 @@ file easier to read:
 | 2026-11-19 (g) | **code**: draw on an open position (scratch, gone on close); a **cursor** tool above the brush | see **Start here (2026-11-19 g)** |
 | 2026-11-19 (h) | **code**: Boards columns sit 1.5× further apart (gap 104 → 156 board px) | see **Start here (2026-11-19 h)** |
 | 2026-11-19 (i) | **code**: Manage drawer: paste a TradingView snapshot link (or a picture) into a slot instead of uploading; preview shows at once; a link alone adds a position. Tested with a real link. **FX Replay waits on a sample link** | see **Start here (2026-11-19 i)** |
+| 2026-11-19 (j) | **code**: Manage slots are link-only — each 5M/15M/1H is a grey preview box with a **TradingView link** box under it; no file uploads, no shared "add a position" box | see **Start here (2026-11-19 j)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
@@ -74,6 +75,30 @@ the two picture slots** the third, and **Local mode** and **The scroll trap in t
 the fourth.
 
 ---
+
+## Start here (2026-11-19 j) — positions are added by links only
+
+**What Artem asked:** remove the shared "Paste a TradingView link to add a position" box. Make the slots
+plain grey boxes that only show whether that timeframe is empty or has a picture. Positions get their
+pictures only from links, one under each timeframe.
+
+**What the Manage drawer does now (`AdminPanel.tsx`, `Slot`):**
+- Each position row has three grey boxes, **5M / 15M / 1H**. Each one is either empty or shows the
+  picture. They can't be clicked: **file uploads are gone from Manage.**
+- Under each box is a **TradingView link** box. Pasting a snapshot link (or typing it and pressing
+  Enter / leaving the box) downloads the picture into that timeframe. It shows at once, dimmed while it
+  saves. A different link replaces it; **emptying the box removes that timeframe's picture** (the old ×
+  button is gone).
+- The link is stored with its picture as `frames[tf].source` in the existing `frames` jsonb (no SQL
+  change). The box shows it again next time. The picture itself is still copied into the `boards`
+  bucket (original + thumbnail), so the board doesn't depend on TradingView keeping the link.
+- Adding a position: **Add position**, then paste links under the timeframes. The Telegram link box is unchanged.
+- Pictures uploaded as files before this change still show. Their link boxes are empty; paste a link to
+  replace one, or empty-and-leave does nothing for them (there's no link to clear) — to remove one, delete the position.
+- `repository.ts`: `StoredFrame.source`, `setFrame(…, source)`; only http(s) links are kept (`cleanLink`).
+  `setFrame` still takes a File, so the upload code is there if it's ever wanted back.
+
+Typecheck clean; 411/411 tests. I didn't click through it, because Manage needs an admin login.
 
 ## Start here (2026-11-19 i) — paste chart links into Manage
 

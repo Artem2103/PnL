@@ -923,7 +923,7 @@ body:has(.bd)::before {
   aspect-ratio: 3 / 2;
   padding: 0;
   overflow: hidden;
-  border: 1px dashed var(--border-strong);
+  border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-soft);
   color: var(--text-faint);
@@ -931,8 +931,7 @@ body:has(.bd)::before {
 }
 
 .bd-slot.is-filled .bd-slot__pick {
-  border: 1px solid #0b0b0c;
-  background: #ffffff;
+  border-style: solid;
 }
 
 .bd-slot__pick img {
@@ -956,10 +955,6 @@ body:has(.bd)::before {
   font-weight: 700;
 }
 
-.bd-slot.is-saving .bd-slot__pick img {
-  opacity: 0.55;
-}
-
 .bd-slot__link {
   width: 100%;
   margin-top: 4px;
@@ -967,39 +962,8 @@ body:has(.bd)::before {
   font-size: 11px;
 }
 
-.bd-slot__remove {
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: #0b0b0c;
-  color: #ffffff;
-  font-size: 12px;
-  line-height: 1;
-}
-
-.bd-admin__new {
-  display: grid;
-  gap: 6px;
-  width: 100%;
-}
-
-.bd-admin__new-link {
-  width: 100%;
-  padding: 8px 10px;
-  font-size: 13px;
-}
-
-.bd-admin__new-preview {
-  width: 100%;
-  border-radius: 8px;
-  opacity: 0.6;
+.bd-slot.is-saving .bd-slot__pick img {
+  opacity: 0.55;
 }
 
 .bd-admin__busy {

@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
-import { DEFAULT_TIMEFRAME, TIMEFRAMES, TIMEFRAME_LABEL, type Timeframe } from './model';
+import { useEffect, useState } from 'react';
+import { TIMEFRAMES, TIMEFRAME_LABEL, type Timeframe } from './model';
 import {
-  BOARD_ACCEPT,
   addCategory,
   addPosition,
   deleteCategory,
@@ -116,10 +115,9 @@ export function AdminPanel({ raw, showingDemo, onChanged, onError, onClose }: Pr
                       position={p}
                       tf={tf}
                       disabled={busy}
-                      onFile={(file) => run(() => setFrame(p, tf, file))}
-                      onLink={(imageUrl) => run(async () => setFrame(p, tf, await fetchChartImage(imageUrl)))}
-                      onError={onError}
+                      onLink={(imageUrl, link) => run(async () => setFrame(p, tf, await fetchChartImage(imageUrl), link))}
                       onRemove={() => run(() => removeFrame(p, tf))}
+                      onError={onError}
                     />
                   ))}
                 </div>
@@ -137,25 +135,8 @@ export function AdminPanel({ raw, showingDemo, onChanged, onError, onClose }: Pr
               </li>
             ))}
           </ul>
-          <NewPositionField
-            disabled={busy}
-            onError={onError}
-            onLink={(imageUrl) =>
-              run(async () => {
-                const file = await fetchChartImage(imageUrl);
-                const id = await addPosition(category);
-                const fresh: RawPosition = { id, categoryId: category.id, sort: 0, frames: {}, link: null };
-                try {
-                  await setFrame(fresh, DEFAULT_TIMEFRAME, file);
-                } catch (error) {
-                  await deletePosition(fresh).catch(() => undefined);
-                  throw error;
-                }
-              })
-            }
-          />
           <button type="button" className="btn btn--small" disabled={busy} onClick={() => run(() => addPosition(category))}>
-            Add empty position
+            Add position
           </button>
         </section>
       ) : null}
@@ -231,56 +212,6 @@ function LinkField({ value, disabled, onSave }: { value: string; disabled: boole
   );
 }
 
-/** Paste a chart link here and it becomes a new position, its picture in the 15M slot. */
-function NewPositionField({
-  disabled,
-  onLink,
-  onError,
-}: {
-  disabled: boolean;
-  onLink(imageUrl: string): Promise<boolean>;
-  onError(error: unknown): void;
-}) {
-  const [draft, setDraft] = useState('');
-  const [preview, setPreview] = useState<string | null>(null);
-  const submit = async (text: string) => {
-    if (!text.trim()) return;
-    const imageUrl = chartImageUrl(text);
-    if (!imageUrl) {
-      onError(new Error('Paste a TradingView snapshot link (tradingview.com/x/…) or a direct link to a picture.'));
-      return;
-    }
-    setPreview(imageUrl);
-    const ok = await onLink(imageUrl);
-    setPreview(null);
-    if (ok) setDraft('');
-  };
-  return (
-    <div className="bd-admin__new">
-      {preview ? <img className="bd-admin__new-preview" src={preview} alt="" /> : null}
-      <input
-        className="input bd-admin__new-link"
-        value={draft}
-        placeholder="Paste a TradingView link to add a position"
-        disabled={disabled}
-        aria-label="Chart link for a new position"
-        onChange={(event) => setDraft(event.target.value)}
-        onPaste={(event) => {
-          const text = event.clipboardData.getData('text');
-          if (!chartImageUrl(text)) return;
-          event.preventDefault();
-          setDraft(text.trim());
-          void submit(text);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') void submit(draft);
-          if (event.key === 'Escape') setDraft('');
-        }}
-      />
-    </div>
-  );
-}
-
 function MoveButtons({ disabled, onUp, onDown }: { disabled: boolean; onUp: (() => void) | null; onDown: (() => void) | null }) {
   return (
     <span className="bd-admin__move">
@@ -320,104 +251,78 @@ function ConfirmButton({ disabled, onConfirm, label }: { disabled: boolean; onCo
   );
 }
 
+/**
+ * One timeframe of a position: a grey preview box (empty, or the picture) with
+ * the chart link under it. The link is the only way in: pasting it fills the
+ * box, emptying it clears the box.
+ */
 function Slot({
   position,
   tf,
   disabled,
-  onFile,
   onLink,
-  onError,
   onRemove,
+  onError,
 }: {
   position: RawPosition;
   tf: Timeframe;
   disabled: boolean;
-  onFile(file: File): Promise<boolean>;
-  onLink(imageUrl: string): Promise<boolean>;
+  onLink(imageUrl: string, link: string): Promise<boolean>;
+  onRemove(): Promise<boolean>;
   onError(error: unknown): void;
-  onRemove(): void;
 }) {
-  const input = useRef<HTMLInputElement>(null);
   const frame = position.frames[tf];
   const label = TIMEFRAME_LABEL[tf];
-  /** Shown the moment something is pasted, until the saved copy replaces it. */
-  const [preview, setPreview] = useState<string | null>(null);
-  const [draft, setDraft] = useState('');
+  const value = frame?.source ?? '';
+  const [draft, setDraft] = useState(value);
+  /** The pasted picture, shown at once until the saved copy replaces it. */
+  const [pending, setPending] = useState<string | null>(null);
+  useEffect(() => setDraft(value), [value]);
 
-  useEffect(() => {
-    if (!preview?.startsWith('blob:')) return;
-    return () => URL.revokeObjectURL(preview);
-  }, [preview]);
-
-  const save = async (shown: string, work: () => Promise<boolean>) => {
-    setPreview(shown);
-    const ok = await work();
-    setPreview(null);
-    if (ok) setDraft('');
-  };
-
-  const fromFile = (file: File) => void save(URL.createObjectURL(file), () => onFile(file));
-
-  const fromText = (text: string) => {
-    if (!text.trim()) return;
-    const imageUrl = chartImageUrl(text);
-    if (!imageUrl) {
-      onError(new Error('Paste a TradingView snapshot link (tradingview.com/x/…) or a direct link to a picture.'));
+  const submit = async (text: string) => {
+    const link = text.trim();
+    if (link === value) return;
+    if (!link) {
+      if (frame && !(await onRemove())) setDraft(value);
       return;
     }
-    void save(imageUrl, () => onLink(imageUrl));
+    const imageUrl = chartImageUrl(link);
+    if (!imageUrl) {
+      onError(new Error('Paste a TradingView snapshot link (tradingview.com/x/…) or a direct link to a picture.'));
+      setDraft(value);
+      return;
+    }
+    setPending(imageUrl);
+    const ok = await onLink(imageUrl, link);
+    setPending(null);
+    if (!ok) setDraft(value);
   };
 
-  const shown = preview ?? (frame ? thumbUrl(frame) : null);
+  const shown = pending ?? (frame ? thumbUrl(frame) : null);
   return (
-    <div className={`bd-slot${shown ? ' is-filled' : ''}${preview ? ' is-saving' : ''}`}>
-      <button
-        type="button"
-        className="bd-slot__pick"
-        disabled={disabled}
-        onClick={() => input.current?.click()}
-        aria-label={frame ? `Replace ${label} screenshot` : `Upload ${label} screenshot`}
-      >
-        {shown ? <img src={shown} alt="" /> : <span>+</span>}
+    <div className={`bd-slot${shown ? ' is-filled' : ''}${pending ? ' is-saving' : ''}`}>
+      <div className="bd-slot__pick" aria-label={shown ? `${label} picture` : `${label} empty`}>
+        {shown ? <img src={shown} alt="" /> : null}
         <em>{label}</em>
-      </button>
-      {frame && !preview ? (
-        <button type="button" className="bd-slot__remove" disabled={disabled} onClick={onRemove} aria-label={`Remove ${label} screenshot`}>
-          ×
-        </button>
-      ) : null}
+      </div>
       <input
         className="input bd-slot__link"
         value={draft}
-        placeholder="Paste link"
+        placeholder="TradingView link"
         disabled={disabled}
-        aria-label={`${label} chart link`}
+        aria-label={`${label} TradingView link`}
         onChange={(event) => setDraft(event.target.value)}
         onPaste={(event) => {
-          const file = Array.from(event.clipboardData.files).find((f) => f.type.startsWith('image/'));
           const text = event.clipboardData.getData('text');
-          if (!file && !chartImageUrl(text)) return; // let it paste as text; Enter will explain
+          if (!chartImageUrl(text)) return;
           event.preventDefault();
-          if (file) fromFile(file);
-          else {
-            setDraft(text.trim());
-            fromText(text);
-          }
+          setDraft(text.trim());
+          void submit(text);
         }}
+        onBlur={() => void submit(draft)}
         onKeyDown={(event) => {
-          if (event.key === 'Enter') fromText(draft);
-          if (event.key === 'Escape') setDraft('');
-        }}
-      />
-      <input
-        ref={input}
-        type="file"
-        accept={BOARD_ACCEPT}
-        hidden
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          event.target.value = '';
-          if (file) fromFile(file);
+          if (event.key === 'Enter') event.currentTarget.blur();
+          if (event.key === 'Escape') setDraft(value);
         }}
       />
     </div>

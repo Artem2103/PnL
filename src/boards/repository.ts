@@ -25,6 +25,8 @@ export interface StoredFrame {
   thumb: string;
   w: number;
   h: number;
+  /** The chart link the picture was taken from (a TradingView snapshot), if any. */
+  source?: string;
 }
 
 export interface RawPosition {
@@ -61,7 +63,8 @@ function cleanFrames(value: unknown): RawPosition['frames'] {
   for (const tf of TIMEFRAMES) {
     const f = (value as Record<string, Partial<StoredFrame> | undefined>)[tf];
     if (f && typeof f.path === 'string' && typeof f.thumb === 'string' && Number(f.w) > 0 && Number(f.h) > 0) {
-      frames[tf] = { path: f.path, thumb: f.thumb, w: Number(f.w), h: Number(f.h) };
+      const source = typeof f.source === 'string' ? cleanLink(f.source) : null;
+      frames[tf] = { path: f.path, thumb: f.thumb, w: Number(f.w), h: Number(f.h), ...(source ? { source } : {}) };
     }
   }
   return frames;
@@ -223,13 +226,20 @@ function extensionFor(type: string): string {
  * Puts a screenshot in a timeframe slot, replacing whatever was there. The
  * original is stored byte for byte; only the canvas copy is resized.
  */
-export async function setFrame(position: RawPosition, tf: Timeframe, file: File): Promise<void> {
+export async function setFrame(position: RawPosition, tf: Timeframe, file: File, source?: string | null): Promise<void> {
   if (!ACCEPTED.includes(file.type)) throw new Error('Use a PNG, JPEG or WebP screenshot.');
   const db = requireSupabase();
   const { w, h } = await pixelSize(file);
   const thumb = await normalizeImage(file, THUMB_EDGE);
   const base = `${position.id}/${tf}-${Date.now().toString(36)}`;
-  const stored: StoredFrame = { path: `${base}.${extensionFor(file.type)}`, thumb: `${base}-thumb.webp`, w, h };
+  const link = source ? cleanLink(source) : null;
+  const stored: StoredFrame = {
+    path: `${base}.${extensionFor(file.type)}`,
+    thumb: `${base}-thumb.webp`,
+    w,
+    h,
+    ...(link ? { source: link } : {}),
+  };
 
   const bucket = db.storage.from(BUCKET);
   const up = await Promise.all([
