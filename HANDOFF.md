@@ -94,7 +94,7 @@ the fourth.
 - `links.ts`: `fxreplay.com/s/<id>` (also `www.`, a trailing `/`, or `.png`) → `/api/chart-image?fx=<id>`.
   From there it's the same as a TradingView link: instant preview, then the picture is stored in the
   `boards` bucket with the link kept as `frames[tf].source`.
-- Link boxes now say "TradingView / FX Replay link".
+- Link boxes say just "Link" (changed from "TradingView / FX Replay link" at Artem's request).
 - **Local dev:** `/api/*` only runs on Vercel (or `vercel dev`), so FX Replay links fail under plain
   `npm run dev`. TradingView links still work there.
 

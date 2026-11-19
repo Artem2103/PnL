@@ -308,7 +308,7 @@ function Slot({
       <input
         className="input bd-slot__link"
         value={draft}
-        placeholder="TradingView / FX Replay link"
+        placeholder="Link"
         disabled={disabled}
         aria-label={`${label} chart link`}
         onChange={(event) => setDraft(event.target.value)}
