@@ -20,6 +20,10 @@ export interface Frame {
   /** Pixel size of the original. Only the ratio is used on screen. */
   readonly w: number;
   readonly h: number;
+  /** Width of `thumb`, when it is smaller than the original. */
+  readonly thumbWidth?: number;
+  /** Copies made at exactly the widths the canvas draws (see SIZE_WIDTHS), narrowest first. */
+  readonly sizes?: readonly { readonly w: number; readonly url: string }[];
 }
 
 export interface Position {
@@ -51,6 +55,35 @@ export function pickTimeframe(position: Position, wanted: Timeframe = DEFAULT_TI
 /* ------------------------------------------------------------------ layout */
 
 export const COLUMN_WIDTH = 380;
+/** The picture's width inside its 1 px border, in board px. */
+export const IMAGE_WIDTH = COLUMN_WIDTH - 2;
+/**
+ * The canvas copies, as multiples of IMAGE_WIDTH: 100% zoom on a 1×, 1.25×, 1.5×
+ * and 2× screen (the common Windows and Retina settings), and 3× for zooming in.
+ * Past that, the original.
+ */
+export const SIZE_STEPS = [1, 1.25, 1.5, 2, 3] as const;
+export const SIZE_WIDTHS: readonly number[] = SIZE_STEPS.map((step) => Math.round(IMAGE_WIDTH * step));
+
+/**
+ * How many real pixels wide a picture is drawn at this zoom on this screen,
+ * rounded up to the next copy width (Infinity = only the original will do).
+ */
+export function resolutionFor(zoom: number, pixelRatio: number): number {
+  const need = zoom * pixelRatio * IMAGE_WIDTH;
+  return SIZE_WIDTHS.find((w) => w + 0.5 >= need) ?? Infinity;
+}
+
+/** The narrowest file at least `resolution` wide; the original when nothing smaller is. */
+export function pickSource(frame: Frame, resolution: number): string {
+  const options = [
+    ...(frame.sizes ?? []),
+    ...(frame.thumbWidth ? [{ w: frame.thumbWidth, url: frame.thumb }] : []),
+    { w: frame.w, url: frame.full },
+  ].sort((a, b) => a.w - b.w);
+  return (options.find((o) => o.w >= resolution) ?? options[options.length - 1]!).url;
+}
+
 /** Between columns: generous, so each column reads as its own category. */
 export const COLUMN_GAP = 156;
 /** Between positions in a column: tight, so a column reads as one list. */

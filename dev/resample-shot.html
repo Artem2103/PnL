@@ -1,0 +1,32 @@
+<!doctype html>
+<!-- Dev-only. Compares the browser's own shrink of a chart with the canvas copies Boards now makes. -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { margin: 0; padding: 16px; background: #fff; font: 13px system-ui; }
+      .row { display: flex; gap: 24px; }
+      figure { margin: 0; }
+      figcaption { margin-bottom: 6px; font-weight: 600; }
+      img { display: block; width: 378px; border: 1px solid #0b0b0c; }
+    </style>
+  </head>
+  <body>
+    <div class="row">
+      <figure><figcaption>Before: 1000 px copy, shrunk by the browser</figcaption><img id="before" /></figure>
+      <figure><figcaption>After: 378 px copy, shown 1:1</figcaption><img id="after" /></figure>
+    </div>
+    <pre id="out"></pre>
+    <script type="module">
+      import { sizedCopies } from '/src/boards/resample.ts';
+      import { normalizeImage } from '/src/lib/images.ts';
+      import { SIZE_WIDTHS } from '/src/boards/model.ts';
+      const blob = await fetch('https://s3.tradingview.com/snapshots/e/e7Qpaqln.png').then((r) => r.blob());
+      const [thumb, copies] = await Promise.all([normalizeImage(blob, 1000), sizedCopies(blob, SIZE_WIDTHS)]);
+      document.getElementById('before').src = URL.createObjectURL(thumb.blob);
+      document.getElementById('after').src = URL.createObjectURL(copies[0].blob);
+      document.getElementById('out').textContent = copies.map((c) => `${c.w}x${c.h} ${c.blob.type} ${Math.round(c.blob.size / 1024)} KB`).join('\n');
+      window.done = true;
+    </script>
+  </body>
+</html>

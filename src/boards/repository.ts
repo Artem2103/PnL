@@ -12,7 +12,8 @@
 import { normalizeImage } from '../lib/images';
 import { isSupabaseConfigured, requireSupabase } from '../lib/supabase';
 import { isNotInstalled } from '../community/repository';
-import { TIMEFRAMES, type Category, type Frame, type Position, type Timeframe } from './model';
+import { SIZE_WIDTHS, TIMEFRAMES, type Category, type Frame, type Position, type Timeframe } from './model';
+import { sizedCopies } from './resample';
 
 const BUCKET = 'boards';
 /** Wide enough for a 380 px column on a 2× screen at a little over 1:1 zoom. */
@@ -27,6 +28,8 @@ export interface StoredFrame {
   h: number;
   /** The chart link the picture was taken from (a TradingView snapshot), if any. */
   source?: string;
+  /** Canvas copies at the widths the board draws (`SIZE_WIDTHS`). Missing on pictures saved before them. */
+  sizes?: { w: number; h: number; path: string }[];
 }
 
 export interface RawPosition {
@@ -64,7 +67,18 @@ function cleanFrames(value: unknown): RawPosition['frames'] {
     const f = (value as Record<string, Partial<StoredFrame> | undefined>)[tf];
     if (f && typeof f.path === 'string' && typeof f.thumb === 'string' && Number(f.w) > 0 && Number(f.h) > 0) {
       const source = typeof f.source === 'string' ? cleanLink(f.source) : null;
-      frames[tf] = { path: f.path, thumb: f.thumb, w: Number(f.w), h: Number(f.h), ...(source ? { source } : {}) };
+      const sizes = Array.isArray(f.sizes)
+        ? f.sizes.filter((z) => z && typeof z.path === 'string' && Number(z.w) > 0 && Number(z.h) > 0)
+            .map((z) => ({ w: Number(z.w), h: Number(z.h), path: z.path }))
+        : null;
+      frames[tf] = {
+        path: f.path,
+        thumb: f.thumb,
+        w: Number(f.w),
+        h: Number(f.h),
+        ...(source ? { source } : {}),
+        ...(sizes ? { sizes } : {}),
+      };
     }
   }
   return frames;
@@ -106,7 +120,16 @@ export function toBoard(raw: RawCategory[]): Category[] {
         const frames: Position['frames'] = {};
         for (const tf of TIMEFRAMES) {
           const s = p.frames[tf];
-          if (s) frames[tf] = { thumb: publicUrl(s.thumb), full: publicUrl(s.path), w: s.w, h: s.h } satisfies Frame;
+          if (s) {
+            frames[tf] = {
+              thumb: publicUrl(s.thumb),
+              full: publicUrl(s.path),
+              w: s.w,
+              h: s.h,
+              thumbWidth: Math.round(s.w * Math.min(1, THUMB_EDGE / Math.max(s.w, s.h))),
+              sizes: (s.sizes ?? []).map((z) => ({ w: z.w, url: publicUrl(z.path) })).sort((a, b) => a.w - b.w),
+            } satisfies Frame;
+          }
         }
         return { id: p.id, categoryId: c.id, frames, link: p.link };
       })
@@ -160,8 +183,12 @@ export async function swapOrder(
   if (error) fail('Could not reorder', error);
 }
 
+function filesOf(frame: StoredFrame): string[] {
+  return [frame.path, frame.thumb, ...(frame.sizes ?? []).map((z) => z.path)];
+}
+
 function pathsOf(position: RawPosition): string[] {
-  return Object.values(position.frames).flatMap((f) => (f ? [f.path, f.thumb] : []));
+  return Object.values(position.frames).flatMap((f) => (f ? filesOf(f) : []));
 }
 
 async function removeFiles(paths: string[]): Promise<void> {
@@ -230,8 +257,9 @@ export async function setFrame(position: RawPosition, tf: Timeframe, file: File,
   if (!ACCEPTED.includes(file.type)) throw new Error('Use a PNG, JPEG or WebP screenshot.');
   const db = requireSupabase();
   const { w, h } = await pixelSize(file);
-  const thumb = await normalizeImage(file, THUMB_EDGE);
+  const [thumb, copies] = await Promise.all([normalizeImage(file, THUMB_EDGE), sizedCopies(file, SIZE_WIDTHS)]);
   const base = `${position.id}/${tf}-${Date.now().toString(36)}`;
+  const sizes = copies.map((c) => ({ w: c.w, h: c.h, path: `${base}-w${c.w}.${extensionFor(c.blob.type)}`, blob: c.blob }));
   const link = source ? cleanLink(source) : null;
   const stored: StoredFrame = {
     path: `${base}.${extensionFor(file.type)}`,
@@ -239,27 +267,29 @@ export async function setFrame(position: RawPosition, tf: Timeframe, file: File,
     w,
     h,
     ...(link ? { source: link } : {}),
+    sizes: sizes.map(({ w: sw, h: sh, path }) => ({ w: sw, h: sh, path })),
   };
 
   const bucket = db.storage.from(BUCKET);
   const up = await Promise.all([
     bucket.upload(stored.path, file, { contentType: file.type, cacheControl: '31536000', upsert: false }),
-    bucket.upload(stored.thumb, thumb.blob, { contentType: 'image/webp', cacheControl: '31536000', upsert: false }),
+    bucket.upload(stored.thumb, thumb.blob, { contentType: thumb.blob.type || 'image/webp', cacheControl: '31536000', upsert: false }),
+    ...sizes.map((z) => bucket.upload(z.path, z.blob, { contentType: z.blob.type, cacheControl: '31536000', upsert: false })),
   ]);
   const upError = up.find((r) => r.error)?.error;
   if (upError) {
-    await removeFiles([stored.path, stored.thumb]);
+    await removeFiles(filesOf(stored));
     fail('Could not upload the screenshot', upError);
   }
 
   const frames = { ...position.frames, [tf]: stored };
   const { error } = await db.from('board_positions').update({ frames }).eq('id', position.id);
   if (error) {
-    await removeFiles([stored.path, stored.thumb]);
+    await removeFiles(filesOf(stored));
     fail('Could not save the screenshot', error);
   }
   const old = position.frames[tf];
-  if (old) await removeFiles([old.path, old.thumb]);
+  if (old) await removeFiles(filesOf(old));
 }
 
 export async function removeFrame(position: RawPosition, tf: Timeframe): Promise<void> {
@@ -269,5 +299,49 @@ export async function removeFrame(position: RawPosition, tf: Timeframe): Promise
   delete frames[tf];
   const { error } = await requireSupabase().from('board_positions').update({ frames }).eq('id', position.id);
   if (error) fail('Could not remove the screenshot', error);
-  await removeFiles([old.path, old.thumb]);
+  await removeFiles(filesOf(old));
+}
+
+/** Whether any saved picture is still missing its canvas copies (saved before they existed). */
+export function needsSizes(raw: RawCategory[]): boolean {
+  return raw.some((c) => c.positions.some((p) => Object.values(p.frames).some((f) => f && !f.sizes)));
+}
+
+/**
+ * Makes the canvas copies for pictures saved before they existed, one at a
+ * time, from the stored originals. Admins only (the bucket refuses anyone
+ * else). Answers how many pictures it upgraded.
+ */
+export async function fillMissingSizes(raw: RawCategory[]): Promise<number> {
+  const db = requireSupabase();
+  const bucket = db.storage.from(BUCKET);
+  let done = 0;
+  for (const position of raw.flatMap((c) => c.positions)) {
+    for (const tf of TIMEFRAMES) {
+      const frame = position.frames[tf];
+      if (!frame || frame.sizes) continue;
+      const response = await fetch(publicUrl(frame.path));
+      if (!response.ok) continue;
+      const copies = await sizedCopies(await response.blob(), SIZE_WIDTHS);
+      const base = frame.path.replace(/\.[a-z]+$/i, '');
+      const sizes = copies.map((c) => ({ w: c.w, h: c.h, path: `${base}-w${c.w}.${extensionFor(c.blob.type)}`, blob: c.blob }));
+      const up = await Promise.all(
+        sizes.map((z) => bucket.upload(z.path, z.blob, { contentType: z.blob.type, cacheControl: '31536000', upsert: true })),
+      );
+      if (up.some((r) => r.error)) continue;
+
+      // Re-read the row so an edit made meanwhile isn't overwritten.
+      const { data, error } = await db.from('board_positions').select('frames').eq('id', position.id).single();
+      if (error) continue;
+      const current = cleanFrames(data.frames);
+      if (current[tf]?.path !== frame.path) {
+        await removeFiles(sizes.map((z) => z.path));
+        continue;
+      }
+      current[tf] = { ...current[tf]!, sizes: sizes.map(({ w, h, path }) => ({ w, h, path })) };
+      const saved = await db.from('board_positions').update({ frames: current }).eq('id', position.id);
+      if (!saved.error) done += 1;
+    }
+  }
+  return done;
 }

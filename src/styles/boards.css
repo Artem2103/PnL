@@ -367,6 +367,12 @@ body:has(.bd)::before {
   left: 0;
   top: 0;
   transform-origin: 0 0;
+}
+
+/* Only while panning or zooming: lets the browser stretch one painted snapshot
+   for smoothness. Without it, the browser repaints the pictures sharp at the
+   final zoom. */
+.bd-world.is-moving {
   will-change: transform;
 }
 

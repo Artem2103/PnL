@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   COLUMN_GAP,
   COLUMN_WIDTH,
+  IMAGE_WIDTH,
+  SIZE_WIDTHS,
   MAX_ZOOM,
   MIN_ZOOM,
   PADDING,
@@ -9,7 +11,9 @@ import {
   clampView,
   coverFrame,
   layoutBoard,
+  pickSource,
   pickTimeframe,
+  resolutionFor,
   zoomAt,
   type Category,
   type Frame,
@@ -80,5 +84,41 @@ describe('view', () => {
     const far = clampView({ x: -1e6, y: 1e6, z: 1 }, 1000, 800, 5000, 4000);
     expect(far.x + 5000).toBeGreaterThan(0);
     expect(far.y).toBeLessThan(800);
+  });
+});
+
+describe('canvas copies', () => {
+  const frame: Frame = {
+    thumb: 'thumb',
+    full: 'full',
+    w: 3362,
+    h: 1990,
+    thumbWidth: 1000,
+    sizes: SIZE_WIDTHS.map((w) => ({ w, url: `w${w}` })),
+  };
+
+  it('has a copy for 100% on 1×, 1.25×, 1.5× and 2× screens, and 3× for zooming', () => {
+    expect(SIZE_WIDTHS).toEqual([IMAGE_WIDTH, 473, 567, 756, 1134]);
+    expect(resolutionFor(1, 1)).toBe(IMAGE_WIDTH);
+    expect(resolutionFor(1, 1.25)).toBe(473);
+    expect(resolutionFor(1, 1.5)).toBe(567);
+    expect(resolutionFor(1, 2)).toBe(756);
+    expect(resolutionFor(0.5, 1)).toBe(IMAGE_WIDTH);
+    expect(resolutionFor(2.5, 1)).toBe(1134);
+    expect(resolutionFor(2.5, 2)).toBe(Infinity);
+  });
+
+  it('draws from the copy that fits exactly, else the next wider, else the original', () => {
+    expect(pickSource(frame, IMAGE_WIDTH)).toBe(`w${IMAGE_WIDTH}`);
+    expect(pickSource(frame, 756)).toBe('w756');
+    expect(pickSource(frame, Infinity)).toBe('full');
+  });
+
+  it('uses the old 1000 px copy, then the original, for pictures saved before the copies', () => {
+    const old: Frame = { thumb: 'thumb', full: 'full', w: 3362, h: 1990, thumbWidth: 1000 };
+    expect(pickSource(old, 756)).toBe('thumb');
+    expect(pickSource(old, 1134)).toBe('full');
+    const demo: Frame = { thumb: 'same', full: 'same', w: 1200, h: 700 };
+    expect(pickSource(demo, IMAGE_WIDTH)).toBe('same');
   });
 });

@@ -69,6 +69,8 @@ file easier to read:
 | 2026-11-19 (i) | **code**: Manage drawer: paste a TradingView snapshot link (or a picture) into a slot instead of uploading; preview shows at once; a link alone adds a position. Tested with a real link. **FX Replay waits on a sample link** | see **Start here (2026-11-19 i)** |
 | 2026-11-19 (j) | **code**: Manage slots are link-only — each 5M/15M/1H is a grey preview box with a **TradingView link** box under it; no file uploads, no shared "add a position" box | see **Start here (2026-11-19 j)** |
 | 2026-11-19 (k) | **code**: FX Replay share links (`fxreplay.com/s/…`) work in the Manage link boxes, through a new `/api/chart-image` function | see **Start here (2026-11-19 k)** |
+| 2026-11-19 (l) | *no code* — why the Boards pictures look soft on the canvas, and three fixes besides making them bigger | see **Start here (2026-11-19 l)** |
+| 2026-11-19 (m) | **code**: sharper Boards canvas without bigger pictures: repaint when still, pixel-aligned, exact-size copies (5 widths), picked by zoom × screen; old pictures upgraded on an admin visit | see **Start here (2026-11-19 m)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
@@ -76,6 +78,74 @@ the two picture slots** the third, and **Local mode** and **The scroll trap in t
 the fourth.
 
 ---
+
+## Start here (2026-11-19 m) — sharper canvas pictures (fixes a–c from (l))
+
+**What Artem asked:** the best version of the canvas sharpness fix, without making positions bigger.
+
+**What changed:**
+- **Repaint when still** (`BoardCanvas.tsx` `paint`, `boards.css`). `will-change: transform` is on
+  `.bd-world` only while panning/zooming (`.is-moving`). It comes off 160 ms after the last move, so
+  the browser repaints every picture at the final zoom instead of stretching a snapshot.
+- **Pixel-aligned:** the board's offset is rounded to whole device pixels, so at 100% pictures sit on
+  the screen's pixel grid and aren't blurred by half-pixel offsets.
+- **Exact-size copies** (`resample.ts`). On every new link, besides the original and the old 1000 px
+  thumbnail, five copies are made at the widths actually drawn: `IMAGE_WIDTH` (378 = 380 column − 2 px
+  border) × 1, 1.25, 1.5, 2, 3 → **378, 473, 567, 756, 1134 px**. That covers 100% on 1×, 1.25×,
+  1.5× (common Windows settings) and 2× (Retina) screens, plus zooming in.
+  - They're shrunk in halves (2×2 → 1 averaging) then one last step, with high-quality smoothing, and
+    saved as WebP at quality 1.
+  - For your TradingView chart they were 16 / 22 / 26 / 38 / 72 KB.
+  - Stored in `frames[tf].sizes` (`{w, h, path}`); files `<base>-w378.webp` etc.
+  - Deleted along with the picture.
+- **The right file for the zoom** (`model.ts` `resolutionFor`, `pickSource`). When the canvas settles,
+  it works out the real pixel width (zoom × screen density × 378) and uses the narrowest copy at
+  least that wide, else the original. This replaces the old `sharp` switch, which on a 1× monitor could
+  never reach the original (it needed >289% zoom; max is 250%).
+- **Pictures already saved** have no copies. The first time an admin opens Boards, `fillMissingSizes`
+  (`repository.ts`) makes them from the stored originals, one at a time, re-reading each row before
+  saving so an edit isn't overwritten. Then the board reloads. Until then those pictures use the old
+  1000 px copy / original.
+
+**Verified:**
+- Typecheck clean; 418/418 tests (new: copy widths, choosing the file).
+- In headless Chrome, `dev/resample-shot.html` made all five copies from Artem's TradingView link.
+- A 4× magnified before/after at 100% is in `Desktop\Boards\13-canvas-copy-before-after.png`. The
+  copy is a little cleaner than the browser's own shrink, but at 378 px the price labels are ~2 px
+  tall either way. That part only bigger columns or zooming fixes.
+- **Not verified:** the repaint-when-still fix. Headless Chrome paints without the GPU and showed no
+  difference either way. Check it in a normal Chrome window: zoom in, stop, and the pictures should
+  sharpen a moment later.
+
+## Start here (2026-11-19 l) — why the canvas pictures look soft (no code yet)
+
+**What Artem asked:** the pictures on the Boards canvas don't look sharp without opening the viewer.
+Is it because they're small, and is there a way other than making them bigger?
+
+**Three causes, found in the code:**
+1. **The browser stretches a snapshot of the canvas instead of redrawing it.** `.bd-world` has
+   `will-change: transform` and is zoomed with `scale(z)` (`boards.css`). Chrome then paints the layer
+   once and scales that bitmap. Zoomed in, it's blurry; zoomed out, thin chart lines and text alias.
+   This is the main "not sharp" cause, and it is unrelated to the picture files.
+2. **On a normal (non-Retina) monitor the original is never loaded on the canvas.** The switch to the
+   original needs `zoom × devicePixelRatio × 380 > 1100` (`BoardCanvas.tsx`), i.e. zoom > 2.89 at
+   DPR 1. But `MAX_ZOOM = 2.5` (`model.ts`). So at full zoom a 1000 px copy is stretched to 950 px and
+   never replaced.
+3. **The copy is a different size from what's shown, and the browser's quick resize is rough.** At
+   100% a 1000 px copy is squeezed into 380 px (760 on Retina) by the browser's fast resize, which
+   loses thin lines.
+
+**Plus the plain limit:** a 3362 px chart shown 380 px wide is a 9× shrink. Price labels and candle
+details become ~1–2 px. No technique makes that readable; only showing it bigger (larger columns
+or zooming) does.
+
+**Proposed fixes (not done; waiting for Artem):**
+- (a) Turn `will-change` on only while panning/zooming, so the browser redraws crisply when you stop.
+- (b) Pick the picture by actual zoom × screen density: a copy sized for 100% (760 px), then the
+  original as soon as the copy would be stretched. This also fixes cause 2.
+- (c) Make the copies at the sizes actually shown, with high-quality resizing, so the browser doesn't
+  resize them at all at 100%.
+- (d) If still too small to read: wider columns (e.g. 380 → 560).
 
 ## Start here (2026-11-19 k) — FX Replay links
 

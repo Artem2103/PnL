@@ -24,6 +24,8 @@ import {
   clampZoom,
   coverFrame,
   initialView,
+  pickSource,
+  resolutionFor,
   zoomAt,
   type Layout,
   type PlacedPosition,
@@ -48,8 +50,9 @@ interface Props {
   /** Space is held: the cursor says "grab" everywhere. */
   spaceHeld: boolean;
   /** A canvas copy is too soft at this zoom; show the originals. */
-  onSharpChange?: (sharp: boolean) => void;
-  sharp: boolean;
+  /** Which copy width the pictures are drawn from (see `resolutionFor`). */
+  resolution: number;
+  onResolutionChange?: (resolution: number) => void;
   onOpen(index: number): void;
   /** Brush on (true) or the cursor tool (false); shared with the viewer. */
   drawing: boolean;
@@ -67,7 +70,7 @@ const DOUBLE_TAP_MS = 380;
 const GLIDE_TAU = 70;
 /** A flick coasts for about this long. */
 const COAST_TAU = 260;
-export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen, drawing, onDrawing: setDrawing, tool, onTool: setTool, covered }: Props) {
+export function BoardCanvas({ layout, spaceHeld, resolution, onResolutionChange, onOpen, drawing, onDrawing: setDrawing, tool, onTool: setTool, covered }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<HTMLDivElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
@@ -79,10 +82,11 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen, d
   const frame = useRef<number | null>(null);
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
-  const sharpRef = useRef(sharp);
-  sharpRef.current = sharp;
-  const onSharpRef = useRef(onSharpChange);
-  onSharpRef.current = onSharpChange;
+  const resolutionRef = useRef(resolution);
+  resolutionRef.current = resolution;
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onResolutionRef = useRef(onResolutionChange);
+  onResolutionRef.current = onResolutionChange;
 
   const [strokes, setStrokes] = useState<Stroke[]>(loadStrokes);
   const livePathRef = useRef<SVGPathElement>(null);
@@ -204,7 +208,22 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen, d
     const world = worldRef.current;
     const viewport = viewportRef.current;
     if (!world || !viewport) return;
-    world.style.transform = `translate3d(${v.x}px, ${v.y}px, 0) scale(${v.z})`;
+    // Whole device pixels: at 100% every picture then lands exactly on the screen's pixel grid.
+    const ratio = window.devicePixelRatio || 1;
+    const x = Math.round(v.x * ratio) / ratio;
+    const y = Math.round(v.y * ratio) / ratio;
+    world.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${v.z})`;
+    // While moving, the browser may stretch one painted snapshot of the board
+    // (smooth, but soft). Once it holds still, that hint goes, so it repaints
+    // every picture sharp at the new zoom, and the copy that fits is picked.
+    world.classList.add('is-moving');
+    if (settleTimer.current) clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(() => {
+      settleTimer.current = null;
+      world.classList.remove('is-moving');
+      const next = resolutionFor(view.current.z, window.devicePixelRatio || 1);
+      if (next !== resolutionRef.current) onResolutionRef.current?.(next);
+    }, 160);
     // Stroke widths divide by this, so ink stays 1–4 screen px at every zoom.
     world.style.setProperty('--bd-z', String(v.z));
 
@@ -219,8 +238,6 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen, d
     }
     if (zoomLabelRef.current) zoomLabelRef.current.textContent = `${Math.round(v.z * 100)}%`;
 
-    const wantSharp = v.z * (window.devicePixelRatio || 1) * COLUMN_WIDTH > 1100;
-    if (wantSharp !== sharpRef.current) onSharpRef.current?.(wantSharp);
   }, []);
 
   const stopMotion = useCallback(() => {
@@ -575,7 +592,7 @@ export function BoardCanvas({ layout, spaceHeld, sharp, onSharpChange, onOpen, d
         onContextMenu={(event) => event.preventDefault()}
       >
         <div ref={worldRef} className="bd-world" style={{ width: layout.width, height: layout.height }}>
-          <Positions items={layout.items} sharp={sharp} />
+          <Positions items={layout.items} resolution={resolution} />
           {pastes.map((p) => (
             <div
               key={p.id}
@@ -653,8 +670,8 @@ const Strokes = memo(function Strokes({ strokes }: { strokes: Stroke[] }) {
   );
 });
 
-/** Re-rendered only when the board or the sharpness changes, never by panning. */
-const Positions = memo(function Positions({ items, sharp }: { items: PlacedPosition[]; sharp: boolean }) {
+/** Re-rendered only when the board or the copy width changes, never by panning. */
+const Positions = memo(function Positions({ items, resolution }: { items: PlacedPosition[]; resolution: number }) {
   return (
     <>
       {items.map((item, index) => {
@@ -668,7 +685,7 @@ const Positions = memo(function Positions({ items, sharp }: { items: PlacedPosit
             style={{ left: item.x, top: item.y, width: item.w, height: item.h }}
           >
             <img
-              src={sharp ? frame.full : frame.thumb}
+              src={pickSource(frame, resolution)}
               alt={`${item.category.name} ${item.number}`}
               width={frame.w}
               height={frame.h}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ProfileMenu } from '../components/ProfileMenu';
 import { SiteNav } from '../components/SiteNav';
 import { ThemeMenu } from '../components/ThemeMenu';
@@ -8,9 +8,9 @@ import { AdminPanel } from './AdminPanel';
 import { BoardCanvas } from './BoardCanvas';
 import { demoBoard } from './demo';
 import { loadTool, saveTool, type InkTool } from './drawing';
-import { layoutBoard } from './model';
+import { layoutBoard, resolutionFor } from './model';
 import { PositionViewer } from './PositionViewer';
-import { hasPositions, isBoardAdmin, loadBoard, toBoard, type BoardSource } from './repository';
+import { fillMissingSizes, hasPositions, isBoardAdmin, loadBoard, needsSizes, toBoard, type BoardSource } from './repository';
 import '../styles/boards.css';
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : 'That did not work.');
@@ -25,7 +25,8 @@ export function BoardsPage() {
   const [managing, setManaging] = useState(false);
   const [open, setOpen] = useState<number | null>(null);
   const [space, setSpace] = useState(false);
-  const [sharp, setSharp] = useState(false);
+  const [resolution, setResolution] = useState(() => resolutionFor(1, window.devicePixelRatio || 1));
+  const upgraded = useRef(false);
   const [drawing, setDrawing] = useState(false);
   const [tool, setTool] = useState<InkTool>(loadTool);
   const [toast, setToast] = useState<{ text: string; error: boolean } | null>(null);
@@ -42,6 +43,18 @@ export function BoardsPage() {
   }, []);
 
   useEffect(() => saveTool(tool), [tool]);
+
+  // Pictures saved before the canvas copies existed get them the first time an
+  // admin opens Boards; everyone sees them after that.
+  useEffect(() => {
+    if (!admin || source?.kind !== 'remote' || upgraded.current || !needsSizes(source.raw)) return;
+    upgraded.current = true;
+    void fillMissingSizes(source.raw)
+      .then((count) => {
+        if (count) void reload();
+      })
+      .catch((error) => console.warn('Could not make the canvas copies:', error));
+  }, [admin, source, reload]);
 
   useEffect(() => {
     void reload();
@@ -132,8 +145,8 @@ export function BoardsPage() {
         <BoardCanvas
           layout={layout}
           spaceHeld={space}
-          sharp={sharp}
-          onSharpChange={setSharp}
+          resolution={resolution}
+          onResolutionChange={setResolution}
           onOpen={setOpen}
           drawing={drawing}
           onDrawing={setDrawing}
