@@ -1170,17 +1170,21 @@ drop policy if exists "board categories are readable by anyone" on public.board_
 drop policy if exists "board categories are managed by admins"  on public.board_categories;
 drop policy if exists "board positions are readable by anyone"  on public.board_positions;
 drop policy if exists "board positions are managed by admins"   on public.board_positions;
+drop policy if exists "board categories are readable when signed in" on public.board_categories;
+drop policy if exists "board positions are readable when signed in"  on public.board_positions;
 
-create policy "board categories are readable by anyone" on public.board_categories
-  for select to anon, authenticated using (true);
+-- Boards are for signed-in accounts only (2026-11-20); anon reads nothing.
+create policy "board categories are readable when signed in" on public.board_categories
+  for select to authenticated using (true);
 create policy "board categories are managed by admins" on public.board_categories
   for all to authenticated using (public.is_board_admin()) with check (public.is_board_admin());
-create policy "board positions are readable by anyone" on public.board_positions
-  for select to anon, authenticated using (true);
+create policy "board positions are readable when signed in" on public.board_positions
+  for select to authenticated using (true);
 create policy "board positions are managed by admins" on public.board_positions
   for all to authenticated using (public.is_board_admin()) with check (public.is_board_admin());
 
-grant select on public.board_categories, public.board_positions to anon, authenticated;
+revoke select on public.board_categories, public.board_positions from anon;
+grant select on public.board_categories, public.board_positions to authenticated;
 grant insert, update, delete on public.board_categories, public.board_positions to authenticated;
 
 -- The ten columns, A to J, the first time this runs.

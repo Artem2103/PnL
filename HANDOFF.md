@@ -72,11 +72,37 @@ file easier to read:
 | 2026-11-19 (l) | *no code* — why the Boards pictures look soft on the canvas, and three fixes besides making them bigger | see **Start here (2026-11-19 l)** |
 | 2026-11-19 (m) | **code**: sharper Boards canvas without bigger pictures: repaint when still, pixel-aligned, exact-size copies (5 widths), picked by zoom × screen; old pictures upgraded on an admin visit | see **Start here (2026-11-19 m)** |
 | 2026-11-19 (n) | **code**: Community "Who to follow" lists every member except you, with Follow / Following | see **Start here (2026-11-19 n)** |
+| 2026-11-20 | **code**: Boards are for signed-in accounts only — page behind the sign-in gate, board tables closed to anon. **Needs the SQL run** | see **Start here (2026-11-20)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-11-20) — Boards only for signed-in users
+
+**What Artem asked:** only signed-in users should see the board, like the cards page already does.
+
+**Before:** `/boards` was public. A stranger saw the board with a **Sign in** button in the topbar,
+and the database let anonymous visitors read `board_categories` and `board_positions`.
+
+**Now:**
+- **Page:** `src/main.tsx` wraps `BoardsPage` in the same `AuthGate` as the card editor. Signed out,
+  `/boards` shows the sign-in form; after signing in you stay on `/boards` and the board opens. In
+  local mode (no Supabase keys) it opens as before.
+- **Topbar:** the **Sign in** button and its theme menu are gone from `BoardsPage.tsx`, since the page
+  is only reached signed in. The profile menu is always there.
+- **Database (`supabase/schema.sql`):** the two "readable by anyone" policies became "readable when
+  signed in" (`to authenticated`), and `anon` loses `select` on both tables. **Run the Boards section
+  of `schema.sql` in the Supabase SQL editor** for this half to take effect. Until then the page is
+  gated but the API would still answer a signed-out request.
+- **Not changed:** the `boards` storage bucket is still public. Someone who already has a picture's
+  exact URL can open it, but the URLs are only handed out through the gated tables. Closing that too
+  means a private bucket plus signed URLs in `repository.ts`. Say if you want it.
+
+Typecheck clean; 418/418 tests. Not clicked through in a browser.
 
 ---
 

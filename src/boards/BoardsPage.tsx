@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ProfileMenu } from '../components/ProfileMenu';
 import { SiteNav } from '../components/SiteNav';
-import { ThemeMenu } from '../components/ThemeMenu';
 import { useAuth } from '../lib/auth';
-import { STUDIO_PATH, navigate, setAfterSignIn } from '../lib/route';
 import { AdminPanel } from './AdminPanel';
 import { BoardCanvas } from './BoardCanvas';
 import { demoBoard } from './demo';
@@ -19,7 +17,8 @@ const isTyping = (target: EventTarget | null) =>
   target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
 
 export function BoardsPage() {
-  const { mode, session, loading } = useAuth();
+  // Only reached signed in (or in local mode): main.tsx puts Boards behind the AuthGate.
+  const { session } = useAuth();
   const [source, setSource] = useState<BoardSource | null>(null);
   const [admin, setAdmin] = useState(false);
   const [managing, setManaging] = useState(false);
@@ -30,7 +29,6 @@ export function BoardsPage() {
   const [drawing, setDrawing] = useState(false);
   const [tool, setTool] = useState<InkTool>(loadTool);
   const [toast, setToast] = useState<{ text: string; error: boolean } | null>(null);
-  const signedIn = mode === 'local' || Boolean(session);
   const accountId = session?.user.id ?? null;
 
   const reload = useCallback(async () => {
@@ -113,11 +111,6 @@ export function BoardsPage() {
     if (open != null && open >= layout.items.length) setOpen(null);
   }, [layout, open]);
 
-  const signIn = () => {
-    setAfterSignIn('/boards');
-    navigate(STUDIO_PATH);
-  };
-
   return (
     <div className="app bd">
       <header className="topbar">
@@ -128,16 +121,7 @@ export function BoardsPage() {
               Manage
             </button>
           ) : null}
-          {signedIn ? (
-            <ProfileMenu />
-          ) : (
-            <>
-              <button type="button" className="btn btn--primary btn--small" onClick={signIn} disabled={loading}>
-                Sign in
-              </button>
-              <ThemeMenu />
-            </>
-          )}
+          <ProfileMenu />
         </div>
       </header>
 

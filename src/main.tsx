@@ -21,9 +21,9 @@ const container = document.getElementById('root');
 if (!container) throw new Error('Root element is missing from index.html.');
 
 /**
- * Five pages. The front page, the plans page, the community and the boards are public — a
- * stranger can read what this is before making an account — and the editor sits
- * behind the sign-in gate. Acting in the community asks for an account then.
+ * Five pages. The front page, the plans page and the community are public — a
+ * stranger can read what this is before making an account — and the editor and
+ * the boards sit behind the sign-in gate. Acting in the community asks for an account then.
  */
 function Root() {
   const { pathname, search } = useLocation();
@@ -42,9 +42,11 @@ function Root() {
   if (page === 'pricing') return <PricingPage search={search} />;
   if (page === 'boards') {
     return (
-      <Suspense fallback={null}>
-        <BoardsPage />
-      </Suspense>
+      <AuthGate>
+        <Suspense fallback={null}>
+          <BoardsPage />
+        </Suspense>
+      </AuthGate>
     );
   }
   if (page === 'community') {
