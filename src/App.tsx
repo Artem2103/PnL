@@ -33,6 +33,7 @@ import { usePlanStatus } from './lib/usePlanStatus';
 import { COMMUNITY_PATH, PRICING_PATH, navigate } from './lib/route';
 import { setPendingImage } from './community/pending';
 import { SiteNav } from './components/SiteNav';
+import { community } from './community/repository';
 
 type ToastTone = 'info' | 'error';
 
@@ -62,7 +63,7 @@ const SYNC_LABEL: Record<CardSyncStatus, string> = {
 };
 
 export default function App() {
-  const { userId, mode: authMode } = useAuth();
+  const { userId, user, mode: authMode } = useAuth();
   // The card lives in the account now. This still paints from the local cache
   // on the first frame; the reconciliation lands behind it.
   const { state, setState, status: cardStatus, error: cardError } = useCloudCard(userId ?? '');
@@ -192,6 +193,37 @@ export default function App() {
       setState((prev) => ({ ...prev, artwork: { ...prev.artwork, ...patch } })),
     [setState],
   );
+  // The handle on the card is always the account's registered @handle (its
+  // community profile), never typed. Only a name they gave seeds a new
+  // profile: the email address must never reach that public table.
+  const givenName = user?.user_metadata?.display_name;
+  const accountName = authMode === 'local' ? 'You' : typeof givenName === 'string' ? givenName.trim() : '';
+  const [accountHandle, setAccountHandle] = useState<string | null>(null);
+  useEffect(() => {
+    if (!userId) {
+      setAccountHandle(null);
+      return;
+    }
+    let cancelled = false;
+    community()
+      .ensureMember(userId, accountName)
+      .then(
+        (member) => {
+          if (!cancelled) setAccountHandle(`@${member.handle}`);
+        },
+        () => undefined,
+      );
+    return () => {
+      cancelled = true;
+    };
+  }, [accountName, userId]);
+  useEffect(() => {
+    // Not while the saved card is still arriving, or the reconciliation would
+    // land on top; the effect runs again once it has.
+    if (!accountHandle || cardStatus === 'loading') return;
+    if (state.brand.handle !== accountHandle) patchBrand({ handle: accountHandle });
+  }, [accountHandle, cardStatus, patchBrand, state.brand.handle]);
+
   const setAvatarId = useCallback(
     (avatarId: string | null) => setState((prev) => ({ ...prev, avatarId })),
     [setState],
@@ -392,6 +424,7 @@ export default function App() {
           <ControlPanel
             hideStyle
             colourOverridesTheme
+            lockHandle
             state={state}
             background={background}
             setMode={setMode}

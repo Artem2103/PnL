@@ -74,6 +74,7 @@ file easier to read:
 | 2026-11-19 (n) | **code**: Community "Who to follow" lists every member except you, with Follow / Following | see **Start here (2026-11-19 n)** |
 | 2026-11-20 | **code**: Boards are for signed-in accounts only — page behind the sign-in gate, board tables closed to anon. **Needs the SQL run** | see **Start here (2026-11-20)** |
 | 2026-11-21 | **code**: Boards behind an **MM password**: typed right once, the account is an MM member for good. **Needs the SQL run and a password set** | see **Start here (2026-11-21)** |
+| 2026-11-21 (b) | **code**: the Cards page handle is locked to the account's registered @handle | see **Start here (2026-11-21 b)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
@@ -81,6 +82,16 @@ the two picture slots** the third, and **Local mode** and **The scroll trap in t
 the fourth.
 
 ---
+
+## Start here (2026-11-21 b) — the card's handle is your registered @handle
+
+On the Cards page (`/cards`) the Handle field under Identity is now read-only and says "the one you
+registered with". `App.tsx` loads the account's community profile (`community().ensureMember`, the
+same call the Community page makes, so a profile is created if there isn't one yet) and writes
+`@<handle>` into the card's `brand.handle`, overwriting whatever was typed before. Only the @handle
+is locked, not the display name. If the profile's handle is changed on the Community page, the card
+follows it. The journal's Customize dialog uses the same `ControlPanel` without the new `lockHandle`
+prop, so nothing changed there. No SQL needed. Types and all 418 tests pass. I did not open it in a browser.
 
 ## Start here (2026-11-21) — Boards behind the MM password
 
