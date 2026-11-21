@@ -1072,36 +1072,6 @@ create policy "community objects are deletable by their owner" on storage.object
   for delete to authenticated
   using (bucket_id = 'community' and (storage.foldername(name))[1] = auth.uid()::text);
 
--- ============================================================== admin: users
-
--- For the owner, in the dashboard: one row per account with everything given
--- at sign-up and what the account has done since. Table Editor -> schema
--- "admin" -> users. Same reasoning as admin.uploads: it reads auth.users, so
--- it lives in "admin", which the API does not expose, and API roles get nothing.
-create or replace view admin.users as
-select
-  u.created_at                                                   as signed_up_at,
-  u.email,
-  coalesce(nullif(u.raw_user_meta_data ->> 'display_name', ''),
-           nullif(p.display_name, ''))                           as name,
-  u.email_confirmed_at is not null                               as email_confirmed,
-  u.last_sign_in_at,
-  cp.handle                                                      as community_handle,
-  nullif(cp.display_name, '')                                    as community_name,
-  s.paid_until,
-  coalesce(s.paid_until > now(), false)                          as plan_active,
-  (select count(*) from public.cards c where c.user_id = u.id)   as cards,
-  (select count(*) from public.media m where m.user_id = u.id)   as uploads,
-  (select count(*) from public.posts x where x.user_id = u.id)   as posts,
-  u.id                                                           as user_id
-from auth.users u
-left join public.profiles p            on p.id = u.id
-left join public.community_profiles cp on cp.id = u.id
-left join public.subscriptions s       on s.user_id = u.id
-order by u.created_at desc;
-
-revoke all on admin.users from public, anon, authenticated;
-
 -- ================================================================== boards
 
 -- The Boards page: a library of trading positions on one canvas. Only MM
@@ -1356,3 +1326,39 @@ create policy "boards objects are updated by admins" on storage.objects
 create policy "boards objects are deleted by admins" on storage.objects
   for delete to authenticated
   using (bucket_id = 'boards' and public.is_board_admin());
+
+-- ============================================================== admin: users
+
+-- For the owner, in the dashboard: one row per account with everything given
+-- at sign-up and what the account has done since. Table Editor -> schema
+-- "admin" -> users. Same reasoning as admin.uploads: it reads auth.users, so
+-- it lives in "admin", which the API does not expose, and API roles get nothing.
+-- It sits after the Boards section because it reads board_members. Dropped and
+-- made again so a new column can go anywhere, not only at the end.
+drop view if exists admin.users;
+create view admin.users as
+select
+  u.created_at                                                   as signed_up_at,
+  u.email,
+  coalesce(nullif(u.raw_user_meta_data ->> 'display_name', ''),
+           nullif(p.display_name, ''))                           as name,
+  u.email_confirmed_at is not null                               as email_confirmed,
+  u.last_sign_in_at,
+  cp.handle                                                      as community_handle,
+  nullif(cp.display_name, '')                                    as community_name,
+  s.paid_until,
+  coalesce(s.paid_until > now(), false)                          as plan_active,
+  -- Typed the Boards password (or is a board admin): can open Boards.
+  (exists (select 1 from public.board_members bm where bm.user_id = u.id)
+   or exists (select 1 from public.board_admins ba where ba.user_id = u.id)) as mm_member,
+  (select count(*) from public.cards c where c.user_id = u.id)   as cards,
+  (select count(*) from public.media m where m.user_id = u.id)   as uploads,
+  (select count(*) from public.posts x where x.user_id = u.id)   as posts,
+  u.id                                                           as user_id
+from auth.users u
+left join public.profiles p            on p.id = u.id
+left join public.community_profiles cp on cp.id = u.id
+left join public.subscriptions s       on s.user_id = u.id
+order by u.created_at desc;
+
+revoke all on admin.users from public, anon, authenticated;

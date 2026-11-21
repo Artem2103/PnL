@@ -104,13 +104,17 @@ the fourth.
 
 **What Artem has to do (nothing works until both are done; until then even admins see the password
 screen):**
-1. Run the **Boards section** of `supabase/schema.sql` in the Supabase SQL editor (the whole file is
-   also fine; it is safe to re-run).
+1. Run `supabase/schema.sql` in the Supabase SQL editor: the **whole file**, or at least everything
+   from the **Boards** section to the end (Boards, then **admin: users**). It is safe to re-run.
 2. Set the password, in the same SQL editor:
    ```sql
    select public.set_board_password('your-password-here');
    ```
    Run it again any time to change it. Changing it does **not** kick out people already in.
+
+**Seeing who is a member:** Table Editor → schema **admin** → **users** now has an **mm_member**
+column: `TRUE` for accounts that typed the password (and board admins), `FALSE` for everyone else.
+The `admin.users` block moved to the end of `schema.sql` because it reads the Boards tables.
 
 **Useful SQL:**
 ```sql
