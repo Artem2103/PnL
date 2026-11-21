@@ -65,8 +65,8 @@ export interface ControlPanelProps {
   /** Leaves out the background pickers, where a host lists backgrounds itself. */
   hideBackgroundPicker?: boolean;
   /**
-   * Shows the handle as read-only: the host fills it with the account's own
-   * registered @handle, so it is not the person's to retype.
+   * Leaves out the Handle field: the host fills it with the account's own
+   * registered @handle, so it is not the person's to type.
    */
   lockHandle?: boolean;
 }
@@ -544,18 +544,16 @@ export function ControlPanel({
       </Section>
 
       <Section title="Identity" hint="Your marks, not anyone else's.">
-        <Field label="Handle" hint={lockHandle ? 'the one you registered with' : undefined}>
-          {lockHandle ? (
-            <input className="input" type="text" value={brand.handle} readOnly aria-readonly="true" tabIndex={-1} />
-          ) : (
+        {lockHandle ? null : (
+          <Field label="Handle">
             <TextInput
               value={brand.handle}
               onChange={(handle) => patchBrand({ handle: withAt(handle) })}
               placeholder="@yourhandle"
               maxLength={24}
             />
-          )}
-        </Field>
+          </Field>
+        )}
         <Field label="Avatar">
           <ImagePicker
             role="avatar"

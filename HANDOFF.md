@@ -85,8 +85,8 @@ the fourth.
 
 ## Start here (2026-11-21 b) — the card's handle is your registered @handle
 
-On the Cards page (`/cards`) the Handle field under Identity is now read-only and says "the one you
-registered with". `App.tsx` loads the account's community profile (`community().ensureMember`, the
+On the Cards page (`/cards`) the Handle field under Identity is gone (it was read-only for one
+commit, then removed as pointless). `App.tsx` loads the account's community profile (`community().ensureMember`, the
 same call the Community page makes, so a profile is created if there isn't one yet) and writes
 `@<handle>` into the card's `brand.handle`, overwriting whatever was typed before. Only the @handle
 is locked, not the display name. If the profile's handle is changed on the Community page, the card
