@@ -59,16 +59,40 @@ export function PositionViewer({ items, index, onIndex, onClose, peek, drawing, 
   // Opening always starts on 15M (the viewer mounts fresh each time); moving to
   // a neighbour keeps the chosen timeframe where that trade has it.
 
+  // The originals are full-size screenshots and every download is Supabase
+  // egress, so only what is likely to be looked at next is fetched: the
+  // neighbours' picture at the timeframe they would open on. Another timeframe
+  // of the open trade loads when it is picked.
   useEffect(() => {
-    for (const i of [index, index + 1, index - 1, index + 2]) {
+    for (const i of [index + 1, index - 1]) {
       const p = items[i]?.position;
-      if (!p) continue;
-      for (const t of TIMEFRAMES) {
-        const f = p.frames[t];
-        if (f) preload(f.full);
-      }
+      const t = p ? pickTimeframe(p, wanted) : null;
+      const f = p && t ? p.frames[t] : undefined;
+      if (f) preload(f.full);
     }
-  }, [index, items]);
+  }, [index, items, wanted]);
+
+  // Per trade: the timeframes mounted so far and those finished loading. Until
+  // the picked one has loaded, the one before it stays up — no white flash.
+  const [loaded, setLoaded] = useState<{ id: string; mounted: Timeframe[]; ready: Timeframe[]; last: Timeframe | null }>({
+    id: '',
+    mounted: [],
+    ready: [],
+    last: null,
+  });
+  const view = loaded.id === position?.id ? loaded : { id: position?.id ?? '', mounted: [], ready: [], last: null };
+  const mounted = tf && !view.mounted.includes(tf) ? [...view.mounted, tf] : view.mounted;
+  const showing = tf && view.ready.includes(tf) ? tf : view.last;
+  const markReady = (t: Timeframe) =>
+    setLoaded((prev) => {
+      const base = prev.id === position?.id ? prev : { id: position?.id ?? '', mounted: [], ready: [], last: null };
+      return {
+        id: base.id,
+        mounted: mounted,
+        ready: base.ready.includes(t) ? base.ready : [...base.ready, t],
+        last: t === tf ? t : base.last ?? t,
+      };
+    });
 
   const prev = index > 0 ? index - 1 : null;
   const next = index < items.length - 1 ? index + 1 : null;
@@ -247,15 +271,16 @@ export function PositionViewer({ items, index, onIndex, onClose, peek, drawing, 
         <div className="bv-stage" key={position.id} style={{ aspectRatio: `${frame.w} / ${frame.h}` }}>
           {TIMEFRAMES.map((t) => {
             const f = position.frames[t];
-            if (!f) return null;
+            if (!f || !mounted.includes(t)) return null;
             return (
               <img
                 key={t}
                 src={f.full}
                 alt={`${name} · ${TIMEFRAME_LABEL[t]}`}
-                className={t === tf ? 'is-shown' : undefined}
+                className={t === showing ? 'is-shown' : undefined}
                 draggable={false}
                 decoding="async"
+                onLoad={() => markReady(t)}
               />
             );
           })}

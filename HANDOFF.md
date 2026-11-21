@@ -75,6 +75,7 @@ file easier to read:
 | 2026-11-20 | **code**: Boards are for signed-in accounts only — page behind the sign-in gate, board tables closed to anon. **Needs the SQL run** | see **Start here (2026-11-20)** |
 | 2026-11-21 | **code**: Boards behind an **MM password**: typed right once, the account is an MM member for good. **Needs the SQL run and a password set** | see **Start here (2026-11-21)** |
 | 2026-11-21 (b) | **code**: the Cards page handle is locked to the account's registered @handle | see **Start here (2026-11-21 b)** |
+| 2026-11-22 | **code**: Supabase Cached Egress over the limit — Boards viewer stopped downloading originals nobody looks at | see **Start here (2026-11-22)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
@@ -82,6 +83,35 @@ the two picture slots** the third, and **Local mode** and **The scroll trap in t
 the fourth.
 
 ---
+
+## Start here (2026-11-22) — Cached Egress over the Supabase limit
+
+**What Cached Egress is:** bytes served out of Supabase Storage through its CDN, meaning every
+picture the browser downloads from a bucket. Database rows don't count towards it.
+
+**What was using it:** the Boards viewer (`src/boards/PositionViewer.tsx`). Opening one trade
+downloaded the **byte-for-byte original** screenshot for **every timeframe (5m/15m/1h)** of that
+trade and of the next, previous and next-but-one trades: up to 12 full-size PNGs per click, on every
+member's every device. All three timeframes of the open trade were also mounted as `<img>` at once.
+
+**Fix:** the viewer now loads only the timeframe on screen. Another timeframe loads when it is
+picked, and the previous picture stays up until the new one has loaded, so there's no white flash.
+It preloads one picture ahead and one behind, at the timeframe they would open on. Stepping through
+trades now costs about one original per trade instead of three, and opening the viewer costs 3
+downloads instead of 12. Picture quality is unchanged. The originals are still what the viewer shows.
+
+**Checked and fine:** the canvas copies, the community pictures and the board pictures all have
+`cacheControl: 31536000` and stable public URLs, so each browser downloads them only once. Card
+media (`media` bucket) downloads lazily into IndexedDB and is kept there.
+
+**Not done, and the next lever if it's still too high:** (1) serve the viewer a high-quality WebP
+copy (about 2000 px wide) instead of the PNG original. That's typically 3-5x smaller, but it needs a
+backfill like `fillMissingSizes` and a quality check by eye. (2) The media picker signs fresh URLs
+each time it opens, so the browser cache can't reuse them. That's small (posters), but it adds up.
+(3) Supabase's Logs Explorer → Storage can show which paths are downloaded most, to confirm Boards
+is the source.
+
+Not verified in a browser: the board is behind the MM password. Types and board tests pass.
 
 ## Start here (2026-11-21 b) — the card's handle is your registered @handle
 
