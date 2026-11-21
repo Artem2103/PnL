@@ -1104,8 +1104,8 @@ revoke all on admin.users from public, anon, authenticated;
 
 -- ================================================================== boards
 
--- The Boards page: a public library of trading positions on one canvas.
--- Everyone (signed in or not) can read it. Only accounts listed in
+-- The Boards page: a library of trading positions on one canvas. Only MM
+-- members (below) can read it. Only accounts listed in
 -- public.board_admins can change it. To make someone an admin, run in the SQL
 -- editor:
 --
@@ -1138,6 +1138,135 @@ as $$
 $$;
 
 grant execute on function public.is_board_admin() to anon, authenticated;
+
+-- MM members (2026-11-21). Boards are for the owner's people only: a signed-in
+-- account sees the board after it has typed the board password once, and that
+-- marks it a member for good. Admins are always members.
+--
+-- The password is stored only as a bcrypt hash and nothing in the browser can
+-- read it. To set it, or change it, run in the SQL editor:
+--
+--   select public.set_board_password('<the password>');
+--
+-- Changing it does not remove anyone already in. To remove someone:
+--
+--   delete from public.board_members
+--   where user_id = (select id from auth.users where email = '<their email>');
+--
+-- To see who is in:
+--
+--   select u.email, m.joined_at from public.board_members m
+--   join auth.users u on u.id = m.user_id order by m.joined_at;
+
+create extension if not exists pgcrypto with schema extensions;
+
+create table if not exists public.board_gate (
+  id            boolean primary key default true check (id),
+  password_hash text not null,
+  updated_at    timestamptz not null default now()
+);
+
+create table if not exists public.board_members (
+  user_id   uuid primary key references auth.users (id) on delete cascade,
+  joined_at timestamptz not null default now()
+);
+
+create table if not exists public.board_join_attempts (
+  id         bigint generated always as identity primary key,
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists board_join_attempts_user_created_idx
+  on public.board_join_attempts (user_id, created_at desc);
+
+-- No policies on any of the three: the API roles cannot touch them. They are
+-- reached only through the functions below.
+alter table public.board_gate          enable row level security;
+alter table public.board_members       enable row level security;
+alter table public.board_join_attempts enable row level security;
+revoke all on public.board_gate, public.board_members, public.board_join_attempts from anon, authenticated;
+
+create or replace function public.set_board_password(p_password text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+begin
+  if char_length(coalesce(p_password, '')) < 6 then
+    raise exception 'Use at least 6 characters.';
+  end if;
+  insert into public.board_gate (id, password_hash, updated_at)
+  values (true, extensions.crypt(p_password, extensions.gen_salt('bf', 10)), now())
+  on conflict (id) do update
+    set password_hash = excluded.password_hash, updated_at = now();
+end;
+$fn$;
+
+-- Only from the SQL editor: nobody on the site can set the password.
+revoke execute on function public.set_board_password(text) from public, anon, authenticated;
+
+create or replace function public.is_board_member()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select auth.uid() is not null and (
+    exists (select 1 from public.board_members where user_id = auth.uid())
+    or exists (select 1 from public.board_admins where user_id = auth.uid())
+  );
+$$;
+
+grant execute on function public.is_board_member() to anon, authenticated;
+
+-- Checks the password and, if it is right, makes the account a member. Ten
+-- wrong tries an hour per account, so it cannot be guessed at speed.
+-- Answers {"ok": true} or {"ok": false, "reason": "invalid" | "too_many_attempts" | "not_set"}.
+create or replace function public.join_board(p_password text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_uid  uuid := auth.uid();
+  v_hash text;
+begin
+  if v_uid is null then
+    raise exception 'Sign in first.' using errcode = '28000';
+  end if;
+
+  if public.is_board_member() then
+    return jsonb_build_object('ok', true);
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(v_uid::text, 47));
+
+  if (select count(*) from public.board_join_attempts
+      where user_id = v_uid and created_at > now() - interval '1 hour') >= 10 then
+    return jsonb_build_object('ok', false, 'reason', 'too_many_attempts');
+  end if;
+
+  select password_hash into v_hash from public.board_gate where id;
+  if v_hash is null then
+    return jsonb_build_object('ok', false, 'reason', 'not_set');
+  end if;
+
+  if extensions.crypt(coalesce(p_password, ''), v_hash) <> v_hash then
+    insert into public.board_join_attempts (user_id) values (v_uid);
+    return jsonb_build_object('ok', false, 'reason', 'invalid');
+  end if;
+
+  insert into public.board_members (user_id) values (v_uid) on conflict (user_id) do nothing;
+  return jsonb_build_object('ok', true);
+end;
+$fn$;
+
+revoke execute on function public.join_board(text) from public, anon;
+grant execute on function public.join_board(text) to authenticated;
 
 create table if not exists public.board_categories (
   id         uuid primary key default gen_random_uuid(),
@@ -1173,13 +1302,16 @@ drop policy if exists "board positions are managed by admins"   on public.board_
 drop policy if exists "board categories are readable when signed in" on public.board_categories;
 drop policy if exists "board positions are readable when signed in"  on public.board_positions;
 
--- Boards are for signed-in accounts only (2026-11-20); anon reads nothing.
-create policy "board categories are readable when signed in" on public.board_categories
-  for select to authenticated using (true);
+drop policy if exists "board categories are readable by members" on public.board_categories;
+drop policy if exists "board positions are readable by members"  on public.board_positions;
+
+-- Boards are for MM members only (2026-11-21); anyone else reads nothing.
+create policy "board categories are readable by members" on public.board_categories
+  for select to authenticated using (public.is_board_member());
 create policy "board categories are managed by admins" on public.board_categories
   for all to authenticated using (public.is_board_admin()) with check (public.is_board_admin());
-create policy "board positions are readable when signed in" on public.board_positions
-  for select to authenticated using (true);
+create policy "board positions are readable by members" on public.board_positions
+  for select to authenticated using (public.is_board_member());
 create policy "board positions are managed by admins" on public.board_positions
   for all to authenticated using (public.is_board_admin()) with check (public.is_board_admin());
 
@@ -1203,13 +1335,17 @@ on conflict (id) do update
       allowed_mime_types = excluded.allowed_mime_types;
 
 drop policy if exists "boards objects are readable by anyone"  on storage.objects;
+drop policy if exists "boards objects are listed by members"   on storage.objects;
 drop policy if exists "boards objects are written by admins"   on storage.objects;
 drop policy if exists "boards objects are updated by admins"   on storage.objects;
 drop policy if exists "boards objects are deleted by admins"   on storage.objects;
 
-create policy "boards objects are readable by anyone" on storage.objects
-  for select to anon, authenticated
-  using (bucket_id = 'boards');
+-- Listing the bucket is for members only, or anyone could list every file
+-- path. The picture addresses themselves stay public (it is a public bucket),
+-- but each path holds a random position id that only the tables give out.
+create policy "boards objects are listed by members" on storage.objects
+  for select to authenticated
+  using (bucket_id = 'boards' and public.is_board_member());
 create policy "boards objects are written by admins" on storage.objects
   for insert to authenticated
   with check (bucket_id = 'boards' and public.is_board_admin());

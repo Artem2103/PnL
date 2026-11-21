@@ -1,8 +1,9 @@
 /**
  * Where the board comes from: two Supabase tables and a public "boards" bucket
- * (see the Boards section of `supabase/schema.sql`). Everyone can read; only an
- * account listed in `board_admins` can change anything, and the database — not
- * this file — is what enforces that.
+ * (see the Boards section of `supabase/schema.sql`). Only MM members can read
+ * (accounts that typed the board password once); only an account listed in
+ * `board_admins` can change anything. The database — not this file — is what
+ * enforces both.
  *
  * The image bytes live in storage. A position row holds only, per timeframe, the
  * path of the original screenshot, the path of its canvas thumbnail and the
@@ -150,6 +151,32 @@ export async function isBoardAdmin(): Promise<boolean> {
   if (!isSupabaseConfigured) return false;
   const { data, error } = await requireSupabase().rpc('is_board_admin');
   return !error && data === true;
+}
+
+/**
+ * Whether the signed-in account is an MM member (has typed the board password
+ * once, or is an admin). Null when that can't be told: the SQL isn't run yet,
+ * or the network failed.
+ */
+export async function isBoardMember(): Promise<boolean | null> {
+  if (!isSupabaseConfigured) return true;
+  const { data, error } = await requireSupabase().rpc('is_board_member');
+  if (error) return null;
+  return data === true;
+}
+
+/** Checks the board password; if right, the account is a member from now on. */
+export async function joinBoard(password: string): Promise<void> {
+  const { data, error } = await requireSupabase().rpc('join_board', { p_password: password });
+  if (error) {
+    if (isNotInstalled(error)) throw new Error('Boards are not set up yet. Try again later.');
+    fail('Could not check the password', error);
+  }
+  const result = data as { ok?: boolean; reason?: string } | null;
+  if (result?.ok) return;
+  if (result?.reason === 'too_many_attempts') throw new Error('Too many wrong tries. Wait an hour and try again.');
+  if (result?.reason === 'not_set') throw new Error('Boards are not open yet. Try again later.');
+  throw new Error('Wrong password.');
 }
 
 /* ------------------------------------------------------------------ admin */

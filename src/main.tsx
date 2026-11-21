@@ -13,7 +13,7 @@ import './styles/global.css';
 const CommunityPage = lazy(() =>
   import('./community/CommunityPage').then((module) => ({ default: module.CommunityPage })),
 );
-const BoardsPage = lazy(() => import('./boards/BoardsPage').then((module) => ({ default: module.BoardsPage })));
+const BoardsGate = lazy(() => import('./boards/MemberGate').then((module) => ({ default: module.BoardsGate })));
 
 applySiteTheme();
 
@@ -23,7 +23,7 @@ if (!container) throw new Error('Root element is missing from index.html.');
 /**
  * Five pages. The front page, the plans page and the community are public — a
  * stranger can read what this is before making an account — and the editor and
- * the boards sit behind the sign-in gate. Acting in the community asks for an account then.
+ * the boards sit behind the sign-in gate (Boards also behind the MM password). Acting in the community asks for an account then.
  */
 function Root() {
   const { pathname, search } = useLocation();
@@ -44,7 +44,7 @@ function Root() {
     return (
       <AuthGate>
         <Suspense fallback={null}>
-          <BoardsPage />
+          <BoardsGate />
         </Suspense>
       </AuthGate>
     );

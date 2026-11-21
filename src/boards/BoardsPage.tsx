@@ -17,7 +17,8 @@ const isTyping = (target: EventTarget | null) =>
   target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
 
 export function BoardsPage() {
-  // Only reached signed in (or in local mode): main.tsx puts Boards behind the AuthGate.
+  // Only reached signed in and an MM member (or in local mode): main.tsx puts Boards behind
+  // the AuthGate, and MemberGate asks the board password first.
   const { session } = useAuth();
   const [source, setSource] = useState<BoardSource | null>(null);
   const [admin, setAdmin] = useState(false);

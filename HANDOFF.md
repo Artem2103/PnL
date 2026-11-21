@@ -73,11 +73,62 @@ file easier to read:
 | 2026-11-19 (m) | **code**: sharper Boards canvas without bigger pictures: repaint when still, pixel-aligned, exact-size copies (5 widths), picked by zoom × screen; old pictures upgraded on an admin visit | see **Start here (2026-11-19 m)** |
 | 2026-11-19 (n) | **code**: Community "Who to follow" lists every member except you, with Follow / Following | see **Start here (2026-11-19 n)** |
 | 2026-11-20 | **code**: Boards are for signed-in accounts only — page behind the sign-in gate, board tables closed to anon. **Needs the SQL run** | see **Start here (2026-11-20)** |
+| 2026-11-21 | **code**: Boards behind an **MM password**: typed right once, the account is an MM member for good. **Needs the SQL run and a password set** | see **Start here (2026-11-21)** |
 
 Everything up to 2026-09-16 is on `main` and deployed. Most of what follows about the render loop and the recorder is
 new in the first pass; **Authentication** and **Persistence** cover the second, **Colour, ink and
 the two picture slots** the third, and **Local mode** and **The scroll trap in the editor shell**
 the fourth.
+
+---
+
+## Start here (2026-11-21) — Boards behind the MM password
+
+**What Artem asked:** going to Boards should ask a password. Typed right, the account is marked an
+"MM member" and is never asked again; without the password you can't get in. Only for his people.
+
+**Now:**
+- **Screen (`src/boards/MemberGate.tsx`, new):** after the sign-in gate, `/boards` asks whether this
+  account is a member. If not, it shows a **Boards — For MM members only** card with one password
+  field. Right password → the board opens and that account goes straight in from then on, on any
+  device. Wrong → "Wrong password." Ten wrong tries an hour per account, then "Too many wrong tries".
+  Board admins are always members and never see the screen. Local mode (no Supabase) skips it.
+- **Database (`supabase/schema.sql`, Boards section):** this is what actually keeps the board
+  private, not the screen.
+  - `board_gate` holds the password **only as a bcrypt hash**; `board_members` lists who is in;
+    `board_join_attempts` counts wrong tries. None of the three can be read or written from the site.
+  - `join_board(password)` checks it and adds the account; `is_board_member()` answers yes/no.
+  - The board tables now answer **only members** (were: any signed-in account). Listing the `boards`
+    storage bucket is members-only too (was: anyone could list every file path).
+  - The password is not in the repo and not in the browser code.
+
+**What Artem has to do (nothing works until both are done; until then even admins see the password
+screen):**
+1. Run the **Boards section** of `supabase/schema.sql` in the Supabase SQL editor (the whole file is
+   also fine; it is safe to re-run).
+2. Set the password, in the same SQL editor:
+   ```sql
+   select public.set_board_password('your-password-here');
+   ```
+   Run it again any time to change it. Changing it does **not** kick out people already in.
+
+**Useful SQL:**
+```sql
+-- who is an MM member
+select u.email, m.joined_at from public.board_members m
+join auth.users u on u.id = m.user_id order by m.joined_at;
+
+-- remove someone
+delete from public.board_members
+where user_id = (select id from auth.users where email = 'their@email');
+```
+
+**Not changed:** picture files in the `boards` bucket are still public addresses. Someone who has an
+exact picture URL can open it, but the URLs only come from the member-only tables and each holds a
+random id, so they can't be guessed. Closing that too = private bucket + signed URLs; say if wanted.
+
+Typecheck clean, Boards tests pass, production build OK. Not clicked through in a browser (needs the
+SQL run first).
 
 ---
 
